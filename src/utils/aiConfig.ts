@@ -8,6 +8,12 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   openAIConfig: undefined,
   geminiConfig: undefined,
   defaultAIProvider: null,
+  proPresenter: {
+    timerOutputPath: "/tmp/proassist/output/timer/",
+    timerFileName: "timer.txt",
+    timerFormat: "mm:ss",
+    warnThresholdSeconds: 60,
+  },
 };
 
 /**
@@ -19,8 +25,12 @@ export const getAppSettings = (): AppSettings => {
     const storedSettings = localStorage.getItem(APP_SETTINGS_KEY);
     if (storedSettings) {
       const parsedSettings = JSON.parse(storedSettings) as AppSettings;
+      const mergedProPresenter = {
+        ...(DEFAULT_APP_SETTINGS.proPresenter || {}),
+        ...(parsedSettings.proPresenter || {}),
+      } as AppSettings["proPresenter"];
       // Basic validation or migration could be added here if settings structure changes
-      return { ...DEFAULT_APP_SETTINGS, ...parsedSettings };
+      return { ...DEFAULT_APP_SETTINGS, ...parsedSettings, proPresenter: mergedProPresenter };
     }
   } catch (error) {
     console.error("Error reading app settings from localStorage:", error);

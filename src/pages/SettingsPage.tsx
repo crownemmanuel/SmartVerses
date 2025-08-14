@@ -5,6 +5,7 @@ import { Template, TemplateType } from "../types";
 import AISettingsForm from "../components/AISettingsForm";
 import Toast from "../components/Toast";
 import "../App.css"; // Ensure global styles are applied
+import ProPresenterSettingsForm from "../components/ProPresenterSettingsForm";
 
 // Mock initial settings data
 const mockTemplatesData: Template[] = [
@@ -62,7 +63,7 @@ const mockTemplatesData: Template[] = [
 //   theme: "light",
 // };
 
-type SettingsView = "templates" | "aiConfiguration";
+type SettingsView = "templates" | "aiConfiguration" | "proPresenter";
 
 const SettingsPage: React.FC = () => {
   const [templates, setTemplates] = useState<Template[]>(() => {
@@ -185,6 +186,12 @@ const SettingsPage: React.FC = () => {
           >
             AI Configuration
           </button>
+          <button
+            onClick={() => setCurrentView("proPresenter")}
+            className={currentView === "proPresenter" ? "active" : ""}
+          >
+            ProPresenter
+          </button>
         </div>
         {currentView === "templates" && (
           <SettingsList
@@ -216,6 +223,7 @@ const SettingsPage: React.FC = () => {
           </p>
         )}
         {currentView === "aiConfiguration" && <AISettingsForm />}
+        {currentView === "proPresenter" && <ProPresenterSettingsForm />}
       </div>
       <Toast
         message={toastMessage}

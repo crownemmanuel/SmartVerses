@@ -8,6 +8,7 @@ import "./App.css";
 // Import actual page components
 import MainApplicationPage from "./pages/MainApplicationPage";
 import SettingsPage from "./pages/SettingsPage";
+import TimerPage from "./pages/TimerPage";
 
 function App() {
   const [theme, setTheme] = useState(
@@ -63,6 +64,10 @@ function App() {
             <span className="icon">🏠</span>
             <span className="text">Main</span>
           </Link>
+          <Link to="/timer" className="nav-action-button">
+            <span className="icon">⏱️</span>
+            <span className="text">Timer</span>
+          </Link>
           <Link to="/settings" className="nav-action-button">
             <span className="icon">⚙️</span>
             <span className="text">Settings</span>
@@ -77,6 +82,7 @@ function App() {
         </nav>
         <Routes>
           <Route path="/" element={<MainApplicationPage />} />
+          <Route path="/timer" element={<TimerPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </div>

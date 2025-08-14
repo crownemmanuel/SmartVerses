@@ -63,11 +63,19 @@ export interface Template {
   outputFileNamePrefix: string;
 }
 
+export interface ProPresenterSettings {
+  timerOutputPath: string;
+  timerFileName: string;
+  timerFormat?: "mm:ss" | "h:mm:ss";
+  warnThresholdSeconds?: number;
+}
+
 export interface AppSettings {
   theme: "light" | "dark";
   openAIConfig?: AIServiceConfig; // Stores API key for OpenAI
   geminiConfig?: AIServiceConfig; // Stores API key for Gemini
   defaultAIProvider?: AIProvider; // User's preferred default AI if multiple are configured
+  proPresenter?: ProPresenterSettings;
   // Other global settings can be added here
 }
 
