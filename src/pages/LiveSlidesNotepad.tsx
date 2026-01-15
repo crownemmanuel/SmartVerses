@@ -6,12 +6,17 @@ import React, {
   useMemo,
 } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { FaSun, FaMoon, FaQuestionCircle, FaMicrophone, FaPlus } from "react-icons/fa";
-import { LiveSlidesWebSocket } from "../services/liveSlideService";
 import {
-  calculateSlideBoundaries,
-  SlideBoundary,
-} from "../utils/liveSlideParser";
+  FaSun,
+  FaMoon,
+  FaQuestionCircle,
+  FaMicrophone,
+  FaPlus,
+  FaListUl,
+  FaObjectGroup,
+} from "react-icons/fa";
+import { LiveSlidesWebSocket } from "../services/liveSlideService";
+import { SlideBoundary } from "../utils/liveSlideParser";
 import { LiveSlide, WsTranscriptionStream } from "../types/liveSlides";
 import "../App.css";
 
@@ -55,6 +60,51 @@ const getNotepadStyles = (isDark: boolean) => {
       display: "flex",
       alignItems: "center",
       gap: "10px",
+    },
+    toolbar: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "8px 20px",
+      backgroundColor: bgSecondary,
+      borderBottom: `1px solid ${border}`,
+      gap: "12px",
+      flexShrink: 0,
+      fontSize: "0.8rem",
+      color: textSecondary,
+    },
+    toolbarLeft: {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      flexWrap: "wrap" as const,
+    },
+    toolbarButton: {
+      backgroundColor: buttonBg,
+      color: text,
+      border: `1px solid ${buttonBorder}`,
+      padding: "6px 12px",
+      borderRadius: "6px",
+      cursor: "pointer",
+      fontSize: "0.8rem",
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      transition: "all 0.2s ease",
+      whiteSpace: "nowrap" as const,
+    },
+    toolbarButtonActive: {
+      backgroundColor: "#3B82F6",
+      color: "white",
+      border: "1px solid #3B82F6",
+    },
+    toolbarHint: {
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+      flexWrap: "wrap" as const,
+      fontSize: "0.78rem",
+      color: textSecondary,
     },
     sessionBadge: {
       backgroundColor: "#3B82F6",
@@ -365,6 +415,248 @@ const getNotepadStyles = (isDark: boolean) => {
   };
 };
 
+const SOFT_BREAK_MARKER = "\u200B";
+const BULLET_SYMBOL = "•";
+const BULLET_PREFIX = `  ${BULLET_SYMBOL} `;
+const SLIDE_COLORS = [
+  "#3B82F6", // Blue
+  "#F59E0B", // Yellow/Amber
+  "#EC4899", // Pink
+  "#10B981", // Green
+  "#8B5CF6", // Purple
+  "#EF4444", // Red
+  "#06B6D4", // Cyan
+  "#F97316", // Orange
+];
+
+const stripSoftBreakMarker = (line: string) => {
+  let idx = 0;
+  while (line[idx] === SOFT_BREAK_MARKER) idx += 1;
+  return line.slice(idx);
+};
+
+const splitSoftBreakMarker = (line: string) => {
+  let idx = 0;
+  while (line[idx] === SOFT_BREAK_MARKER) idx += 1;
+  return {
+    marker: line.slice(0, idx),
+    content: line.slice(idx),
+  };
+};
+
+const isRawIndentedLine = (line: string) =>
+  line.startsWith("\t") || line.startsWith("    ");
+
+const isDisplayIndentedLine = (line: string) =>
+  isRawIndentedLine(stripSoftBreakMarker(line));
+
+const buildRawTextFromDisplay = (displayText: string) => {
+  const displayLines = displayText.split("\n");
+  const rawLines: string[] = [];
+  const rawLineMap: Array<number | null> = [];
+  let hasContent = false;
+
+  displayLines.forEach((line, index) => {
+    const cleanedLine = stripSoftBreakMarker(line);
+    if (cleanedLine.trim() === "") return;
+
+    const isSoftBreak = line.startsWith(SOFT_BREAK_MARKER);
+    const isIndented = isDisplayIndentedLine(line);
+
+    if (hasContent && !(isSoftBreak || isIndented)) {
+      rawLines.push("");
+      rawLineMap.push(null);
+    }
+
+    rawLines.push(cleanedLine);
+    rawLineMap.push(index);
+    hasContent = true;
+  });
+
+  return { rawText: rawLines.join("\n"), rawLineMap, rawLines };
+};
+
+const calculateEditorBoundariesFromRaw = (rawText: string): SlideBoundary[] => {
+  const boundaries: SlideBoundary[] = [];
+  const lines = rawText.split("\n");
+  let colorIndex = 0;
+  let slideIndex = 0;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.trim() === "") {
+      i += 1;
+      continue;
+    }
+
+    if (isRawIndentedLine(line)) {
+      boundaries.push({
+        startLine: i,
+        endLine: i,
+        color: SLIDE_COLORS[colorIndex % SLIDE_COLORS.length],
+        slideIndex,
+      });
+      colorIndex += 1;
+      slideIndex += 1;
+      i += 1;
+      continue;
+    }
+
+    let j = i + 1;
+    let hasChildren = false;
+    while (j < lines.length) {
+      const nextLine = lines[j];
+      if (nextLine.trim() === "") break;
+      if (isRawIndentedLine(nextLine)) {
+        hasChildren = true;
+        j += 1;
+        continue;
+      }
+      break;
+    }
+
+    if (!hasChildren) {
+      let k = i;
+      while (k < lines.length) {
+        const currentLine = lines[k];
+        if (currentLine.trim() === "") break;
+        if (isRawIndentedLine(currentLine)) break;
+        k += 1;
+      }
+
+      boundaries.push({
+        startLine: i,
+        endLine: k - 1,
+        color: SLIDE_COLORS[colorIndex % SLIDE_COLORS.length],
+        slideIndex,
+      });
+      colorIndex += 1;
+      slideIndex += 1;
+      i = k;
+      continue;
+    }
+
+    boundaries.push({
+      startLine: i,
+      endLine: i,
+      color: SLIDE_COLORS[colorIndex % SLIDE_COLORS.length],
+      slideIndex,
+    });
+    colorIndex += 1;
+    slideIndex += 1;
+
+    for (let childIdx = i + 1; childIdx < j; childIdx += 1) {
+      if (!isRawIndentedLine(lines[childIdx])) continue;
+      boundaries.push({
+        startLine: i,
+        endLine: childIdx,
+        color: SLIDE_COLORS[colorIndex % SLIDE_COLORS.length],
+        slideIndex,
+      });
+      colorIndex += 1;
+      slideIndex += 1;
+    }
+
+    i = j;
+  }
+
+  return boundaries;
+};
+
+const mapRawBoundariesToDisplay = (
+  rawBoundaries: SlideBoundary[],
+  rawLineMap: Array<number | null>
+) =>
+  rawBoundaries
+    .map((boundary) => {
+      const startLine = rawLineMap[boundary.startLine];
+      const endLine = rawLineMap[boundary.endLine];
+      if (startLine == null || endLine == null) return null;
+      return { ...boundary, startLine, endLine };
+    })
+    .filter((boundary): boundary is SlideBoundary => boundary !== null);
+
+const convertRawTextToDisplay = (rawText: string) => {
+  const lines = rawText.split("\n");
+  const displayLines: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      i += 1;
+      continue;
+    }
+
+    if (isRawIndentedLine(line)) {
+      displayLines.push(line);
+      i += 1;
+      continue;
+    }
+
+    let j = i + 1;
+    let hasChildren = false;
+    while (j < lines.length) {
+      const nextLine = lines[j];
+      if (nextLine.trim() === "") break;
+      if (isRawIndentedLine(nextLine)) {
+        hasChildren = true;
+        j += 1;
+        continue;
+      }
+      break;
+    }
+
+    if (hasChildren) {
+      displayLines.push(line);
+      for (let k = i + 1; k < j; k += 1) {
+        if (lines[k].trim() !== "") {
+          displayLines.push(lines[k]);
+        }
+      }
+      i = j;
+      continue;
+    }
+
+    let k = i;
+    while (k < lines.length) {
+      const currentLine = lines[k];
+      if (currentLine.trim() === "") break;
+      if (isRawIndentedLine(currentLine)) break;
+      const prefix = k === i ? "" : SOFT_BREAK_MARKER;
+      displayLines.push(prefix + currentLine);
+      k += 1;
+    }
+    i = k;
+  }
+
+  return displayLines.join("\n");
+};
+
+const getLineRangeAt = (value: string, pos: number) => {
+  const lineStart = value.lastIndexOf("\n", Math.max(0, pos - 1)) + 1;
+  const nextBreak = value.indexOf("\n", pos);
+  const lineEnd = nextBreak === -1 ? value.length : nextBreak;
+  return { lineStart, lineEnd };
+};
+
+const getLineIndexAt = (value: string, pos: number) =>
+  value.slice(0, Math.max(0, pos)).split("\n").length - 1;
+
+const getLineStartIndices = (value: string) => {
+  const indices = [0];
+  for (let i = 0; i < value.length; i += 1) {
+    if (value[i] === "\n") indices.push(i + 1);
+  }
+  return indices;
+};
+
+const lineHasBulletPrefix = (line: string) =>
+  stripSoftBreakMarker(line).startsWith(BULLET_PREFIX);
+
+
 const LiveSlidesNotepad: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [searchParams] = useSearchParams();
@@ -375,7 +667,7 @@ const LiveSlidesNotepad: React.FC = () => {
     return saved === "light" ? false : true; // Default to dark
   });
 
-  const [text, setText] = useState("");
+  const [displayText, setDisplayText] = useState("");
   const [slides, setSlides] = useState<LiveSlide[]>([]);
   const [boundaries, setBoundaries] = useState<SlideBoundary[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -388,18 +680,16 @@ const LiveSlidesNotepad: React.FC = () => {
   const [filterReferences, setFilterReferences] = useState(false);
   const [filterKeyPoints, setFilterKeyPoints] = useState(false);
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState("");
+  const [isBulletMode, setIsBulletMode] = useState(false);
+  const [canGroupSelection, setCanGroupSelection] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const colorIndicatorsRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<LiveSlidesWebSocket | null>(null);
   // Avoid stale closures in WS handlers (we intentionally do NOT re-bind on every keystroke).
-  const textRef = useRef<string>("");
+  const rawTextRef = useRef<string>("");
   const lastLocalEditAtRef = useRef<number>(0);
-
-  useEffect(() => {
-    textRef.current = text;
-  }, [text]);
 
   // Get WebSocket connection info from URL params
   // The server now serves both HTTP and WebSocket on the same port, with WS at /ws path
@@ -442,7 +732,7 @@ const LiveSlidesNotepad: React.FC = () => {
     const unsubscribe = ws.onSlidesUpdate((update) => {
       if (update.session_id === sessionId) {
         setSlides(update.slides);
-        const currentText = textRef.current;
+        const currentRawText = rawTextRef.current;
         const focused = document.activeElement === textareaRef.current;
         const recentlyEditedLocally =
           Date.now() - lastLocalEditAtRef.current < 800;
@@ -451,12 +741,16 @@ const LiveSlidesNotepad: React.FC = () => {
         // This improves main-app -> web reliability even when the textarea is focused,
         // while still preventing overwrites during active local edits.
         const shouldUpdate =
-          update.raw_text !== currentText &&
-          (!focused || !recentlyEditedLocally || !currentText.trim().length);
+          update.raw_text !== currentRawText &&
+          (!focused || !recentlyEditedLocally || !currentRawText.trim().length);
 
         if (shouldUpdate) {
-          setText(update.raw_text);
-          setBoundaries(calculateSlideBoundaries(update.raw_text));
+          const nextDisplayText = convertRawTextToDisplay(update.raw_text);
+          const { rawLineMap } = buildRawTextFromDisplay(nextDisplayText);
+          const rawBoundaries = calculateEditorBoundariesFromRaw(update.raw_text);
+          setDisplayText(nextDisplayText);
+          setBoundaries(mapRawBoundariesToDisplay(rawBoundaries, rawLineMap));
+          rawTextRef.current = update.raw_text;
         }
       }
     });
@@ -486,31 +780,18 @@ const LiveSlidesNotepad: React.FC = () => {
     };
   }, [sessionId, wsUrl]);
 
-  // Update boundaries when text changes
-  const handleTextChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newText = e.target.value;
+  const applyDisplayTextUpdate = useCallback(
+    (newDisplayText: string, selectionStart?: number, selectionEnd?: number) => {
       lastLocalEditAtRef.current = Date.now();
-      setText(newText);
+      setDisplayText(newDisplayText);
 
-      const newBoundaries = calculateSlideBoundaries(newText);
-      setBoundaries(newBoundaries);
+      const { rawText, rawLineMap } = buildRawTextFromDisplay(newDisplayText);
+      rawTextRef.current = rawText;
+      const rawBoundaries = calculateEditorBoundariesFromRaw(rawText);
+      setBoundaries(mapRawBoundariesToDisplay(rawBoundaries, rawLineMap));
 
-      // Send update to WebSocket
       if (wsRef.current && wsRef.current.isConnected) {
-        wsRef.current.sendTextUpdate(newText);
-      }
-    },
-    []
-  );
-
-  const applyTextUpdate = useCallback(
-    (newText: string, selectionStart?: number, selectionEnd?: number) => {
-      lastLocalEditAtRef.current = Date.now();
-      setText(newText);
-      setBoundaries(calculateSlideBoundaries(newText));
-      if (wsRef.current && wsRef.current.isConnected) {
-        wsRef.current.sendTextUpdate(newText);
+        wsRef.current.sendTextUpdate(rawText);
       }
 
       if (
@@ -518,7 +799,6 @@ const LiveSlidesNotepad: React.FC = () => {
         typeof selectionStart === "number" &&
         typeof selectionEnd === "number"
       ) {
-        // Let React update the textarea value first, then restore selection.
         requestAnimationFrame(() => {
           if (!textareaRef.current) return;
           textareaRef.current.selectionStart = selectionStart;
@@ -529,13 +809,21 @@ const LiveSlidesNotepad: React.FC = () => {
     []
   );
 
+  // Update boundaries when text changes
+  const handleTextChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      applyDisplayTextUpdate(e.target.value);
+    },
+    [applyDisplayTextUpdate]
+  );
+
   const insertTranscriptChunkIntoNotepad = useCallback(
     (chunkText: string) => {
       const cleaned = (chunkText || "").trim();
       if (!cleaned) return;
 
       const el = textareaRef.current;
-      const current = text;
+      const current = displayText;
 
       const safeStart = el?.selectionStart ?? current.length;
       const safeEnd = el?.selectionEnd ?? current.length;
@@ -543,30 +831,92 @@ const LiveSlidesNotepad: React.FC = () => {
       const before = current.slice(0, safeStart);
       const after = current.slice(safeEnd);
 
-      const prefix = before.length > 0 && !before.endsWith("\n\n") ? "\n\n" : "";
-      const suffix = after.length > 0 && !after.startsWith("\n") ? "\n\n" : "";
+      const prefix = before.length > 0 && !before.endsWith("\n") ? "\n" : "";
+      const suffix = after.length > 0 && !after.startsWith("\n") ? "\n" : "";
 
       const nextValue = before + prefix + cleaned + suffix + after;
       const nextPos = (before + prefix + cleaned).length;
 
-      applyTextUpdate(nextValue, nextPos, nextPos);
+      applyDisplayTextUpdate(nextValue, nextPos, nextPos);
       el?.focus();
     },
-    [applyTextUpdate, text]
+    [applyDisplayTextUpdate, displayText]
   );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // Browsers use Tab for focus navigation. Intercept it so users can create
-      // sub-items (lines starting with Tab) inside the notepad.
-      if (e.key !== "Tab" || e.altKey || e.ctrlKey || e.metaKey) return;
-
-      e.preventDefault();
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
 
       const el = e.currentTarget;
       const value = el.value;
       const start = el.selectionStart ?? 0;
       const end = el.selectionEnd ?? 0;
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+
+        const { lineStart, lineEnd } = getLineRangeAt(value, start);
+        const line = value.slice(lineStart, lineEnd);
+        const { marker, content } = splitSoftBreakMarker(line);
+        const hasBullet = content.startsWith(BULLET_PREFIX);
+        const isBulletEmpty =
+          hasBullet && content.slice(BULLET_PREFIX.length).trim().length === 0;
+
+        if (isBulletMode) {
+          if (isBulletEmpty) {
+            const cleanedLine = `${marker}${content.slice(BULLET_PREFIX.length)}`;
+            const updatedValue =
+              value.slice(0, lineStart) + cleanedLine + value.slice(lineEnd);
+            const insert = "\n";
+            const insertPos = lineStart + cleanedLine.length;
+            const nextValue =
+              updatedValue.slice(0, insertPos) +
+              insert +
+              updatedValue.slice(insertPos);
+            const nextPos = insertPos + insert.length;
+            setIsBulletMode(false);
+            applyDisplayTextUpdate(nextValue, nextPos, nextPos);
+            return;
+          }
+
+          const insert = `\n${SOFT_BREAK_MARKER}${BULLET_PREFIX}`;
+          const nextValue = value.slice(0, start) + insert + value.slice(end);
+          const nextPos = start + insert.length;
+          applyDisplayTextUpdate(nextValue, nextPos, nextPos);
+          return;
+        }
+
+        const insert = e.shiftKey ? `\n${SOFT_BREAK_MARKER}` : "\n";
+        const nextValue = value.slice(0, start) + insert + value.slice(end);
+        const nextPos = start + insert.length;
+        applyDisplayTextUpdate(nextValue, nextPos, nextPos);
+        return;
+      }
+
+      if (e.key === "Backspace" && isBulletMode && start === end) {
+        const { lineStart, lineEnd } = getLineRangeAt(value, start);
+        const line = value.slice(lineStart, lineEnd);
+        const { marker, content } = splitSoftBreakMarker(line);
+
+        if (content.startsWith(BULLET_PREFIX)) {
+          const prefixLength = marker.length + BULLET_PREFIX.length;
+          if (start === lineStart + prefixLength) {
+            e.preventDefault();
+            const cleanedLine = `${marker}${content.slice(BULLET_PREFIX.length)}`;
+            const nextValue =
+              value.slice(0, lineStart) + cleanedLine + value.slice(lineEnd);
+            const nextPos = lineStart + marker.length;
+            setIsBulletMode(false);
+            applyDisplayTextUpdate(nextValue, nextPos, nextPos);
+          }
+        }
+      }
+
+      // Browsers use Tab for focus navigation. Intercept it so users can create
+      // sub-items (lines starting with Tab) inside the notepad.
+      if (e.key !== "Tab") return;
+
+      e.preventDefault();
 
       const TAB = "\t"; // matches parsing rules (also supports 4 spaces)
 
@@ -575,14 +925,20 @@ const LiveSlidesNotepad: React.FC = () => {
         return i === -1 ? 0 : i + 1;
       };
 
-      // Multi-line selection: indent/outdent whole lines.
       const hasMultilineSelection =
         start !== end && value.slice(start, end).includes("\n");
 
       const outdentLine = (line: string) => {
-        if (line.startsWith("\t")) return line.slice(1);
-        if (line.startsWith("    ")) return line.slice(4);
+        const { marker, content } = splitSoftBreakMarker(line);
+        if (content.startsWith("\t")) return `${marker}${content.slice(1)}`;
+        if (content.startsWith("    ")) return `${marker}${content.slice(4)}`;
         return line;
+      };
+
+      const indentLine = (line: string) => {
+        const { marker, content } = splitSoftBreakMarker(line);
+        if (content.length === 0) return line;
+        return `${marker}${TAB}${content}`;
       };
 
       if (hasMultilineSelection || e.shiftKey) {
@@ -594,26 +950,126 @@ const LiveSlidesNotepad: React.FC = () => {
         const block = value.slice(blockStart, blockEnd);
         const lines = block.split("\n");
 
-        const nextLines = e.shiftKey
-          ? lines.map(outdentLine)
-          : lines.map((l) => (l.length === 0 ? l : `${TAB}${l}`));
-
+        const nextLines = e.shiftKey ? lines.map(outdentLine) : lines.map(indentLine);
         const newBlock = nextLines.join("\n");
         const newValue =
           value.slice(0, blockStart) + newBlock + value.slice(blockEnd);
 
-        // Keep selection spanning the full modified block (simple + predictable).
-        applyTextUpdate(newValue, blockStart, blockStart + newBlock.length);
+        applyDisplayTextUpdate(newValue, blockStart, blockStart + newBlock.length);
         return;
       }
 
-      // Single cursor: insert a tab at the caret (common editing behavior).
       const newValue = value.slice(0, start) + TAB + value.slice(end);
       const newPos = start + TAB.length;
-      applyTextUpdate(newValue, newPos, newPos);
+      applyDisplayTextUpdate(newValue, newPos, newPos);
     },
-    [applyTextUpdate]
+    [applyDisplayTextUpdate, isBulletMode]
   );
+
+  const handleSelectionChange = useCallback(
+    (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+      const target = e.currentTarget;
+      const value = target.value;
+      const start = target.selectionStart ?? 0;
+      const end = target.selectionEnd ?? 0;
+      const lineStarts = getLineStartIndices(value);
+      let startLine = getLineIndexAt(value, start);
+      let endLine = getLineIndexAt(value, end);
+
+      if (end > start && lineStarts[endLine] === end) {
+        endLine = Math.max(startLine, endLine - 1);
+      }
+
+      setCanGroupSelection(endLine > startLine);
+
+      const { lineStart, lineEnd } = getLineRangeAt(value, start);
+      const line = value.slice(lineStart, lineEnd);
+      setIsBulletMode(lineHasBulletPrefix(line));
+    },
+    []
+  );
+
+  const handleGroupSelection = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+
+    const value = displayText;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    if (start === end) return;
+
+    const lineStarts = getLineStartIndices(value);
+    let startLine = getLineIndexAt(value, start);
+    let endLine = getLineIndexAt(value, end);
+
+    if (end > start && lineStarts[endLine] === end) {
+      endLine = Math.max(startLine, endLine - 1);
+    }
+
+    if (endLine <= startLine) return;
+
+    const lines = value.split("\n");
+    for (let i = startLine + 1; i <= endLine; i += 1) {
+      const current = lines[i] ?? "";
+      const cleaned = stripSoftBreakMarker(current);
+      if (cleaned.trim().length === 0) continue;
+      if (!current.startsWith(SOFT_BREAK_MARKER)) {
+        lines[i] = `${SOFT_BREAK_MARKER}${current}`;
+      }
+    }
+
+    const nextValue = lines.join("\n");
+    const nextLineStarts = getLineStartIndices(nextValue);
+    const safeEndLine = Math.min(endLine, nextLineStarts.length - 1);
+    const newStart = nextLineStarts[startLine] ?? 0;
+    const newEnd =
+      (nextLineStarts[safeEndLine] ?? 0) + (lines[safeEndLine]?.length ?? 0);
+
+    applyDisplayTextUpdate(nextValue, newStart, newEnd);
+  }, [applyDisplayTextUpdate, displayText]);
+
+  const handleToggleBulletMode = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) {
+      setIsBulletMode((prev) => !prev);
+      return;
+    }
+
+    const value = displayText;
+    const start = el.selectionStart ?? 0;
+    const { lineStart, lineEnd } = getLineRangeAt(value, start);
+    const line = value.slice(lineStart, lineEnd);
+    const { marker, content } = splitSoftBreakMarker(line);
+
+    if (!isBulletMode) {
+      if (content.startsWith(BULLET_PREFIX)) {
+        setIsBulletMode(true);
+        return;
+      }
+
+      const nextLine = `${marker}${BULLET_PREFIX}${content}`;
+      const nextValue = value.slice(0, lineStart) + nextLine + value.slice(lineEnd);
+      const insertionIndex = lineStart + marker.length;
+      const nextPos =
+        start >= insertionIndex
+          ? start + BULLET_PREFIX.length
+          : insertionIndex + BULLET_PREFIX.length;
+      setIsBulletMode(true);
+      applyDisplayTextUpdate(nextValue, nextPos, nextPos);
+      return;
+    }
+
+    if (content.startsWith(BULLET_PREFIX)) {
+      const nextLine = `${marker}${content.slice(BULLET_PREFIX.length)}`;
+      const nextValue = value.slice(0, lineStart) + nextLine + value.slice(lineEnd);
+      const nextPos = Math.max(lineStart + marker.length, start - BULLET_PREFIX.length);
+      setIsBulletMode(false);
+      applyDisplayTextUpdate(nextValue, nextPos, nextPos);
+      return;
+    }
+
+    setIsBulletMode(false);
+  }, [applyDisplayTextUpdate, displayText, isBulletMode]);
 
   // Sync scroll between textarea and line numbers
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -629,9 +1085,9 @@ const LiveSlidesNotepad: React.FC = () => {
 
   // Generate line numbers
   const lineNumbers = useMemo(() => {
-    const lines = text.split("\n");
+    const lines = displayText.split("\n");
     return lines.map((_, i) => i + 1);
-  }, [text]);
+  }, [displayText]);
 
   // Copy URL to clipboard
   const handleCopyUrl = useCallback(async () => {
@@ -673,7 +1129,7 @@ const LiveSlidesNotepad: React.FC = () => {
           <button
             onClick={() => setShowHelpPopup(!showHelpPopup)}
             style={notepadStyles.helpButton}
-            title="How indentation works"
+            title="How slides work"
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = isDarkMode
                 ? "#3a3a3a"
@@ -722,49 +1178,55 @@ const LiveSlidesNotepad: React.FC = () => {
           </button>
           {showHelpPopup && (
             <div style={notepadStyles.helpPopup}>
-              <div style={notepadStyles.helpTitle}>How Indentation Works</div>
+              <div style={notepadStyles.helpTitle}>How Slides Work</div>
               <div style={notepadStyles.helpText}>
-                <strong>Consecutive lines</strong> (no empty line between) = One
-                slide with multiple items
+                <strong>Enter</strong> = New slide (each line is a slide)
               </div>
               <div style={notepadStyles.helpText}>
-                <strong>Empty lines</strong> = Create new slides
+                <strong>Shift + Enter</strong> or <strong>Group</strong> = Keep
+                lines on the same slide
               </div>
               <div style={notepadStyles.helpText}>
-                <strong>Tab/Indent</strong> = Creates sub-items. The first line
-                becomes a title, and each indented line creates a new slide with
-                title + sub-item.
+                <strong>Blank lines</strong> are ignored
+              </div>
+              <div style={notepadStyles.helpText}>
+                <strong>Tab/Indent</strong> = Title + subtitle slides (unchanged)
+              </div>
+              <div style={notepadStyles.helpText}>
+                <strong>Bullets</strong> button starts a list; Enter continues;
+                Enter twice or Backspace exits.
               </div>
               <div style={notepadStyles.helpExample}>
-                {`this is item one on same slide
-this is item two on same slide
-this is item three on same slide
+                {`Slide one (new slide)
+Slide two (new slide)
 
-this is a new Slide
+Grouped lines (Shift+Enter or Group)
+Grouped line A
+Grouped line B
 
-This is the title of all the slide below
-	1. sub item using the title on top
-	2. this is another sub item using the title`}
+Title (Tab example)
+	Subtitle 1
+	Subtitle 2`}
               </div>
               <button
                 onClick={() => {
-                  const exampleText = `this is item one on same slide
-this is item two on same slide
-this is item three on same slide
+                  const exampleText = `Slide one (new slide)
+Slide two (new slide)
 
-this is a new Slide
+Grouped line A
+${SOFT_BREAK_MARKER}Grouped line B
 
-This is the title of all the slide below
-	1. sub item using the title on top
-	2. this is another sub item using the title`;
-                  setText(exampleText);
+Title
+	Subtitle 1
+	Subtitle 2
+
+Bullets example
+${BULLET_PREFIX}First point
+${SOFT_BREAK_MARKER}${BULLET_PREFIX}Second point`;
+                  applyDisplayTextUpdate(exampleText, exampleText.length, exampleText.length);
                   setShowHelpPopup(false);
-                  // Focus the textarea
                   if (textareaRef.current) {
                     textareaRef.current.focus();
-                    // Move cursor to end
-                    const length = exampleText.length;
-                    textareaRef.current.setSelectionRange(length, length);
                   }
                 }}
                 style={notepadStyles.helpButtonAction}
@@ -826,6 +1288,42 @@ This is the title of all the slide below
         </div>
       </div>
 
+      {/* Toolbar */}
+      <div style={notepadStyles.toolbar}>
+        <div style={notepadStyles.toolbarLeft}>
+          <button
+            onClick={handleGroupSelection}
+            disabled={!canGroupSelection}
+            style={{
+              ...notepadStyles.toolbarButton,
+              opacity: canGroupSelection ? 1 : 0.5,
+              cursor: canGroupSelection ? "pointer" : "not-allowed",
+            }}
+            title="Group selected lines into one slide"
+          >
+            <FaObjectGroup />
+            Group
+          </button>
+          <button
+            onClick={handleToggleBulletMode}
+            style={{
+              ...notepadStyles.toolbarButton,
+              ...(isBulletMode ? notepadStyles.toolbarButtonActive : {}),
+            }}
+            title="Toggle bullet list"
+          >
+            <FaListUl />
+            Bullets
+          </button>
+        </div>
+        <div style={notepadStyles.toolbarHint}>
+          <span>Enter = new slide</span>
+          <span>Shift+Enter = same slide</span>
+          <span>Blank lines ignored</span>
+          <span>Tab = title/subtitle</span>
+        </div>
+      </div>
+
       {/* Editor */}
       <div style={notepadStyles.editorWrapper}>
         {/* Color indicators */}
@@ -873,31 +1371,35 @@ This is the title of all the slide below
         <div style={notepadStyles.textareaWrapper}>
           <textarea
             ref={textareaRef}
-            value={text}
+            value={displayText}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
+            onSelect={handleSelectionChange}
             onScroll={handleScroll}
             style={notepadStyles.textarea}
             placeholder={`Start typing your slides here...
 
 HOW IT WORKS:
-• Empty lines create new slides
-• Consecutive lines (no empty line between) = one slide with multiple items
-• Tab/indent creates sub-items: first line becomes title, each indented line creates a new slide with title + sub-item
+• Enter = new slide (each line)
+• Shift+Enter or Group = same slide
+• Blank lines are ignored
+• Tab/indent = title + subtitle slides
+• Use Bullets for dotted lists
 
 EXAMPLES:
 
-Simple (3 lines = 1 slide with 3 items):
+New slide per line:
 Line one
 Line two
-Line three
 
-With tabs (creates 3 slides):
+Grouped lines (same slide):
+Line A
+Line B
+
+With tabs (title + subtitles):
 Title
-	Sub-item 1
-	Sub-item 2
-
-Result: Slide 1 = Title, Slide 2 = Title + Sub-item 1, Slide 3 = Title + Sub-item 2`}
+	Subtitle 1
+	Subtitle 2`}
             spellCheck={false}
             autoFocus
           />
@@ -1078,7 +1580,8 @@ Result: Slide 1 = Title, Slide 2 = Title + Sub-item 1, Slide 3 = Title + Sub-ite
       {/* Footer */}
       <div style={notepadStyles.footer}>
         <div>
-          {text.split("\n").length} lines · {slides.length || boundaries.length}{" "}
+          {displayText.split("\n").length} lines ·{" "}
+          {slides.length || boundaries.length}{" "}
           slides
         </div>
         <div style={notepadStyles.slidesPreview}>
