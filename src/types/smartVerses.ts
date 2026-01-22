@@ -150,7 +150,10 @@ export interface OfflineModelInfo {
   id: string;
   name: string;
   type: OfflineModelType;
-  modelId: string; // HuggingFace model ID (e.g., 'onnx-community/whisper-base')
+  modelPath: string; // For LLM: relative local path; For others: HuggingFace model ID
+  modelUrl?: string; // Remote ONNX model URL (LLM only)
+  tokenizerPath?: string; // Relative local path to tokenizer (LLM only)
+  tokenizerUrl?: string; // Remote tokenizer URL (LLM only)
   size: string; // Human-readable size (e.g., '~150MB')
   description: string;
   isDownloaded: boolean;
@@ -165,8 +168,11 @@ export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
     id: 'llama-3-2-1b-instruct',
     name: 'Llama 3.2 1B Instruct',
     type: 'llm',
-    modelId: 'onnx-community/Llama-3.2-1B-Instruct-ONNX',
-    size: '~1.0GB',
+    modelPath: 'llm/llama-3.2-1b/model_bnb4.onnx',
+    modelUrl: 'https://huggingface.co/onnx-community/Llama-3.2-1B-Instruct-ONNX/resolve/main/onnx/model_bnb4.onnx',
+    tokenizerPath: 'llm/llama-3.2-1b/tokenizer.json',
+    tokenizerUrl: 'https://huggingface.co/onnx-community/Llama-3.2-1B-Instruct-ONNX/resolve/main/tokenizer.json',
+    size: '~1.6GB',
     description: 'Small instruction-tuned LLM for offline chat',
     isDownloaded: false,
     supportsWebGPU: true,
@@ -176,7 +182,7 @@ export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
     id: 'whisper-tiny-en',
     name: 'Whisper Tiny (English)',
     type: 'whisper',
-    modelId: 'onnx-community/whisper-tiny.en',
+    modelPath: 'onnx-community/whisper-tiny.en',
     size: '~40MB',
     description: 'Fastest, English only, lowest accuracy',
     isDownloaded: false,
@@ -187,7 +193,7 @@ export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
     id: 'whisper-base',
     name: 'Whisper Base',
     type: 'whisper',
-    modelId: 'onnx-community/whisper-base',
+    modelPath: 'onnx-community/whisper-base',
     size: '~150MB',
     description: 'Good balance of speed and accuracy, multilingual',
     isDownloaded: false,
@@ -198,7 +204,7 @@ export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
     id: 'whisper-small',
     name: 'Whisper Small',
     type: 'whisper',
-    modelId: 'onnx-community/whisper-small',
+    modelPath: 'onnx-community/whisper-small',
     size: '~500MB',
     description: 'Better accuracy, slower, multilingual',
     isDownloaded: false,
@@ -209,7 +215,7 @@ export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
     id: 'moonshine-base',
     name: 'Moonshine Base',
     type: 'moonshine',
-    modelId: 'onnx-community/moonshine-base-ONNX',
+    modelPath: 'onnx-community/moonshine-base-ONNX',
     size: '~200MB',
     description: 'Fast and accurate, optimized for real-time use',
     isDownloaded: false,
@@ -220,7 +226,7 @@ export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
     id: 'moonshine-tiny',
     name: 'Moonshine Tiny',
     type: 'moonshine',
-    modelId: 'onnx-community/moonshine-tiny-ONNX',
+    modelPath: 'onnx-community/moonshine-tiny-ONNX',
     size: '~50MB',
     description: 'Fastest Moonshine model, good for low-powered devices',
     isDownloaded: false,

@@ -1,5 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 // (Note) Keep Tauri command wiring in this file; `src-tauri/src/main.rs` delegates to `run()`.
+mod llm_service;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use base64::Engine;
 use tauri::Emitter;
+use llm_service::{LLMService, ChatMessage};
 
 // ============================================================================
 // Embedded Frontend Assets
@@ -2694,13 +2697,62 @@ fn send_midi_note(
     Ok(())
 }
 
+// ============================================================================
+// LLM Commands
+// ============================================================================
+
+#[tauri::command]
+async fn llm_load_model(
+    model_path: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<tokio::sync::Mutex<LLMService>>>,
+) -> Result<(), String> {
+    let state_arc = Arc::clone(state.inner());
+    LLMService::load_model_locked(state_arc, model_path, app).await
+}
+
+#[tauri::command]
+async fn llm_generate(
+    prompt: String,
+    messages: Vec<ChatMessage>,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<tokio::sync::Mutex<LLMService>>>,
+) -> Result<String, String> {
+    // Pass the Arc directly - generate will acquire the lock internally
+    let state_arc = Arc::clone(state.inner());
+    LLMService::generate_locked(state_arc, prompt, messages, app).await
+}
+
+#[tauri::command]
+async fn llm_interrupt(
+    state: tauri::State<'_, Arc<tokio::sync::Mutex<LLMService>>>,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    service.interrupt();
+    Ok(())
+}
+
+#[tauri::command]
+async fn llm_reset(
+    state: tauri::State<'_, Arc<tokio::sync::Mutex<LLMService>>>,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    service.reset();
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let llm_service = Arc::new(tokio::sync::Mutex::new(
+        LLMService::new().expect("Failed to initialize LLM service")
+    ));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
+        .manage(llm_service)
         .setup(|app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -2757,7 +2809,12 @@ pub fn run() {
             broadcast_live_slides_message,
             // MIDI commands
             list_midi_output_devices,
-            send_midi_note
+            send_midi_note,
+            // LLM commands
+            llm_load_model,
+            llm_generate,
+            llm_interrupt,
+            llm_reset
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

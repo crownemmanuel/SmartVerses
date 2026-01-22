@@ -20,10 +20,9 @@ import {
 import OfflineLLMTestUI from "./OfflineLLMTestUI";
 import {
   OfflineModelInfo,
-  AVAILABLE_OFFLINE_MODELS,
 } from "../types/smartVerses";
 import {
-  getDownloadedModelIds,
+  getAvailableModels,
   downloadModel,
   deleteModel,
   supportsWebGPU,
@@ -59,12 +58,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
     if (!isOpen) return;
 
     const loadData = async () => {
-      const downloaded = getDownloadedModelIds();
-      const modelsWithStatus = AVAILABLE_OFFLINE_MODELS.map((model) => ({
-        ...model,
-        isDownloaded: downloaded.includes(model.modelId),
-      }));
-      setModels(modelsWithStatus);
+      setModels(getAvailableModels());
 
       const webgpuSupport = await supportsWebGPU();
       setHasWebGPU(webgpuSupport);
@@ -78,65 +72,62 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
 
   // Refresh models list
   const refreshModels = useCallback(() => {
-    const downloaded = getDownloadedModelIds();
-    setModels(
-      AVAILABLE_OFFLINE_MODELS.map((model) => ({
-        ...model,
-        isDownloaded: downloaded.includes(model.modelId),
-      }))
-    );
+    setModels(getAvailableModels());
   }, []);
 
   // Handle model download
   const handleDownload = useCallback(
     async (model: OfflineModelInfo) => {
-      if (downloadingModels.has(model.modelId)) return;
+      if (downloadingModels.has(model.id)) return;
 
       setError(null);
-      setDownloadingModels((prev) => new Set(prev).add(model.modelId));
-      setDownloadProgress((prev) => ({ ...prev, [model.modelId]: 0 }));
+      setDownloadingModels((prev) => new Set(prev).add(model.id));
+      setDownloadProgress((prev) => ({ ...prev, [model.id]: 0 }));
 
       try {
-        await downloadModel(model.modelId, {
+        await downloadModel(model.id, {
           onProgress: (progress: ModelDownloadProgress) => {
             setDownloadProgress((prev) => ({
               ...prev,
-              [model.modelId]: progress.progress,
+              [model.id]: progress.progress,
             }));
           },
           onFileStart: (file: string) => {
-            setCurrentFile((prev) => ({ ...prev, [model.modelId]: file }));
+            setCurrentFile((prev) => ({ ...prev, [model.id]: file }));
           },
           onFileDone: (file: string) => {
             console.log(`Downloaded: ${file}`);
           },
           onComplete: () => {
             refreshModels();
-            onModelDownloaded?.(model.modelId);
+            onModelDownloaded?.(model.id);
 
             // Update storage info
             getStorageEstimate().then(setStorageInfo);
           },
           onError: (err: Error) => {
+            console.error("Download error callback:", err);
             setError(`Failed to download ${model.name}: ${err.message}`);
           },
         });
       } catch (err) {
-        console.error("Download error:", err);
+        console.error("Download error (catch block):", err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(`Failed to download ${model.name}: ${errorMessage}`);
       } finally {
         setDownloadingModels((prev) => {
           const next = new Set(prev);
-          next.delete(model.modelId);
+          next.delete(model.id);
           return next;
         });
         setDownloadProgress((prev) => {
           const next = { ...prev };
-          delete next[model.modelId];
+          delete next[model.id];
           return next;
         });
         setCurrentFile((prev) => {
           const next = { ...prev };
-          delete next[model.modelId];
+          delete next[model.id];
           return next;
         });
       }
@@ -158,9 +149,9 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
       setError(null);
 
       try {
-        await deleteModel(model.modelId);
+        await deleteModel(model.id);
         refreshModels();
-        onModelDeleted?.(model.modelId);
+        onModelDeleted?.(model.id);
 
         // Update storage info
         const storage = await getStorageEstimate();
@@ -370,9 +361,9 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
                 <ModelCard
                   key={model.id}
                   model={model}
-                  isDownloading={downloadingModels.has(model.modelId)}
-                  progress={downloadProgress[model.modelId]}
-                  currentFile={currentFile[model.modelId]}
+                  isDownloading={downloadingModels.has(model.id)}
+                  progress={downloadProgress[model.id]}
+                  currentFile={currentFile[model.id]}
                   onDownload={() => handleDownload(model)}
                   onDelete={() => handleDelete(model)}
                 />
@@ -406,9 +397,9 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
                 <ModelCard
                   key={model.id}
                   model={model}
-                  isDownloading={downloadingModels.has(model.modelId)}
-                  progress={downloadProgress[model.modelId]}
-                  currentFile={currentFile[model.modelId]}
+                  isDownloading={downloadingModels.has(model.id)}
+                  progress={downloadProgress[model.id]}
+                  currentFile={currentFile[model.id]}
                   onDownload={() => handleDownload(model)}
                   onDelete={() => handleDelete(model)}
                 />
@@ -464,9 +455,9 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
                 <ModelCard
                   key={model.id}
                   model={model}
-                  isDownloading={downloadingModels.has(model.modelId)}
-                  progress={downloadProgress[model.modelId]}
-                  currentFile={currentFile[model.modelId]}
+                  isDownloading={downloadingModels.has(model.id)}
+                  progress={downloadProgress[model.id]}
+                  currentFile={currentFile[model.id]}
                   onDownload={() => handleDownload(model)}
                   onDelete={() => handleDelete(model)}
                 />

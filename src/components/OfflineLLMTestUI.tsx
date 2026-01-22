@@ -7,9 +7,9 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { FaTimes, FaStop, FaArrowRight } from "react-icons/fa";
-import { offlineLLMService, OfflineLLMChatMessage } from "../services/offlineLLMService";
-import { AVAILABLE_OFFLINE_MODELS } from "../types/smartVerses";
-import { getDownloadedModelIds } from "../services/offlineModelService";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { getAvailableModels } from "../services/offlineModelService";
 
 interface OfflineLLMTestUIProps {
   isOpen: boolean;
@@ -32,7 +32,7 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // Model selection and loading
-  const [selectedModelId, setSelectedModelId] = useState<string>("");
+  const [selectedModelPath, setSelectedModelPath] = useState<string>("");
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>("");
   const [progressItems, setProgressItems] = useState<Array<{
@@ -49,34 +49,25 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
   const [isRunning, setIsRunning] = useState(false);
   const [tps, setTps] = useState<number | null>(null);
   const [numTokens, setNumTokens] = useState<number | null>(null);
-  const [hasWebGPU, setHasWebGPU] = useState<boolean | null>(null);
-  const [actualDevice, setActualDevice] = useState<"webgpu" | "wasm" | null>(null);
+  const [actualDevice, setActualDevice] = useState<"cpu" | "cuda" | "metal" | null>(null);
+  const [unlistenToken, setUnlistenToken] = useState<UnlistenFn | null>(null);
+  const [unlistenStatus, setUnlistenStatus] = useState<UnlistenFn | null>(null);
 
   // Get available LLM models
-  const availableModels = AVAILABLE_OFFLINE_MODELS.filter((m) => m.type === "llm");
-  const downloadedModels = getDownloadedModelIds();
-  const downloadedLLMModels = availableModels.filter((m) =>
-    downloadedModels.includes(m.modelId)
-  );
+  const availableModels = getAvailableModels().filter((m) => m.type === "llm");
+  const downloadedLLMModels = availableModels.filter((m) => m.isDownloaded);
 
-  // Check WebGPU support properly (async)
+  // Cleanup event listeners on unmount
   useEffect(() => {
-    const checkWebGPU = async () => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const nav = navigator as any;
-        if (!nav.gpu) {
-          setHasWebGPU(false);
-          return;
-        }
-        const adapter = await nav.gpu.requestAdapter();
-        setHasWebGPU(adapter !== null);
-      } catch {
-        setHasWebGPU(false);
+    return () => {
+      if (unlistenToken) {
+        unlistenToken();
+      }
+      if (unlistenStatus) {
+        unlistenStatus();
       }
     };
-    checkWebGPU();
-  }, []);
+  }, [unlistenToken, unlistenStatus]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -102,7 +93,7 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
 
   // Load model
   const handleLoadModel = async () => {
-    if (!selectedModelId) {
+    if (!selectedModelPath) {
       setError("Please select a model first");
       return;
     }
@@ -113,51 +104,29 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
     setProgressItems([]);
 
     try {
-      await offlineLLMService.loadModel(selectedModelId, {
-        onStatus: (status, data) => {
-          if (status === "loading" && data) {
-            setLoadingMessage(data);
+      // Set up status listener
+      const statusUnlisten = await listen<{ status: string; message?: string; device?: string }>(
+        "llm-status",
+        (event) => {
+          const { status, message, device } = event.payload;
+          if (status === "loading" && message) {
+            setLoadingMessage(message);
           } else if (status === "ready") {
             setStatus("ready");
-            // Worker sends device info in the ready message
-            // Check if data contains device info or if we need to infer from hasWebGPU
-            if (data && typeof data === "string") {
-              if (data.toLowerCase().includes("webgpu")) {
-                setActualDevice("webgpu");
-              } else if (data.toLowerCase().includes("wasm")) {
-                setActualDevice("wasm");
-              } else {
-                // Fallback: use hasWebGPU status
-                setActualDevice(hasWebGPU ? "webgpu" : "wasm");
-              }
-            } else {
-              // Fallback: use hasWebGPU status
-              setActualDevice(hasWebGPU ? "webgpu" : "wasm");
+            if (device) {
+              setActualDevice(device as "cpu" | "cuda" | "metal");
             }
-          } else if (status === "error" && data) {
-            setError(data);
+          } else if (status === "error" && message) {
+            setError(message);
             setStatus("idle");
-          } else if (status === "info" && data) {
-            console.log("Info:", data);
-            // Worker sends info message when WebGPU is not available
-            if (data.toLowerCase().includes("wasm")) {
-              setActualDevice("wasm");
-            }
           }
-        },
-        onProgress: (data) => {
-          if (data.file) {
-            setProgressItems((prev) => {
-              const existing = prev.find((item) => item.file === data.file);
-              if (existing) {
-                return prev.map((item) =>
-                  item.file === data.file ? { ...item, ...data } : item
-                );
-              }
-              return [...prev, { file: data.file, ...data }];
-            });
-          }
-        },
+        }
+      );
+      setUnlistenStatus(() => statusUnlisten);
+
+      // Call Tauri command to load model
+      await invoke("llm_load_model", {
+        modelPath: selectedModelPath,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load model";
@@ -182,16 +151,17 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
     try {
-      // Pass full conversation history (excluding the empty assistant message we just added)
-      const chatMessages: OfflineLLMChatMessage[] = updatedMessages.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
-
-      const response = await offlineLLMService.generate(selectedModelId, chatMessages, {
-        onToken: (token, stats) => {
-          setTps(stats?.tps || null);
-          setNumTokens(stats?.numTokens || null);
+      // Set up token listener
+      const tokenUnlisten = await listen<{ token: string; tps?: number; numTokens?: number }>(
+        "llm-token",
+        (event) => {
+          const payload = event.payload;
+          const token = typeof payload === "string" ? payload : payload.token;
+          const tps = typeof payload === "object" ? payload.tps : undefined;
+          const numTokens = typeof payload === "object" ? payload.numTokens : undefined;
+          
+          setTps(tps || null);
+          setNumTokens(numTokens || null);
           setMessages((prev) => {
             const cloned = [...prev];
             const last = cloned[cloned.length - 1];
@@ -203,20 +173,35 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
             }
             return cloned;
           });
-        },
-        onStatus: (status) => {
-          if (status === "start") {
-            // Already added assistant message
-          } else if (status === "complete") {
-            setIsRunning(false);
-          } else if (status === "error") {
-            setIsRunning(false);
-            setError("Generation failed");
-          }
-        },
-      });
+        }
+      );
+      setUnlistenToken(() => tokenUnlisten);
+
+      // Prepare messages for the backend
+      const chatMessages = updatedMessages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+      // Call Tauri command to generate
+      try {
+        await invoke("llm_generate", {
+          prompt: message,
+          messages: chatMessages,
+        });
+      } catch (genErr) {
+        const errorMsg = genErr instanceof Error ? genErr.message : String(genErr);
+        // Check if it's a tokenizer error
+        if (errorMsg.includes("tokenizer") || errorMsg.includes("Tokenizer")) {
+          throw new Error(`Tokenizer error: ${errorMsg}. Please ensure tokenizer.json is downloaded and valid. You may need to re-download the model.`);
+        }
+        throw genErr;
+      }
+
+      setIsRunning(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Generation failed";
+      console.error("Generation error:", err);
       setError(message);
       setIsRunning(false);
       setMessages((prev) => {
@@ -233,16 +218,24 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
   };
 
   // Interrupt generation
-  const handleInterrupt = () => {
-    offlineLLMService.interrupt();
+  const handleInterrupt = async () => {
+    try {
+      await invoke("llm_interrupt");
+    } catch (err) {
+      console.error("Failed to interrupt:", err);
+    }
   };
 
   // Reset conversation
-  const handleReset = () => {
-    offlineLLMService.reset();
-    setMessages([]);
-    setTps(null);
-    setNumTokens(null);
+  const handleReset = async () => {
+    try {
+      await invoke("llm_reset");
+      setMessages([]);
+      setTps(null);
+      setNumTokens(null);
+    } catch (err) {
+      console.error("Failed to reset:", err);
+    }
   };
 
   // Handle Enter key
@@ -329,32 +322,20 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
                 direct user/assistant conversation.
               </p>
               
-              {/* WebGPU Status */}
-              {hasWebGPU !== null && (
-                <div
-                  style={{
-                    padding: "var(--spacing-3)",
-                    borderRadius: "8px",
-                    marginBottom: "var(--spacing-4)",
-                    backgroundColor: hasWebGPU
-                      ? "rgba(34, 197, 94, 0.1)"
-                      : "rgba(251, 191, 36, 0.1)",
-                    border: `1px solid ${
-                      hasWebGPU
-                        ? "rgba(34, 197, 94, 0.3)"
-                        : "rgba(251, 191, 36, 0.3)"
-                    }`,
-                    color: hasWebGPU ? "var(--success)" : "var(--warning)",
-                    fontSize: "0.9em",
-                  }}
-                >
-                  {hasWebGPU ? (
-                    "✓ WebGPU is available - models will run faster"
-                  ) : (
-                    "⚠ WebGPU is not available - models will use WASM fallback (slower)"
-                  )}
-                </div>
-              )}
+              {/* Device Status */}
+              <div
+                style={{
+                  padding: "var(--spacing-3)",
+                  borderRadius: "8px",
+                  marginBottom: "var(--spacing-4)",
+                  backgroundColor: "rgba(34, 197, 94, 0.1)",
+                  border: "1px solid rgba(34, 197, 94, 0.3)",
+                  color: "var(--success)",
+                  fontSize: "0.9em",
+                }}
+              >
+                Models will run on native GPU (CUDA/Metal) or CPU for optimal performance
+              </div>
 
               {/* Model Selection */}
               <div style={{ marginBottom: "var(--spacing-4)" }}>
@@ -368,8 +349,8 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
                   Select Model:
                 </label>
                 <select
-                  value={selectedModelId}
-                  onChange={(e) => setSelectedModelId(e.target.value)}
+                  value={selectedModelPath}
+                  onChange={(e) => setSelectedModelPath(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "var(--spacing-2)",
@@ -381,7 +362,7 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
                 >
                   <option value="">-- Select a model --</option>
                   {downloadedLLMModels.map((model) => (
-                    <option key={model.modelId} value={model.modelId}>
+                    <option key={model.id} value={model.modelPath}>
                       {model.name} ({model.size})
                     </option>
                   ))}
@@ -410,18 +391,18 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
 
               <button
                 onClick={handleLoadModel}
-                disabled={!selectedModelId || status === "loading"}
+                disabled={!selectedModelPath || status === "loading"}
                 style={{
                   padding: "var(--spacing-3) var(--spacing-6)",
                   borderRadius: "8px",
                   border: "none",
                   backgroundColor:
-                    selectedModelId && status !== "loading"
+                    selectedModelPath && status !== "loading"
                       ? "var(--app-primary-color)"
                       : "var(--app-border-color)",
                   color: "white",
                   cursor:
-                    selectedModelId && status !== "loading" ? "pointer" : "not-allowed",
+                    selectedModelPath && status !== "loading" ? "pointer" : "not-allowed",
                   fontWeight: 600,
                 }}
               >
@@ -555,7 +536,6 @@ const OfflineLLMTestUI: React.FC<OfflineLLMTestUIProps> = ({ isOpen, onClose }) 
                   {actualDevice && (
                     <span style={{ marginRight: "var(--spacing-2)" }}>
                       Running on: <strong>{actualDevice.toUpperCase()}</strong>
-                      {actualDevice === "wasm" && " (slower)"}
                       {" • "}
                     </span>
                   )}

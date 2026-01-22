@@ -263,10 +263,10 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
 
       if (globalAssistantProvider === "offline") {
         const offlineModels = loadOfflineLLMModels();
-        const modelIds = offlineModels.map((model) => model.modelId);
-        setGlobalAssistantModels(modelIds);
-        if (modelIds.length > 0 && !modelIds.includes(globalAssistantModel)) {
-          setGlobalAssistantModel(modelIds[0]);
+        const modelPaths = offlineModels.map((model) => model.modelPath);
+        setGlobalAssistantModels(modelPaths);
+        if (modelPaths.length > 0 && !modelPaths.includes(globalAssistantModel)) {
+          setGlobalAssistantModel(modelPaths[0]);
         }
         setGlobalAssistantModelsLoading(false);
         return;
@@ -483,17 +483,17 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
   const handleOfflineModelsUpdated = () => {
     const models = loadOfflineLLMModels();
     if (globalAssistantProvider === "offline") {
-      const modelIds = models.map((model) => model.modelId);
-      setGlobalAssistantModels(modelIds);
-      if (modelIds.length > 0 && !modelIds.includes(globalAssistantModel)) {
-        setGlobalAssistantModel(modelIds[0]);
+      const modelPaths = models.map((model) => model.modelPath);
+      setGlobalAssistantModels(modelPaths);
+      if (modelPaths.length > 0 && !modelPaths.includes(globalAssistantModel)) {
+        setGlobalAssistantModel(modelPaths[0]);
       }
     }
   };
 
   const getGlobalAssistantModelLabel = (modelId: string) => {
     if (globalAssistantProvider === "offline") {
-      const info = offlineLLMModels.find((m) => m.modelId === modelId);
+      const info = offlineLLMModels.find((m) => m.modelPath === modelId);
       if (!info) return modelId;
       return info.isDownloaded
         ? `${info.name} (downloaded)`

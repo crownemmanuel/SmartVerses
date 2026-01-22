@@ -30,7 +30,7 @@ import {
   AVAILABLE_OFFLINE_MODELS,
 } from "../types/smartVerses";
 import OfflineModelManager from "./OfflineModelManager";
-import { getDownloadedModelIds } from "../services/offlineModelService";
+import { getDownloadedModelIds, isModelDownloaded } from "../services/offlineModelService";
 import {
   loadSmartVersesSettings,
   saveSmartVersesSettings,
@@ -584,11 +584,11 @@ const SmartVersesSettings: React.FC = () => {
                   >
                     {AVAILABLE_OFFLINE_MODELS.filter((m) => m.type === "whisper").map(
                       (model) => {
-                        const isDownloaded = downloadedModelIds.includes(model.modelId);
+                        const isDownloaded = downloadedModelIds.includes(model.id);
                         const isRecommended =
-                          model.modelId === "onnx-community/whisper-base";
+                          model.modelPath === "onnx-community/whisper-base";
                         return (
-                          <option key={model.id} value={model.modelId}>
+                          <option key={model.id} value={model.modelPath}>
                             {model.name}
                             {isRecommended ? " (Recommended)" : ""} ({model.size})
                             {isDownloaded ? " ✓" : " - Not Downloaded"}
@@ -597,7 +597,7 @@ const SmartVersesSettings: React.FC = () => {
                       }
                     )}
                   </select>
-                  {!downloadedModelIds.includes(
+                  {!isModelDownloaded(
                     settings.offlineWhisperModel || "onnx-community/whisper-base"
                   ) && (
                     <p
@@ -657,9 +657,9 @@ const SmartVersesSettings: React.FC = () => {
                 >
                   {AVAILABLE_OFFLINE_MODELS.filter((m) => m.type === "moonshine").map(
                     (model) => {
-                      const isDownloaded = downloadedModelIds.includes(model.modelId);
+                      const isDownloaded = downloadedModelIds.includes(model.id);
                       return (
-                        <option key={model.id} value={model.modelId}>
+                        <option key={model.id} value={model.modelPath}>
                           {model.name} ({model.size})
                           {isDownloaded ? " ✓" : " - Not Downloaded"}
                         </option>
@@ -667,7 +667,7 @@ const SmartVersesSettings: React.FC = () => {
                     }
                   )}
                 </select>
-                {!downloadedModelIds.includes(
+                {!isModelDownloaded(
                   settings.offlineMoonshineModel ||
                     "onnx-community/moonshine-base-ONNX"
                 ) && (

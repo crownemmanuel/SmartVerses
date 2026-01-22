@@ -68,8 +68,15 @@ function getAIConfig(
   let model: string;
 
   if (timerAssistantSettings?.provider && timerAssistantSettings?.model) {
-    provider = timerAssistantSettings.provider;
-    model = timerAssistantSettings.model;
+    // Only use if provider is not "offline" (schedule AI doesn't support offline)
+    const timerProvider = timerAssistantSettings.provider;
+    if (timerProvider !== "offline") {
+      provider = timerProvider as AIProvider;
+      model = timerAssistantSettings.model;
+    } else {
+      provider = null;
+      model = "";
+    }
   } else if (preferredProvider) {
     provider = preferredProvider;
     model =
@@ -79,13 +86,16 @@ function getAIConfig(
         ? "llama-3.3-70b-versatile"
         : "gemini-1.5-flash-latest";
   } else {
+    // Use default provider (AIProvider type doesn't include "offline")
     provider = appSettings.defaultAIProvider || null;
     model =
       provider === "openai"
         ? "gpt-4o"
         : provider === "groq"
         ? "llama-3.3-70b-versatile"
-        : "gemini-1.5-flash-latest";
+        : provider === "gemini"
+        ? "gemini-1.5-flash-latest"
+        : "";
   }
 
   if (!provider) {

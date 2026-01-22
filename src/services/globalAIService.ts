@@ -26,13 +26,14 @@ import {
   ClearLayerParams,
   UpdateCurrentSlidesParams,
 } from "../types/globalChat";
-import { Template, Playlist, Slide, AIProvider, AIProviderType } from "../types";
+import { Template, Playlist, Slide, AIProviderType } from "../types";
 import { ScheduleItem } from "../types/propresenter";
 import { getAppSettings } from "../utils/aiConfig";
 import { loadProPresenterAITemplates } from "../utils/proPresenterAITemplates";
 import { loadProPresenterConnections, getEnabledConnections } from "./propresenterService";
 import { loadSmartAutomations } from "../utils/testimoniesStorage";
-import { offlineLLMService, OfflineLLMChatMessage } from "./offlineLLMService";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 
 // Import action handlers
 import * as appActions from "./appActionService";
@@ -594,22 +595,78 @@ export async function processGlobalChatMessage(
           responseText: "Offline LLM does not support images.",
         };
       }
+      if (!config.model) {
+        return {
+          action: "none",
+          responseText: "Offline model not configured. Please select a model in Settings.",
+        };
+      }
 
-      const messages: OfflineLLMChatMessage[] = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ];
+      // Set up event listeners for token streaming
+      let unlistenToken: UnlistenFn | null = null;
+      let unlistenStatus: UnlistenFn | null = null;
+      let fullResponse = "";
 
-      const rawText = await offlineLLMService.generate(
-        config.model,
-        messages,
-        {
-          onToken: streamCallbacks?.onToken,
-          onStatus: streamCallbacks?.onStatus,
+      try {
+        // Listen for token events
+        if (streamCallbacks?.onToken) {
+          unlistenToken = await listen<{ token: string; tps?: number; numTokens?: number }>(
+            "llm-token",
+            (event) => {
+              const { token, tps, numTokens } = event.payload;
+              fullResponse += token;
+              streamCallbacks?.onToken?.(token, { tps, numTokens });
+            }
+          );
         }
-      );
 
-      return parseAIResponse({ content: rawText });
+        // Listen for status events
+        if (streamCallbacks?.onStatus) {
+          unlistenStatus = await listen<{ status: string; message?: string }>(
+            "llm-status",
+            (event) => {
+              streamCallbacks?.onStatus?.(
+                event.payload.status,
+                event.payload.message
+              );
+            }
+          );
+        }
+
+        // Prepare messages for the backend
+        const messages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ];
+
+        // Ensure model is loaded before generation
+        try {
+          await invoke("llm_load_model", {
+            modelPath: config.model,
+          });
+        } catch (loadErr) {
+          const errorMsg = loadErr instanceof Error ? loadErr.message : String(loadErr);
+          throw new Error(`Failed to load model: ${errorMsg}. Please ensure the model is downloaded and the tokenizer file is valid.`);
+        }
+
+        // Call Tauri command to generate text
+        const rawText = await invoke<string>("llm_generate", {
+          prompt: userMessage,
+          messages: messages,
+        });
+
+        // Clean up listeners
+        if (unlistenToken) await unlistenToken();
+        if (unlistenStatus) await unlistenStatus();
+
+        return parseAIResponse({ content: rawText || fullResponse });
+      } catch (error) {
+        // Clean up listeners on error
+        if (unlistenToken) unlistenToken();
+        if (unlistenStatus) unlistenStatus();
+
+        throw error;
+      }
     }
 
     if (!config.apiKey) {
