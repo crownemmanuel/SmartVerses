@@ -109,7 +109,7 @@ export function getAvailableModels(): OfflineModelInfo[] {
 /**
  * Get downloaded models of a specific type
  */
-export function getDownloadedModelsByType(type: 'whisper' | 'moonshine'): OfflineModelInfo[] {
+export function getDownloadedModelsByType(type: 'whisper' | 'moonshine' | 'llm'): OfflineModelInfo[] {
   return getAvailableModels().filter(m => m.type === type && m.isDownloaded);
 }
 
@@ -130,7 +130,7 @@ export async function downloadModel(
 
   try {
     // Dynamic import to avoid loading transformers.js until needed
-    const { AutoProcessor, AutoTokenizer, WhisperForConditionalGeneration, AutoModel, pipeline } = await import('@huggingface/transformers');
+    const { AutoProcessor, AutoTokenizer, WhisperForConditionalGeneration, AutoModel, AutoModelForCausalLM, pipeline } = await import('@huggingface/transformers');
 
     // Determine device based on WebGPU support
     const hasWebGPU = await supportsWebGPU();
@@ -197,6 +197,18 @@ export async function downloadModel(
       await pipeline('automatic-speech-recognition', modelId, {
         device: device as 'webgpu' | 'wasm',
         dtype: dtypeConfig,
+        progress_callback: progressCallback,
+      });
+    } else if (model.type === 'llm') {
+      console.log('📦 Loading LLM tokenizer...');
+      await AutoTokenizer.from_pretrained(modelId, {
+        progress_callback: progressCallback,
+      });
+
+      console.log('📦 Loading LLM model...');
+      await AutoModelForCausalLM.from_pretrained(modelId, {
+        dtype: device === 'webgpu' ? 'q4f16' : 'q8',
+        device: device as 'webgpu' | 'wasm',
         progress_callback: progressCallback,
       });
     }

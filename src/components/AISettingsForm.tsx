@@ -3,7 +3,7 @@ import { AppSettings, AIProvider, AIProviderType, AIModelSetting } from "../type
 import { getAppSettings, saveAppSettings } from "../utils/aiConfig";
 import { fetchOpenAIModels, fetchGeminiModels, fetchGroqModels } from "../services/aiService";
 import { formatGroqModelLabel } from "../utils/groqModelLimits";
-import { FaSpinner, FaChevronDown, FaChevronUp, FaPlus, FaTrash, FaMagic, FaDownload } from "react-icons/fa";
+import { FaSpinner, FaChevronDown, FaChevronUp, FaPlus, FaTrash, FaMagic, FaDownload, FaDatabase } from "react-icons/fa";
 import {
   ProPresenterAITemplate,
   ProPresenterAITemplateUseCase,
@@ -19,6 +19,9 @@ import {
 } from "../services/propresenterService";
 import { ProPresenterConnection } from "../types/propresenter";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
+import OfflineModelManager from "./OfflineModelManager";
+import { getAvailableModels } from "../services/offlineModelService";
+import { OfflineModelInfo } from "../types/smartVerses";
 
 interface AISettingsFormProps {
   // Props if any, e.g., onSettingsChange callback if SettingsPage needs to react
@@ -65,6 +68,8 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
   );
   const [globalAssistantModels, setGlobalAssistantModels] = useState<string[]>([]);
   const [globalAssistantModelsLoading, setGlobalAssistantModelsLoading] = useState(false);
+  const [offlineLLMModels, setOfflineLLMModels] = useState<OfflineModelInfo[]>([]);
+  const [showOfflineModelManager, setShowOfflineModelManager] = useState(false);
 
   // ProPresenter AI Templates
   const [ppAITemplates, setPPAITemplates] = useState<ProPresenterAITemplate[]>([]);
@@ -79,6 +84,12 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const originalTemplateRef = useRef<ProPresenterAITemplate | null>(null);
+
+  const loadOfflineLLMModels = useCallback(() => {
+    const models = getAvailableModels().filter((model) => model.type === "llm");
+    setOfflineLLMModels(models);
+    return models;
+  }, []);
 
   useEffect(() => {
     // Update local state if settings are changed elsewhere (e.g. theme toggle)
@@ -100,8 +111,9 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
     if (connections.length > 0) {
       setSelectedConnectionId(connections[0].id);
     }
+    loadOfflineLLMModels();
     setSettingsLoaded(true);
-  }, []); // Re-evaluate if a dependency on global changes is needed
+  }, [loadOfflineLLMModels]); // Re-evaluate if a dependency on global changes is needed
 
   // Auto-save AI provider settings (debounced) after initial load.
   useDebouncedEffect(
@@ -245,6 +257,18 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
     (async () => {
       if (!globalAssistantProvider) {
         setGlobalAssistantModels([]);
+        setGlobalAssistantModelsLoading(false);
+        return;
+      }
+
+      if (globalAssistantProvider === "offline") {
+        const offlineModels = loadOfflineLLMModels();
+        const modelIds = offlineModels.map((model) => model.modelId);
+        setGlobalAssistantModels(modelIds);
+        if (modelIds.length > 0 && !modelIds.includes(globalAssistantModel)) {
+          setGlobalAssistantModel(modelIds[0]);
+        }
+        setGlobalAssistantModelsLoading(false);
         return;
       }
       
@@ -277,7 +301,7 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
         setGlobalAssistantModelsLoading(false);
       }
     })();
-  }, [globalAssistantProvider, openAIKeyInput, geminiKeyInput, groqKeyInput]);
+  }, [globalAssistantProvider, openAIKeyInput, geminiKeyInput, groqKeyInput, globalAssistantModel, loadOfflineLLMModels]);
 
   const handleDefaultProviderChange = (
     event: React.ChangeEvent<HTMLSelectElement>
@@ -456,6 +480,30 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
     }
   }, [enabledConnections, selectedConnectionId]);
 
+  const handleOfflineModelsUpdated = () => {
+    const models = loadOfflineLLMModels();
+    if (globalAssistantProvider === "offline") {
+      const modelIds = models.map((model) => model.modelId);
+      setGlobalAssistantModels(modelIds);
+      if (modelIds.length > 0 && !modelIds.includes(globalAssistantModel)) {
+        setGlobalAssistantModel(modelIds[0]);
+      }
+    }
+  };
+
+  const getGlobalAssistantModelLabel = (modelId: string) => {
+    if (globalAssistantProvider === "offline") {
+      const info = offlineLLMModels.find((m) => m.modelId === modelId);
+      if (!info) return modelId;
+      return info.isDownloaded
+        ? `${info.name} (downloaded)`
+        : `${info.name} (not downloaded)`;
+    }
+    return globalAssistantProvider === "groq"
+      ? formatGroqModelLabel(modelId)
+      : modelId;
+  };
+
   return (
     <div className="settings-form-section">
       <h3>AI Provider Configuration</h3>
@@ -614,6 +662,7 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
                 <option value="groq" disabled={!groqKeyInput}>
                   Groq
                 </option>
+                <option value="offline">Offline (Local LLM)</option>
               </select>
             </div>
             <div style={{ flex: "2", minWidth: "200px" }}>
@@ -839,7 +888,7 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
                   )}
                   {globalAssistantModels.map((model) => (
                     <option key={model} value={model}>
-                      {globalAssistantProvider === "groq" ? formatGroqModelLabel(model) : model}
+                      {getGlobalAssistantModelLabel(model)}
                     </option>
                   ))}
                 </select>
@@ -858,6 +907,40 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
               </div>
             </div>
           </div>
+
+          {globalAssistantProvider === "offline" && (
+            <div
+              style={{
+                marginTop: "10px",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                onClick={() => setShowOfflineModelManager(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "6px 12px",
+                  backgroundColor: "rgba(59, 130, 246, 0.2)",
+                  border: "1px solid rgba(59, 130, 246, 0.4)",
+                  borderRadius: "6px",
+                  color: "#93c5fd",
+                  cursor: "pointer",
+                  fontSize: "0.85em",
+                }}
+              >
+                <FaDatabase size={12} />
+                Manage Offline Models
+              </button>
+              <span style={{ fontSize: "0.8em", color: "var(--app-text-color-secondary)" }}>
+                Download once to use the model without internet.
+              </span>
+            </div>
+          )}
 
           {/* Collapsible ProPresenter AI Templates */}
           <div style={{ marginTop: "16px", borderTop: "1px solid var(--app-border-color)", paddingTop: "12px" }}>
@@ -1062,6 +1145,13 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
       >
         Note: API keys are stored locally in your browser's storage.
       </p>
+
+      <OfflineModelManager
+        isOpen={showOfflineModelManager}
+        onClose={() => setShowOfflineModelManager(false)}
+        onModelDownloaded={handleOfflineModelsUpdated}
+        onModelDeleted={handleOfflineModelsUpdated}
+      />
 
       <style>{`
         @keyframes spin {

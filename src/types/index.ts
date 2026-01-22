@@ -9,7 +9,7 @@ export type LayoutType =
 export type TemplateType = "text" | "image" | "video";
 
 // Define AI Provider and Model Types
-export type AIProviderType = "openai" | "gemini" | "groq";
+export type AIProviderType = "openai" | "gemini" | "groq" | "offline";
 
 export const OPENAI_MODELS = [
   "gpt-4o",

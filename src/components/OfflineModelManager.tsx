@@ -15,7 +15,9 @@ import {
   FaMicrochip,
   FaCloud,
   FaDatabase,
+  FaPlay,
 } from "react-icons/fa";
+import OfflineLLMTestUI from "./OfflineLLMTestUI";
 import {
   OfflineModelInfo,
   AVAILABLE_OFFLINE_MODELS,
@@ -50,6 +52,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
   const [hasWebGPU, setHasWebGPU] = useState<boolean | null>(null);
   const [storageInfo, setStorageInfo] = useState<{ used: number; quota: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showTestUI, setShowTestUI] = useState(false);
 
   // Load models and check WebGPU support
   useEffect(() => {
@@ -177,6 +180,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
 
   const whisperModels = models.filter((m) => m.type === "whisper");
   const moonshineModels = models.filter((m) => m.type === "moonshine");
+  const llmModels = models.filter((m) => m.type === "llm");
 
   return (
     <div
@@ -412,6 +416,64 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
             </div>
           </div>
 
+          {/* LLM Models */}
+          <div style={{ marginTop: "var(--spacing-6)" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "var(--spacing-3)",
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--spacing-2)",
+                }}
+              >
+                <span>LLM Models</span>
+                <span
+                  style={{
+                    fontSize: "0.75em",
+                    color: "var(--app-text-color-secondary)",
+                    fontWeight: "normal",
+                  }}
+                >
+                  (Offline chat models)
+                </span>
+              </h3>
+              <button
+                onClick={() => setShowTestUI(true)}
+                className="primary btn-sm"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                title="Open test interface for offline LLM models"
+              >
+                <FaPlay size={12} />
+                Test Model
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-2)" }}>
+              {llmModels.map((model) => (
+                <ModelCard
+                  key={model.id}
+                  model={model}
+                  isDownloading={downloadingModels.has(model.modelId)}
+                  progress={downloadProgress[model.modelId]}
+                  currentFile={currentFile[model.modelId]}
+                  onDownload={() => handleDownload(model)}
+                  onDelete={() => handleDelete(model)}
+                />
+              ))}
+            </div>
+          </div>
+
           {/* Note */}
           <div
             style={{
@@ -429,6 +491,12 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Test UI Modal */}
+      <OfflineLLMTestUI
+        isOpen={showTestUI}
+        onClose={() => setShowTestUI(false)}
+      />
     </div>
   );
 };

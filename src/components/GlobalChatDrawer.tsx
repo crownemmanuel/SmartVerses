@@ -326,16 +326,18 @@ export const GlobalChatDrawer: React.FC<GlobalChatDrawerProps> = ({
     setAttachedImage(null);
     setIsProcessing(true);
 
-    const loadingMessage: ChatMessageType = {
-      id: generateMessageId(),
+    const assistantMessageId = generateMessageId();
+    const assistantMessage: ChatMessageType = {
+      id: assistantMessageId,
       role: "assistant",
-      content: "Thinking...",
+      content: "",
       timestamp: Date.now(),
       isLoading: true,
     };
-    setMessages((prev) => [...prev, loadingMessage]);
+    setMessages((prev) => [...prev, assistantMessage]);
 
     try {
+      let hasStreamedToken = false;
       const context = buildContext(
         currentPage,
         templates,
@@ -348,7 +350,39 @@ export const GlobalChatDrawer: React.FC<GlobalChatDrawerProps> = ({
         userMessage.content,
         context,
         userMessage.image,
-        contextMode
+        contextMode,
+        {
+          onToken: (token) => {
+            hasStreamedToken = true;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId
+                  ? { ...m, content: (m.content || "") + token, isLoading: true }
+                  : m
+              )
+            );
+          },
+          onStatus: (status, message) => {
+            if (status === "loading" && !hasStreamedToken && message) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId
+                    ? { ...m, content: message, isLoading: true }
+                    : m
+                )
+              );
+            }
+            if (status === "start" && !hasStreamedToken) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId
+                    ? { ...m, content: "", isLoading: true }
+                    : m
+                )
+              );
+            }
+          },
+        }
       );
 
       const callbacks: ActionCallbacks = {
@@ -364,32 +398,32 @@ export const GlobalChatDrawer: React.FC<GlobalChatDrawerProps> = ({
         executedActions = await executeActions(response, templates, callbacks);
       }
 
-      const assistantMessage: ChatMessageType = {
-        id: generateMessageId(),
-        role: "assistant",
-        content: response.responseText,
-        timestamp: Date.now(),
-        actions: executedActions.length > 0 ? executedActions : undefined,
-      };
-
-      setMessages((prev) => {
-        const filtered = prev.filter((m) => !m.isLoading);
-        return [...filtered, assistantMessage];
-      });
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMessageId
+            ? {
+                ...m,
+                content: response.responseText,
+                actions: executedActions.length > 0 ? executedActions : undefined,
+                isLoading: false,
+              }
+            : m
+        )
+      );
     } catch (error) {
       console.error("Chat error:", error);
 
       const errorMessage: ChatMessageType = {
-        id: generateMessageId(),
+        id: assistantMessageId,
         role: "assistant",
         content: `Error: ${error instanceof Error ? error.message : "Something went wrong"}`,
         timestamp: Date.now(),
+        isLoading: false,
       };
 
-      setMessages((prev) => {
-        const filtered = prev.filter((m) => !m.isLoading);
-        return [...filtered, errorMessage];
-      });
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMessageId ? errorMessage : m))
+      );
     } finally {
       setIsProcessing(false);
     }

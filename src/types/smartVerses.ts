@@ -144,7 +144,7 @@ export interface SmartVersesChatMessage {
 // OFFLINE MODEL TYPES
 // =============================================================================
 
-export type OfflineModelType = 'whisper' | 'moonshine';
+export type OfflineModelType = 'whisper' | 'moonshine' | 'llm';
 
 export interface OfflineModelInfo {
   id: string;
@@ -161,6 +161,17 @@ export interface OfflineModelInfo {
 }
 
 export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
+  {
+    id: 'llama-3-2-1b-instruct',
+    name: 'Llama 3.2 1B Instruct',
+    type: 'llm',
+    modelId: 'onnx-community/Llama-3.2-1B-Instruct-ONNX',
+    size: '~1.0GB',
+    description: 'Small instruction-tuned LLM for offline chat',
+    isDownloaded: false,
+    supportsWebGPU: true,
+    supportsWASM: true,
+  },
   {
     id: 'whisper-tiny-en',
     name: 'Whisper Tiny (English)',

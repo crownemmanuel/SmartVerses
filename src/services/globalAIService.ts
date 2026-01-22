@@ -26,12 +26,13 @@ import {
   ClearLayerParams,
   UpdateCurrentSlidesParams,
 } from "../types/globalChat";
-import { Template, Playlist, Slide, AIProvider } from "../types";
+import { Template, Playlist, Slide, AIProvider, AIProviderType } from "../types";
 import { ScheduleItem } from "../types/propresenter";
 import { getAppSettings } from "../utils/aiConfig";
 import { loadProPresenterAITemplates } from "../utils/proPresenterAITemplates";
 import { loadProPresenterConnections, getEnabledConnections } from "./propresenterService";
 import { loadSmartAutomations } from "../utils/testimoniesStorage";
+import { offlineLLMService, OfflineLLMChatMessage } from "./offlineLLMService";
 
 // Import action handlers
 import * as appActions from "./appActionService";
@@ -389,9 +390,11 @@ ${templatesSection}
 // AI Configuration
 // ============================================
 
+type GlobalAIProvider = AIProviderType | "offline";
+
 interface AIConfig {
-  provider: AIProvider;
-  apiKey: string;
+  provider: GlobalAIProvider;
+  apiKey?: string;
   model: string;
 }
 
@@ -403,6 +406,10 @@ function getAIConfig(): AIConfig | null {
     const provider = appSettings.globalAssistantModel.provider;
     const model = appSettings.globalAssistantModel.model;
     
+    if (provider === "offline") {
+      return { provider, model };
+    }
+
     // Get the API key for the configured provider
     let apiKey: string | undefined;
     if (provider === "openai") {
@@ -556,11 +563,17 @@ export function buildContext(
 // Main Chat Processing
 // ============================================
 
+export interface GlobalChatStreamCallbacks {
+  onToken?: (token: string, stats?: { tps?: number; numTokens?: number }) => void;
+  onStatus?: (status: string, message?: string) => void;
+}
+
 export async function processGlobalChatMessage(
   userMessage: string,
   context: AIAssistantContext,
   image?: string,
-  contextMode: AIContextMode = "auto"
+  contextMode: AIContextMode = "auto",
+  streamCallbacks?: GlobalChatStreamCallbacks
 ): Promise<GlobalAIResponse> {
   const config = getAIConfig();
   
@@ -572,6 +585,40 @@ export async function processGlobalChatMessage(
   }
 
   try {
+    const systemPrompt = buildSystemPrompt(context, contextMode, userMessage);
+
+    if (config.provider === "offline") {
+      if (image) {
+        return {
+          action: "none",
+          responseText: "Offline LLM does not support images.",
+        };
+      }
+
+      const messages: OfflineLLMChatMessage[] = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ];
+
+      const rawText = await offlineLLMService.generate(
+        config.model,
+        messages,
+        {
+          onToken: streamCallbacks?.onToken,
+          onStatus: streamCallbacks?.onStatus,
+        }
+      );
+
+      return parseAIResponse({ content: rawText });
+    }
+
+    if (!config.apiKey) {
+      return {
+        action: "none",
+        responseText: "AI provider API key is missing. Please check AI settings.",
+      };
+    }
+
     let llm;
     
     if (config.provider === "openai") {
@@ -593,8 +640,6 @@ export async function processGlobalChatMessage(
         temperature: 0.3,
       });
     }
-
-    const systemPrompt = buildSystemPrompt(context, contextMode, userMessage);
     
     let messages;
     if (image) {
