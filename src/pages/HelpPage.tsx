@@ -653,7 +653,7 @@ const HelpPage: React.FC = () => {
                 <li><strong>Bible Search Provider</strong>: Choose OpenAI, Gemini, or Groq for AI search</li>
                 <li><strong>Output Path & File Names</strong>: Configure where verse text and references are written</li>
                 <li><strong>ProPresenter Activation</strong>: Set up automatic presentation triggering</li>
-                <li><strong>Paraphrase Detection</strong>: Enable AI to detect paraphrased Bible verses</li>
+                <li><strong>Paraphrase Detection</strong>: Detect paraphrased verses using offline, AI, or hybrid mode</li>
                 <li><strong>Key Point Extraction</strong>: Extract key points from transcript</li>
               </ul>
             </li>

@@ -45,6 +45,7 @@ import {
   searchBibleWithAI,
   resolveParaphrasedVerses,
 } from "../services/smartVersesAIService";
+import { analyzeTranscriptChunkOffline } from "../services/smartVersesOfflineParaphraseService";
 import { searchBibleTextAsReferences } from "../services/bibleTextSearchService";
 import {
   loadDisplaySettings,
@@ -888,6 +889,55 @@ const SmartVersesPage: React.FC = () => {
     }
   }, [settings]);
 
+  const applyParaphraseDetections = useCallback(
+    (
+      resolvedRefs: DetectedBibleReference[],
+      transcriptText: string,
+      sourceLabel?: string
+    ): DetectedBibleReference[] => {
+      if (!resolvedRefs || resolvedRefs.length === 0) return [];
+
+      const resolvedWithTranscript = resolvedRefs.map((r) => ({
+        ...r,
+        transcriptText,
+      }));
+
+      const recent = detectedReferencesRef.current.slice(-5);
+      const recentKeys = new Set(
+        recent.map((r) => (r.displayRef || "").trim().toLowerCase())
+      );
+      const deduped = resolvedWithTranscript.filter(
+        (r) => !recentKeys.has((r.displayRef || "").trim().toLowerCase())
+      );
+
+      if (deduped.length > 0) {
+        setDetectedReferences((prev) => [...prev, ...deduped]);
+      }
+
+      if (settings.autoAddDetectedToHistory && deduped.length > 0) {
+        const confidence = Math.round((deduped[0].confidence || 0) * 100);
+        const label = sourceLabel ? `${sourceLabel}, ` : "";
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: `paraphrase-${Date.now()}`,
+            type: "result",
+            content: `Paraphrase detected (${label}${confidence}% confidence)`,
+            timestamp: Date.now(),
+            references: deduped,
+          },
+        ]);
+      }
+
+      if (settings.autoTriggerOnDetection && deduped.length > 0) {
+        handleGoLive(deduped[0]);
+      }
+
+      return deduped;
+    },
+    [handleGoLive, settings.autoAddDetectedToHistory, settings.autoTriggerOnDetection]
+  );
+
   // =============================================================================
   // BROWSER TRANSCRIPTION
   // =============================================================================
@@ -1171,83 +1221,101 @@ const SmartVersesPage: React.FC = () => {
                 handleGoLive(directRefs[0]);
               }
             } else if (settings.enableParaphraseDetection || settings.enableKeyPointExtraction) {
-              // Try AI analysis (paraphrase detection and/or key point extraction)
-              console.log("[SmartVerses][Remote] No direct refs found; invoking AI analysis...");
-              try {
-                const analysis = await analyzeTranscriptChunk(
-                  m.text,
-                  appSettings,
-                  settings.enableParaphraseDetection,
-                  settings.enableKeyPointExtraction,
-                  {
-                    keyPointInstructions: settings.keyPointExtractionInstructions,
-                    overrideProvider: settings.bibleSearchProvider,
-                    overrideModel: settings.bibleSearchModel,
-                  }
-                );
+              const paraphraseMode = settings.paraphraseDetectionMode || "hybrid";
+              const allowOfflineParaphrase =
+                settings.enableParaphraseDetection && paraphraseMode !== "ai";
+              const allowAIParaphrase =
+                settings.enableParaphraseDetection && paraphraseMode !== "offline";
+              let offlineParaphraseCount = 0;
 
-                if (analysis.keyPoints?.length) {
-                  keyPoints = analysis.keyPoints;
-                  setTranscriptKeyPoints((prev) => ({
-                    ...prev,
-                    [segment.id]: keyPoints,
-                  }));
-                }
-
-                if (settings.enableParaphraseDetection && analysis.paraphrasedVerses.length > 0) {
-                  console.log(
-                    "[SmartVerses][Remote][Paraphrase] AI analysis returned:",
-                    analysis.paraphrasedVerses.length,
-                    "paraphrased verse(s)"
-                  );
-
-                  const resolvedRefs = await resolveParaphrasedVerses(analysis.paraphrasedVerses);
-                  if (resolvedRefs.length > 0) {
-                    console.log("[SmartVerses][Remote][Paraphrase] Resolved refs:", resolvedRefs.map(r => r.displayRef));
-                    const resolvedWithTranscript = resolvedRefs.map((r) => ({
-                      ...r,
-                      transcriptText: m.text,
-                    }));
-
-                    // De-dupe against recent refs
-                    const recent = detectedReferencesRef.current.slice(-5);
-                    const recentKeys = new Set(
-                      recent.map((r) => (r.displayRef || "").trim().toLowerCase())
+              // Try offline paraphrase detection first (if enabled)
+              if (allowOfflineParaphrase) {
+                try {
+                  const offlineAnalysis = await analyzeTranscriptChunkOffline(m.text, {
+                    minConfidence: settings.paraphraseConfidenceThreshold,
+                    maxResults: 3,
+                  });
+                  if (offlineAnalysis.paraphrasedVerses.length > 0) {
+                    console.log(
+                      "[SmartVerses][Remote][Paraphrase] Offline matches:",
+                      offlineAnalysis.paraphrasedVerses.length
                     );
-                    const deduped = resolvedWithTranscript.filter(
-                      (r) => !recentKeys.has((r.displayRef || "").trim().toLowerCase())
+                    const resolvedRefs = await resolveParaphrasedVerses(
+                      offlineAnalysis.paraphrasedVerses
                     );
-
+                    const deduped = applyParaphraseDetections(
+                      resolvedRefs,
+                      m.text,
+                      "Offline"
+                    );
+                    offlineParaphraseCount = deduped.length;
                     if (deduped.length > 0) {
-                      setDetectedReferences((prev) => [...prev, ...deduped]);
                       scriptureReferences = Array.from(
                         new Set([
                           ...scriptureReferences,
                           ...deduped.map((r) => (r.displayRef || "").trim()).filter(Boolean),
                         ])
                       );
-
-                      if (settings.autoAddDetectedToHistory) {
-                        setChatHistory((prev) => [
-                          ...prev,
-                          {
-                            id: `paraphrase-${Date.now()}`,
-                            type: "result",
-                            content: `Paraphrase detected (${Math.round((deduped[0].confidence || 0) * 100)}% confidence)`,
-                            timestamp: Date.now(),
-                            references: deduped,
-                          },
-                        ]);
-                      }
-
-                      if (settings.autoTriggerOnDetection) {
-                        handleGoLive(deduped[0]);
-                      }
                     }
                   }
+                } catch (offlineError) {
+                  console.error("[SmartVerses][Remote] Offline paraphrase failed:", offlineError);
                 }
-              } catch (aiError) {
-                console.error("[SmartVerses][Remote] AI analysis failed:", aiError);
+              }
+
+              // AI analysis (paraphrase detection and/or key point extraction)
+              const shouldRunAI =
+                settings.enableKeyPointExtraction ||
+                (allowAIParaphrase && offlineParaphraseCount === 0);
+
+              if (shouldRunAI) {
+                console.log("[SmartVerses][Remote] Invoking AI analysis...");
+                try {
+                  const analysis = await analyzeTranscriptChunk(
+                    m.text,
+                    appSettings,
+                    allowAIParaphrase && offlineParaphraseCount === 0,
+                    settings.enableKeyPointExtraction,
+                    {
+                      keyPointInstructions: settings.keyPointExtractionInstructions,
+                      overrideProvider: settings.bibleSearchProvider,
+                      overrideModel: settings.bibleSearchModel,
+                      minParaphraseConfidence: settings.paraphraseConfidenceThreshold,
+                      maxParaphraseResults: 3,
+                    }
+                  );
+
+                  if (analysis.keyPoints?.length) {
+                    keyPoints = analysis.keyPoints;
+                    setTranscriptKeyPoints((prev) => ({
+                      ...prev,
+                      [segment.id]: keyPoints,
+                    }));
+                  }
+
+                  if (allowAIParaphrase && analysis.paraphrasedVerses.length > 0) {
+                    console.log(
+                      "[SmartVerses][Remote][Paraphrase] AI analysis returned:",
+                      analysis.paraphrasedVerses.length,
+                      "paraphrased verse(s)"
+                    );
+
+                    const resolvedRefs = await resolveParaphrasedVerses(
+                      analysis.paraphrasedVerses
+                    );
+                    const deduped = applyParaphraseDetections(resolvedRefs, m.text);
+                    if (deduped.length > 0) {
+                      scriptureReferences = Array.from(
+                        new Set([
+                          ...scriptureReferences,
+                          ...deduped.map((r) => (r.displayRef || "").trim()).filter(Boolean),
+                        ])
+                      );
+                    }
+                  }
+                } catch (aiError) {
+                  console.error("[SmartVerses][Remote] AI analysis failed:", aiError);
+                }
               }
             }
 
@@ -1279,6 +1347,7 @@ const SmartVersesPage: React.FC = () => {
       setTranscriptionStatus("error");
     }
   }, [
+    applyParaphraseDetections,
     emitTranscriptionStream,
     settings.remoteTranscriptionHost,
     settings.remoteTranscriptionPort,
@@ -1422,79 +1491,90 @@ const SmartVersesPage: React.FC = () => {
                 handleGoLive(directRefs[0]);
               }
             } else if (settings.enableParaphraseDetection || settings.enableKeyPointExtraction) {
-              // Try AI analysis (paraphrase detection and/or key point extraction)
-              console.log("[SmartVerses][AI] No direct refs found; invoking AI analysis...");
-              const analysis = await analyzeTranscriptChunk(
-                text,
-                appSettings,
-                settings.enableParaphraseDetection,
-                settings.enableKeyPointExtraction,
-                {
-                  keyPointInstructions: settings.keyPointExtractionInstructions,
-                  overrideProvider: settings.bibleSearchProvider,
-                  overrideModel: settings.bibleSearchModel,
+              const paraphraseMode = settings.paraphraseDetectionMode || "hybrid";
+              const allowOfflineParaphrase =
+                settings.enableParaphraseDetection && paraphraseMode !== "ai";
+              const allowAIParaphrase =
+                settings.enableParaphraseDetection && paraphraseMode !== "offline";
+              let offlineParaphraseCount = 0;
+
+              if (allowOfflineParaphrase) {
+                try {
+                  const offlineAnalysis = await analyzeTranscriptChunkOffline(text, {
+                    minConfidence: settings.paraphraseConfidenceThreshold,
+                    maxResults: 3,
+                  });
+                  if (offlineAnalysis.paraphrasedVerses.length > 0) {
+                    console.log(
+                      "[SmartVerses][Paraphrase] Offline matches:",
+                      offlineAnalysis.paraphrasedVerses.length
+                    );
+                    const resolvedRefs = await resolveParaphrasedVerses(
+                      offlineAnalysis.paraphrasedVerses
+                    );
+                    const deduped = applyParaphraseDetections(
+                      resolvedRefs,
+                      text,
+                      "Offline"
+                    );
+                    offlineParaphraseCount = deduped.length;
+                    if (deduped.length > 0) {
+                      scriptureReferences = Array.from(
+                        new Set(
+                          deduped.map((r) => (r.displayRef || "").trim()).filter(Boolean)
+                        )
+                      );
+                    }
+                  }
+                } catch (offlineError) {
+                  console.error("[SmartVerses] Offline paraphrase failed:", offlineError);
                 }
-              );
-              keyPoints = analysis.keyPoints || [];
-              if (keyPoints.length > 0) {
-                setTranscriptKeyPoints((prev) => ({
-                  ...prev,
-                  [segment.id]: keyPoints,
-                }));
               }
 
-              console.log(
-                "[SmartVerses][Paraphrase] AI analysis returned:",
-                analysis.paraphrasedVerses.length,
-                "paraphrased verse(s)"
-              );
+              const shouldRunAI =
+                settings.enableKeyPointExtraction ||
+                (allowAIParaphrase && offlineParaphraseCount === 0);
 
-              if (settings.enableParaphraseDetection && analysis.paraphrasedVerses.length > 0) {
-                const resolvedRefs = await resolveParaphrasedVerses(analysis.paraphrasedVerses);
-                if (resolvedRefs.length > 0) {
-                  console.log("[SmartVerses][Paraphrase] Resolved refs:", resolvedRefs.map(r => r.displayRef));
-                  // Attach paraphrase-detected refs to the same transcript segment so the UI can
-                  // display them inline under that segment (same behavior as direct refs).
-                  const resolvedWithTranscript = resolvedRefs.map((r) => ({
-                    ...r,
-                    transcriptText: text,
+              if (shouldRunAI) {
+                console.log("[SmartVerses][AI] Invoking AI analysis...");
+                const analysis = await analyzeTranscriptChunk(
+                  text,
+                  appSettings,
+                  allowAIParaphrase && offlineParaphraseCount === 0,
+                  settings.enableKeyPointExtraction,
+                  {
+                    keyPointInstructions: settings.keyPointExtractionInstructions,
+                    overrideProvider: settings.bibleSearchProvider,
+                    overrideModel: settings.bibleSearchModel,
+                    minParaphraseConfidence: settings.paraphraseConfidenceThreshold,
+                    maxParaphraseResults: 3,
+                  }
+                );
+                keyPoints = analysis.keyPoints || [];
+                if (keyPoints.length > 0) {
+                  setTranscriptKeyPoints((prev) => ({
+                    ...prev,
+                    [segment.id]: keyPoints,
                   }));
+                }
 
-                  // De-dupe: if the last few detected references already include this same verse,
-                  // don't show it again as a paraphrase (common when someone says the ref, then reads it).
-                  const recent = detectedReferencesRef.current.slice(-5);
-                  const recentKeys = new Set(
-                    recent.map((r) => (r.displayRef || "").trim().toLowerCase())
-                  );
-                  const deduped = resolvedWithTranscript.filter(
-                    (r) => !recentKeys.has((r.displayRef || "").trim().toLowerCase())
+                if (allowAIParaphrase && analysis.paraphrasedVerses.length > 0) {
+                  console.log(
+                    "[SmartVerses][Paraphrase] AI analysis returned:",
+                    analysis.paraphrasedVerses.length,
+                    "paraphrased verse(s)"
                   );
 
-                  if (deduped.length !== resolvedWithTranscript.length) {
-                    console.log(
-                      "[SmartVerses][Paraphrase] De-duped paraphrase refs:",
-                      resolvedWithTranscript.length - deduped.length,
-                      "filtered out"
-                    );
-                  }
-
+                  const resolvedRefs = await resolveParaphrasedVerses(
+                    analysis.paraphrasedVerses
+                  );
+                  const deduped = applyParaphraseDetections(resolvedRefs, text);
                   if (deduped.length > 0) {
-                    setDetectedReferences(prev => [...prev, ...deduped]);
                     scriptureReferences = Array.from(
-                      new Set(deduped.map((r) => (r.displayRef || "").trim()).filter(Boolean))
+                      new Set(
+                        deduped.map((r) => (r.displayRef || "").trim()).filter(Boolean)
+                      )
                     );
-                  }
-                  
-                  if (settings.autoAddDetectedToHistory) {
-                    if (deduped.length > 0) {
-                      setChatHistory(prev => [...prev, {
-                        id: `paraphrase-${Date.now()}`,
-                        type: "result",
-                        content: `Paraphrase detected (${Math.round((deduped[0].confidence || 0) * 100)}% confidence)`,
-                        timestamp: Date.now(),
-                        references: deduped,
-                      }]);
-                    }
                   }
                 }
               }
@@ -1566,7 +1646,7 @@ const SmartVersesPage: React.FC = () => {
       setTranscriptionStatus("error");
       alert(`Failed to start transcription: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
-  }, [settings, appSettings, handleGoLive, emitTranscriptionStream]);
+  }, [settings, appSettings, handleGoLive, applyParaphraseDetections, emitTranscriptionStream]);
 
   const handleStopTranscription = useCallback(async () => {
     setIsStopping(true);

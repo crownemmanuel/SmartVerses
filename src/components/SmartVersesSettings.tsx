@@ -1148,6 +1148,29 @@ const SmartVersesSettings: React.FC = () => {
           </p>
         </div>
 
+        {settings.enableParaphraseDetection && (
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Paraphrase Detection Mode</label>
+            <select
+              value={settings.paraphraseDetectionMode || "hybrid"}
+              onChange={(e) =>
+                handleChange("paraphraseDetectionMode", e.target.value)
+              }
+              style={inputStyle}
+            >
+              <option value="hybrid">Hybrid (offline first, AI fallback)</option>
+              <option value="offline">Offline only</option>
+              <option value="ai">AI only</option>
+            </select>
+            <p style={helpTextStyle}>
+              Hybrid mode uses offline matching first and only calls AI if no
+              matches are found. Key point extraction still requires AI. For
+              best offline accuracy, download the embedding model in Manage
+              Models.
+            </p>
+          </div>
+        )}
+
         <div style={fieldStyle}>
           <label style={checkboxLabelStyle}>
             <input
