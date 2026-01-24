@@ -599,12 +599,38 @@ const SmartVersesPage: React.FC = () => {
       
       let searchMethod = "direct";
 
-      // STEP 2: If no direct references found, try secondary search
+      // STEP 2: If still no references found, try AI/offline/text search
       if (references.length === 0) {
         if (isAISearchEnabled) {
           // Check if AI is properly configured
-          const provider = settings.bibleSearchProvider || appSettings.defaultAIProvider;
+          const explicitProvider = settings.bibleSearchProvider;
+          const provider = explicitProvider || appSettings.defaultAIProvider;
           const model = settings.bibleSearchModel;
+
+          if (explicitProvider === "offline") {
+            console.log("🧠 Step 2: Offline paraphrase match");
+            const offlineAnalysis = await analyzeTranscriptChunkOffline(query, {
+              minConfidence: settings.bibleSearchConfidenceThreshold ?? 0.6,
+              maxResults: 5,
+              candidateLimit: 120,
+            });
+
+            if (offlineAnalysis.paraphrasedVerses.length > 0) {
+              searchMethod = "offline";
+              references = await resolveParaphrasedVerses(
+                offlineAnalysis.paraphrasedVerses
+              );
+              console.log(
+                "🧠 Offline paraphrase found:",
+                references.length,
+                "references"
+              );
+            } else {
+              console.log("📝 Offline paraphrase empty, falling back to text search");
+              searchMethod = "text";
+              references = await searchBibleTextAsReferences(query, 5);
+            }
+          } else {
           
           // Check for API key based on provider
           let hasApiKey = false;
@@ -612,24 +638,25 @@ const SmartVersesPage: React.FC = () => {
           else if (provider === 'gemini') hasApiKey = !!appSettings.geminiConfig?.apiKey;
           else if (provider === 'groq') hasApiKey = !!appSettings.groqConfig?.apiKey;
           
-          if (provider && hasApiKey) {
-            // Use AI search with configured provider/model
-            console.log("🤖 Step 2: AI search with", provider, model || "(default model)");
-            searchMethod = "ai";
-            references = await searchBibleWithAI(
-              query, 
-              appSettings,
-              provider as 'openai' | 'gemini' | 'groq',
-              model
-            );
-            console.log("🤖 AI search found:", references.length, "references");
-          } else {
-            console.warn("⚠️ AI search enabled but not configured. Provider:", provider, "Has API key:", hasApiKey);
-            // Fall back to text search
-            console.log("📝 Falling back to text search (AI not properly configured)");
-            searchMethod = "text";
-            references = await searchBibleTextAsReferences(query, 5);
-            console.log("📝 Text search found:", references.length, "references");
+            if (provider && hasApiKey) {
+              // Use AI search with configured provider/model
+              console.log("🤖 Step 2: AI search with", provider, model || "(default model)");
+              searchMethod = "ai";
+              references = await searchBibleWithAI(
+                query,
+                appSettings,
+                provider as 'openai' | 'gemini' | 'groq',
+                model
+              );
+              console.log("🤖 AI search found:", references.length, "references");
+            } else {
+              console.warn("⚠️ AI search enabled but not configured. Provider:", provider, "Has API key:", hasApiKey);
+              // Fall back to text search
+              console.log("📝 Falling back to text search (AI not properly configured)");
+              searchMethod = "text";
+              references = await searchBibleTextAsReferences(query, 5);
+              console.log("📝 Text search found:", references.length, "references");
+            }
           }
         } else {
           // Use text search (FlexSearch) as fallback
@@ -654,8 +681,11 @@ const SmartVersesPage: React.FC = () => {
         } else {
           // Build helpful error message
           let errorMsg = "No verses found for your search.";
+          const providerForMessage = settings.bibleSearchProvider;
           if (!isAISearchEnabled) {
             errorMsg += " Try enabling AI Search below for better results.";
+          } else if (searchMethod === "text" && providerForMessage === "offline") {
+            errorMsg += " Offline search didn't find a match. Try lowering the confidence threshold or switch to an AI provider.";
           } else if (searchMethod === "text") {
             errorMsg += " AI Search is enabled but not configured. Go to Settings → SmartVerses to configure your AI provider.";
           } else {
@@ -1234,6 +1264,7 @@ const SmartVersesPage: React.FC = () => {
                   const offlineAnalysis = await analyzeTranscriptChunkOffline(m.text, {
                     minConfidence: settings.paraphraseConfidenceThreshold,
                     maxResults: 3,
+                    candidateLimit: 160,
                   });
                   if (offlineAnalysis.paraphrasedVerses.length > 0) {
                     console.log(
@@ -1278,7 +1309,10 @@ const SmartVersesPage: React.FC = () => {
                     settings.enableKeyPointExtraction,
                     {
                       keyPointInstructions: settings.keyPointExtractionInstructions,
-                      overrideProvider: settings.bibleSearchProvider,
+                      overrideProvider:
+                        settings.bibleSearchProvider === "offline"
+                          ? undefined
+                          : settings.bibleSearchProvider,
                       overrideModel: settings.bibleSearchModel,
                       minParaphraseConfidence: settings.paraphraseConfidenceThreshold,
                       maxParaphraseResults: 3,
@@ -1503,6 +1537,7 @@ const SmartVersesPage: React.FC = () => {
                   const offlineAnalysis = await analyzeTranscriptChunkOffline(text, {
                     minConfidence: settings.paraphraseConfidenceThreshold,
                     maxResults: 3,
+                    candidateLimit: 160,
                   });
                   if (offlineAnalysis.paraphrasedVerses.length > 0) {
                     console.log(
@@ -1544,7 +1579,10 @@ const SmartVersesPage: React.FC = () => {
                   settings.enableKeyPointExtraction,
                   {
                     keyPointInstructions: settings.keyPointExtractionInstructions,
-                    overrideProvider: settings.bibleSearchProvider,
+                    overrideProvider:
+                      settings.bibleSearchProvider === "offline"
+                        ? undefined
+                        : settings.bibleSearchProvider,
                     overrideModel: settings.bibleSearchModel,
                     minParaphraseConfidence: settings.paraphraseConfidenceThreshold,
                     maxParaphraseResults: 3,
@@ -2510,13 +2548,23 @@ const SmartVersesPage: React.FC = () => {
               }
               
               // Check if AI is configured
-              const provider = settings.bibleSearchProvider || appSettings.defaultAIProvider;
+              const explicitProvider = settings.bibleSearchProvider;
+              const provider = explicitProvider || appSettings.defaultAIProvider;
               let hasApiKey = false;
               if (provider === 'openai') hasApiKey = !!appSettings.openAIConfig?.apiKey;
               else if (provider === 'gemini') hasApiKey = !!appSettings.geminiConfig?.apiKey;
               else if (provider === 'groq') hasApiKey = !!appSettings.groqConfig?.apiKey;
               
-              if (provider && hasApiKey) {
+              if (explicitProvider === "offline") {
+                return (
+                  <span style={{
+                    fontSize: "0.75rem",
+                    color: "var(--success)",
+                  }}>
+                    ✓ Local on-device search
+                  </span>
+                );
+              } else if (provider && hasApiKey) {
                 return (
                   <span style={{
                     fontSize: "0.75rem",

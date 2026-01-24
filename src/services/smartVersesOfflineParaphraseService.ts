@@ -13,12 +13,12 @@ import { configureTransformersEnv } from "../utils/transformersEnv";
 import { supportsWebGPU } from "./offlineModelService";
 
 const DEFAULT_EMBEDDING_MODEL_ID = "Xenova/all-MiniLM-L6-v2";
-const DEFAULT_MIN_WORDS = 6;
+const DEFAULT_MIN_WORDS = 4;
 const DEFAULT_MAX_RESULTS = 3;
-const DEFAULT_CANDIDATE_LIMIT = 60;
-const DEFAULT_MAX_WINDOWS = 10;
-const WINDOW_MIN_WORDS = 6;
-const WINDOW_MAX_WORDS = 20;
+const DEFAULT_CANDIDATE_LIMIT = 120;
+const DEFAULT_MAX_WINDOWS = 16;
+const WINDOW_MIN_WORDS = 4;
+const WINDOW_MAX_WORDS = 18;
 
 const STOP_WORDS = new Set([
   "a", "an", "the", "and", "or", "but", "if", "then", "so", "than", "that", "this",
@@ -113,7 +113,7 @@ function buildTextWindows(text: string): TextWindow[] {
       continue;
     }
 
-    const step = Math.max(6, Math.floor(WINDOW_MAX_WORDS / 2));
+    const step = Math.max(4, Math.floor(WINDOW_MAX_WORDS / 3));
     for (let i = 0; i < words.length; i += step) {
       const slice = words.slice(i, i + WINDOW_MAX_WORDS);
       if (slice.length < WINDOW_MIN_WORDS) break;
@@ -158,6 +158,23 @@ function buildKeywordQuery(tokens: string[], maxTokens = 8): string {
     return b[0].length - a[0].length;
   });
   return sorted.slice(0, maxTokens).map(([token]) => token).join(" ");
+}
+
+function buildKeywordQueryByLength(tokens: string[], maxTokens = 6): string {
+  if (!tokens.length) return "";
+  const unique = Array.from(new Set(tokens));
+  const sorted = unique.sort((a, b) => b.length - a.length);
+  return sorted.slice(0, maxTokens).join(" ");
+}
+
+function buildBigramQuery(bigrams: string[], maxBigrams = 3): string {
+  if (!bigrams.length) return "";
+  const counts = new Map<string, number>();
+  for (const bigram of bigrams) {
+    counts.set(bigram, (counts.get(bigram) || 0) + 1);
+  }
+  const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  return sorted.slice(0, maxBigrams).map(([bigram]) => bigram).join(" ");
 }
 
 function getTokenDataForVerse(reference: string, text: string): { tokens: string[]; bigrams: string[] } {
@@ -275,20 +292,39 @@ async function getVerseEmbedding(reference: string, text: string): Promise<Float
   return promise;
 }
 
-async function collectCandidates(windows: TextWindow[], limit: number): Promise<Map<string, Awaited<ReturnType<typeof searchBibleText>>[number]>> {
+async function collectCandidates(
+  windows: TextWindow[],
+  limit: number
+): Promise<Map<string, Awaited<ReturnType<typeof searchBibleText>>[number]>> {
   const candidates = new Map<string, Awaited<ReturnType<typeof searchBibleText>>[number]>();
-  const queries = new Set<string>();
+  const queries = new Map<string, { suggest: boolean }>();
+  const maxCandidates = Math.max(30, limit);
+  const perQueryLimit = Math.max(20, Math.floor(limit / 4));
 
   for (const window of windows) {
-    const query = buildKeywordQuery(window.tokens);
-    if (query) queries.add(query);
+    const freqQuery = buildKeywordQuery(window.tokens);
+    if (freqQuery) {
+      queries.set(freqQuery, { suggest: false });
+    }
+
+    const lengthQuery = buildKeywordQueryByLength(window.tokens);
+    if (lengthQuery) {
+      queries.set(lengthQuery, { suggest: true });
+    }
+
+    const bigramQuery = buildBigramQuery(window.bigrams);
+    if (bigramQuery) {
+      queries.set(bigramQuery, { suggest: true });
+    }
   }
 
-  for (const query of queries) {
-    const results = await searchBibleText(query, limit);
+  for (const [query, meta] of queries.entries()) {
+    if (candidates.size >= maxCandidates) break;
+    const results = await searchBibleText(query, perQueryLimit, { suggest: meta.suggest });
     for (const result of results) {
       if (!candidates.has(result.reference)) {
         candidates.set(result.reference, result);
+        if (candidates.size >= maxCandidates) break;
       }
     }
   }
@@ -377,11 +413,11 @@ export async function analyzeTranscriptChunkOffline(
       }
 
       const score = embeddingEnabled
-        ? normalizeScore(0.6 * semanticScore + 0.4 * lexicalScore)
+        ? normalizeScore(0.7 * semanticScore + 0.3 * lexicalScore)
         : lexicalScore;
 
-      const overlapGate = overlap >= 3 || bigramScore >= 0.2;
-      const semanticGate = embeddingEnabled ? semanticScore >= 0.7 : false;
+      const overlapGate = overlap >= 2 || bigramScore >= 0.15;
+      const semanticGate = embeddingEnabled ? semanticScore >= 0.62 : false;
       if (!overlapGate && !semanticGate) continue;
 
       if (score > bestScore) {

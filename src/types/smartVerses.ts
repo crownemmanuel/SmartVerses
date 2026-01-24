@@ -253,8 +253,9 @@ export interface SmartVersesSettings {
   
   // AI Search settings
   enableAISearch: boolean;
-  bibleSearchProvider?: 'openai' | 'gemini' | 'groq';
+  bibleSearchProvider?: 'openai' | 'gemini' | 'groq' | 'offline';
   bibleSearchModel?: string;
+  bibleSearchConfidenceThreshold?: number; // Default 0.6 (offline search)
   
   // AI Detection settings (for transcription)
   enableParaphraseDetection: boolean;
@@ -304,6 +305,7 @@ export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
   enableAISearch: false, // Off by default - uses text search instead
   bibleSearchProvider: 'groq',
   bibleSearchModel: 'llama-3.3-70b-versatile',
+  bibleSearchConfidenceThreshold: 0.6,
   enableParaphraseDetection: true,
   paraphraseDetectionMode: 'hybrid',
   enableKeyPointExtraction: false,

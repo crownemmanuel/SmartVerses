@@ -114,7 +114,8 @@ async function initializeIndex(): Promise<void> {
  */
 export async function searchBibleText(
   query: string,
-  limit: number = 10
+  limit: number = 10,
+  options?: { suggest?: boolean }
 ): Promise<SearchResult[]> {
   await initializeIndex();
   
@@ -125,7 +126,10 @@ export async function searchBibleText(
   const results: SearchResult[] = [];
   
   try {
-    const searchResults = searchIndex.search(query, { limit }) as Array<{ result: string[] }>;
+    const searchResults = searchIndex.search(query, {
+      limit,
+      suggest: options?.suggest ?? false,
+    }) as Array<{ result: string[] }>;
     
     // FlexSearch returns an array with field results
     for (const fieldResult of searchResults) {

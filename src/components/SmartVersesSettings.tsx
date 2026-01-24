@@ -197,6 +197,8 @@ const SmartVersesSettings: React.FC = () => {
       available.push({ value: "groq", label: "Groq (Recommended - Super Fast)" });
     }
 
+    available.push({ value: "offline", label: "Offline (Local Paraphrase)" });
+
     return available;
   }, []);
 
@@ -215,6 +217,9 @@ const SmartVersesSettings: React.FC = () => {
           break;
         case "groq":
           hasApiKey = !!appSettings.groqConfig?.apiKey;
+          break;
+        case "offline":
+          hasApiKey = true;
           break;
       }
 
@@ -286,6 +291,9 @@ const SmartVersesSettings: React.FC = () => {
             // Show default models when no API key
             models = DEFAULT_MODELS.groq;
           }
+          break;
+        case "offline":
+          models = [];
           break;
       }
       
@@ -1046,8 +1054,8 @@ const SmartVersesSettings: React.FC = () => {
           </h4>
           <p style={{ ...helpTextStyle, marginBottom: "var(--spacing-3)" }}>
             When enabled, AI will search for Bible verses when direct reference
-            parsing fails. Configure the provider and model below. API keys are
-            configured in Settings → AI Configuration.
+            parsing fails. You can also select Offline to use local paraphrase
+            matching instead. API keys are configured in Settings → AI Configuration.
           </p>
 
           <div
@@ -1088,12 +1096,16 @@ const SmartVersesSettings: React.FC = () => {
                     handleChange("bibleSearchModel", e.target.value)
                   }
                   disabled={
-                    !settings.bibleSearchProvider || bibleSearchModelsLoading
+                    !settings.bibleSearchProvider ||
+                    settings.bibleSearchProvider === "offline" ||
+                    bibleSearchModelsLoading
                   }
                   style={inputStyle}
                 >
                   <option value="">
-                    {bibleSearchModelsLoading
+                    {settings.bibleSearchProvider === "offline"
+                      ? "Not required for offline"
+                      : bibleSearchModelsLoading
                       ? "Loading models..."
                       : "Select Model"}
                   </option>
@@ -1128,6 +1140,41 @@ const SmartVersesSettings: React.FC = () => {
             >
               Select a provider and model to enable AI Bible search.
             </p>
+          )}
+
+          {settings.bibleSearchProvider === "offline" && (
+            <div style={{ ...fieldStyle, marginTop: "var(--spacing-4)" }}>
+              <label style={labelStyle}>Offline Search Confidence Threshold</label>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--spacing-3)",
+                }}
+              >
+                <input
+                  type="range"
+                  min="0.3"
+                  max="0.9"
+                  step="0.05"
+                  value={settings.bibleSearchConfidenceThreshold ?? 0.6}
+                  onChange={(e) =>
+                    handleChange(
+                      "bibleSearchConfidenceThreshold",
+                      parseFloat(e.target.value)
+                    )
+                  }
+                  style={{ flex: 1 }}
+                />
+                <span style={{ minWidth: "50px", textAlign: "right" }}>
+                  {Math.round((settings.bibleSearchConfidenceThreshold ?? 0.6) * 100)}%
+                </span>
+              </div>
+              <p style={helpTextStyle}>
+                Controls the minimum confidence for offline Bible search results.
+                This does not affect AI search or live transcription.
+              </p>
+            </div>
           )}
         </div>
 
