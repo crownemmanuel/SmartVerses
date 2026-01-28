@@ -6,8 +6,8 @@ import { Icon } from 'astro-icon/components';
   <div class="mx-auto max-w-7xl px-6">
     <!-- Section Header -->
     <div class="text-center mb-16 md:mb-24">
-      <p class="text-sm font-semibold tracking-widest text-zinc-500 uppercase mb-4">Everything you need</p>
-      <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-zinc-900">
+      <p class="text-sm font-semibold tracking-widest text-zinc-500 dark:text-zinc-400 uppercase mb-4">Everything you need</p>
+      <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-zinc-900 dark:text-white">
         Powerful features,<br />
         <span class="bg-gradient-to-r from-blue-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent">endless possibilities</span>
       </h2>
@@ -15,24 +15,24 @@ import { Icon } from 'astro-icon/components';
 
     <!-- AI Hero Section - Now Light -->
     <div class="relative mb-8">
-      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-50 via-blue-50 to-fuchsia-50 border border-violet-100 p-8 md:p-12 lg:p-16">
+      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-50 via-blue-50 to-fuchsia-50 dark:from-violet-950/40 dark:via-blue-950/30 dark:to-fuchsia-950/40 border border-violet-100 dark:border-violet-500/20 p-8 md:p-12 lg:p-16">
         <!-- Animated gradient orbs -->
         <div class="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-400/20 to-violet-400/20 rounded-full blur-3xl"></div>
         <div class="absolute bottom-0 left-0 w-72 h-72 bg-gradient-to-tr from-fuchsia-400/15 to-pink-400/15 rounded-full blur-3xl"></div>
 
         <div class="relative z-10 grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
           <div>
-            <h3 class="text-3xl md:text-4xl font-bold text-zinc-900 mb-4">
+            <h3 class="text-3xl md:text-4xl font-bold text-zinc-900 dark:text-white mb-4">
               AI that understands your workflow
             </h3>
-            <p class="text-lg text-zinc-600 leading-relaxed mb-8">
+            <p class="text-lg text-zinc-600 dark:text-zinc-300 leading-relaxed mb-8">
               From OpenAI to Gemini to Groq — choose your AI provider. Our intelligent processing splits content perfectly,
               extracts schedules from images, detects Bible verses in speech, and automates proofreading.
               All with a natural language assistant at your fingertips.
             </p>
             <div class="flex flex-wrap gap-3">
               {['OpenAI', 'Google Gemini', 'Groq', 'AssemblyAI'].map((provider) => (
-                <span class="px-3 py-1.5 rounded-lg bg-white/80 border border-violet-200 text-sm text-zinc-700 shadow-sm">
+                <span class="px-3 py-1.5 rounded-lg bg-white/80 dark:bg-white/10 border border-violet-200 dark:border-violet-500/30 text-sm text-zinc-700 dark:text-white shadow-sm">
                   {provider}
                 </span>
               ))}
@@ -47,12 +47,12 @@ import { Icon } from 'astro-icon/components';
               { icon: 'ph:image-bold', label: 'Image Extract', desc: 'Schedule from photos' },
               { icon: 'ph:sparkle-bold', label: 'Auto Proofread', desc: 'Smart corrections' },
             ].map((item) => (
-              <div class="group/card p-4 rounded-2xl bg-white/70 border border-violet-100 hover:bg-white hover:border-violet-200 hover:shadow-lg transition-all duration-300">
+              <div class="group/card p-4 rounded-2xl bg-white/70 dark:bg-white/5 border border-violet-100 dark:border-violet-500/20 hover:bg-white dark:hover:bg-white/10 hover:border-violet-200 dark:hover:border-violet-500/30 hover:shadow-lg transition-all duration-300">
                 <div class="size-10 rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center mb-3 shadow-lg shadow-violet-500/25">
                   <Icon name={item.icon} class="size-5 text-white" />
                 </div>
-                <p class="font-medium text-zinc-900 text-sm">{item.label}</p>
-                <p class="text-xs text-zinc-500">{item.desc}</p>
+                <p class="font-medium text-zinc-900 dark:text-white text-sm">{item.label}</p>
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -64,7 +64,7 @@ import { Icon } from 'astro-icon/components';
     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
 
       <!-- Live Collaboration - Wide & Interactive -->
-      <div class="md:col-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 p-8" id="collab-card">
+      <div class="md:col-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 border border-emerald-100 dark:border-emerald-500/20 p-8" id="collab-card">
         <div class="absolute top-4 right-4 flex gap-1">
           <span class="size-3 rounded-full bg-emerald-400 animate-pulse"></span>
           <span class="size-3 rounded-full bg-emerald-300 animate-pulse" style="animation-delay: 150ms"></span>
@@ -75,13 +75,13 @@ import { Icon } from 'astro-icon/components';
             <div class="size-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/25">
               <Icon name="ph:users-three-bold" class="size-7 text-white" />
             </div>
-            <h3 class="text-2xl font-bold text-zinc-900 mb-2">Real-time Collaboration</h3>
-            <p class="text-zinc-600 leading-relaxed transition-all duration-300" id="collab-description">
+            <h3 class="text-2xl font-bold text-zinc-900 dark:text-white mb-2">Real-time Collaboration</h3>
+            <p class="text-zinc-600 dark:text-zinc-300 leading-relaxed transition-all duration-300" id="collab-description">
               WebSocket-powered Live Slides let your team edit from any browser. Share URLs, sync across devices,
               and see changes instantly. Perfect for remote teams and distributed workflows.
             </p>
           </div>
-          <div class="flex items-center gap-3 md:flex-col" id="collab-tags">
+          <div class="flex flex-wrap items-center gap-3 md:flex-col" id="collab-tags">
             <button
               data-collab="live-slides"
               class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-500 bg-emerald-500 text-white text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
@@ -90,13 +90,13 @@ import { Icon } from 'astro-icon/components';
             </button>
             <button
               data-collab="network-sync"
-              class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
+              class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
             >
               Network Sync
             </button>
             <button
               data-collab="remote-access"
-              class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
+              class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
             >
               Remote Access
             </button>
@@ -105,13 +105,13 @@ import { Icon } from 'astro-icon/components';
       </div>
 
       <!-- SmartVerses - Tall -->
-      <div class="md:row-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-b from-amber-50 via-orange-50 to-rose-50 border border-amber-100 p-8">
+      <div class="md:row-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-b from-amber-50 via-orange-50 to-rose-50 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-rose-950/30 border border-amber-100 dark:border-amber-500/20 p-8">
         <div class="h-full flex flex-col">
           <div class="size-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center mb-6 shadow-lg shadow-amber-500/25">
             <Icon name="ph:book-open-text-bold" class="size-7 text-white" />
           </div>
-          <h3 class="text-2xl font-bold text-zinc-900 mb-3">SmartVerses</h3>
-          <p class="text-zinc-600 leading-relaxed mb-6">
+          <h3 class="text-2xl font-bold text-zinc-900 dark:text-white mb-3">SmartVerses</h3>
+          <p class="text-zinc-600 dark:text-zinc-300 leading-relaxed mb-6">
             Revolutionary Bible tools powered by AI. Detect verses spoken in sermons, find paraphrased references,
             and display scripture instantly.
           </p>
@@ -124,9 +124,9 @@ import { Icon } from 'astro-icon/components';
             ].map((item) => (
               <div class="flex items-center gap-3 text-sm">
                 <div class="size-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                  <Icon name={item.icon} class="size-4 text-amber-600" />
+                  <Icon name={item.icon} class="size-4 text-amber-600 dark:text-amber-400" />
                 </div>
-                <span class="text-zinc-700">{item.text}</span>
+                <span class="text-zinc-700 dark:text-white">{item.text}</span>
               </div>
             ))}
           </div>
@@ -134,7 +134,7 @@ import { Icon } from 'astro-icon/components';
       </div>
 
       <!-- Stage Assist -->
-      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 p-8">
+      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/30 border border-blue-100 dark:border-blue-500/20 p-8">
         <div class="size-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/25">
           <Icon name="ph:timer-bold" class="size-6 text-white" />
         </div>
@@ -331,7 +331,7 @@ import { Icon } from 'astro-icon/components';
         if (c === collab) {
           b.className = 'collab-tag px-4 py-2 rounded-full border-2 border-emerald-500 bg-emerald-500 text-white text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer';
         } else {
-          b.className = 'collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer';
+          b.className = 'collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer';
         }
       });
 
