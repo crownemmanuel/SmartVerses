@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://proassist.app/sitemap-index.xml

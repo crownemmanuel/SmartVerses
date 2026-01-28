@@ -9,6 +9,36 @@ import Footer from '../components/sections/Footer.astro';
 ---
 
 <Layout title="ProAssist - AI-Powered Automation for ProPresenter">
+  <script type="application/ld+json" slot="head">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "ProAssist",
+      "operatingSystem": "Windows, macOS, Linux",
+      "applicationCategory": "MultimediaApplication, UtilitiesApplication",
+      "description": "AI-powered automation tool for ProPresenter, featuring live transcription, Bible verse detection, and real-time collaboration for worship teams.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "Emmanuel Crown",
+        "url": "https://github.com/crownemmanuel"
+      },
+      "softwareVersion": "0.0.1",
+      "featureList": [
+        "AI Slide Generation",
+        "Live Transcription",
+        "Smart Bible Verse Detection",
+        "Schedule Automation",
+        "Multi-Device Sync",
+        "ProPresenter Remote Control"
+      ],
+      "url": "https://proassist.app"
+    }
+  </script>
   <div class="min-h-screen bg-background">
     <div class="relative z-10">
       <Header />

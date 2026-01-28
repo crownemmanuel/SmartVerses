@@ -2,9 +2,19 @@
 interface Props {
   title: string;
   description?: string;
+  image?: string;
+  canonicalURL?: string;
 }
 
-const { title, description = "Transform your ProPresenter workflow with AI-powered automation, intelligent slide generation, and real-time collaboration." } = Astro.props;
+const { 
+  title, 
+  description = "Transform your ProPresenter workflow with AI-powered automation, intelligent slide generation, and real-time collaboration.",
+  image = "/ProAssist.png",
+  canonicalURL = Astro.url.href
+} = Astro.props;
+
+const siteName = "ProAssist";
+const twitterHandle = "@proassist_app"; // Placeholder
 ---
 
 <!doctype html>
@@ -12,20 +22,43 @@ const { title, description = "Transform your ProPresenter workflow with AI-power
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Primary Meta Tags -->
+    <title>{title}</title>
+    <meta name="title" content={title} />
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalURL} />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={Astro.url.href} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL(image, Astro.url)} />
+    <meta property="og:site_name" content={siteName} />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content={Astro.url.href} />
+    <meta property="twitter:title" content={title} />
+    <meta property="twitter:description" content={description} />
+    <meta property="twitter:image" content={new URL(image, Astro.url)} />
+    {twitterHandle && <meta property="twitter:site" content={twitterHandle} />}
+
     <link rel="icon" type="image/png" href="/ProAssist.png" />
+    <meta name="generator" content={Astro.generator} />
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
 
-    <title>{title}</title>
+    <slot name="head" />
   </head>
-  <body class="min-h-screen bg-background text-foreground">
+  <body class="min-h-screen bg-background text-foreground font-sans selection:bg-violet-100 selection:text-violet-900">
     <slot />
   </body>
 </html>
