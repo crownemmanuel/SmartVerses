@@ -18,11 +18,18 @@ const links = [
   <div class="mx-auto max-w-6xl px-6 py-20">
     <!-- Large brand statement -->
     <div class="relative mb-16">
-      <h2 class="text-center text-4xl font-bold tracking-tight text-zinc-900 sm:text-5xl md:text-6xl">
+      <h2 id="footer-heading" class="text-center text-4xl font-bold tracking-tight text-zinc-900 sm:text-5xl md:text-6xl">
         <span class="relative">
           Ready to
           <svg class="absolute -bottom-2 left-0 w-full" viewBox="0 0 200 12" fill="none" preserveAspectRatio="none">
-            <path d="M1 9C30 3 60 1 100 5C140 9 170 7 199 3" stroke="url(#footer-gradient)" stroke-width="3" stroke-linecap="round"/>
+            <path
+              id="underline-path"
+              d="M1 9C30 3 60 1 100 5C140 9 170 7 199 3"
+              stroke="url(#footer-gradient)"
+              stroke-width="3"
+              stroke-linecap="round"
+              class="underline-draw"
+            />
             <defs>
               <linearGradient id="footer-gradient" x1="0" y1="0" x2="200" y2="0">
                 <stop offset="0%" stop-color="#3b82f6"/>
@@ -136,3 +143,36 @@ const links = [
     <div class="absolute -bottom-16 -right-8 h-32 w-32 rounded-full bg-amber-500/5"></div>
   </div>
 </footer>
+
+<style>
+  .underline-draw {
+    stroke-dasharray: 250;
+    stroke-dashoffset: 250;
+    transition: stroke-dashoffset 1s ease-out;
+  }
+
+  .underline-draw.animate {
+    stroke-dashoffset: 0;
+  }
+</style>
+
+<script>
+  const footerHeading = document.getElementById('footer-heading');
+  const underlinePath = document.getElementById('underline-path');
+
+  if (footerHeading && underlinePath) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            underlinePath.classList.add('animate');
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.5 }
+    );
+
+    observer.observe(footerHeading);
+  }
+</script>
