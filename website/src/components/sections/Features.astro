@@ -1,102 +1,200 @@
 ---
 import { Icon } from 'astro-icon/components';
-
-const features = [
-  {
-    icon: 'ph:robot-bold',
-    title: 'AI-Powered Processing',
-    description: 'Leverage OpenAI GPT-4, Google Gemini, and Groq to intelligently split and format your content into perfectly sized slides. Support for multiple AI providers and models.'
-  },
-  {
-    icon: 'ph:note-pencil-bold',
-    title: 'Flexible Templates',
-    description: 'Four processing types: Simple, Regex, JavaScript, and AI-Powered. Create custom templates with color coding, icons, and layout options for any content type.'
-  },
-  {
-    icon: 'ph:lightning-bold',
-    title: 'Real-Time Sync',
-    description: 'Instantly update ProPresenter slides with "Go Live" functionality. Changes appear immediately on screen with automatic file writing and ProPresenter activation.'
-  },
-  {
-    icon: 'ph:globe-bold',
-    title: 'Live Slides Collaboration',
-    description: 'WebSocket-based real-time editing system. Share typing URLs with team members to edit slides from any browser on your network. Perfect for remote presenters.'
-  },
-  {
-    icon: 'ph:timer-bold',
-    title: 'Stage Assist Timer',
-    description: 'Powerful timer and schedule management with countdown timers, schedule automation, ProPresenter integration, and remote access. Auto-adjust sessions dynamically.'
-  },
-  {
-    icon: 'ph:book-open-bold',
-    title: 'SmartVerses Bible Tools',
-    description: 'AI-powered Bible search with direct reference parsing, live transcription with automatic verse detection, paraphrase detection, and instant "Go Live" to ProPresenter.'
-  },
-  {
-    icon: 'ph:microphone-stage-bold',
-    title: 'Live Testimonies',
-    description: 'Manage testimonies from Firebase with real-time updates. Set testimonies live with keyboard navigation, automatic formatting, and ProPresenter integration.'
-  },
-  {
-    icon: 'ph:link-bold',
-    title: 'Network Sync',
-    description: 'Synchronize playlists and schedules across multiple ProAssist instances. Master/Slave/Peer modes for seamless multi-device workflows.'
-  },
-  {
-    icon: 'ph:chat-circle-dots-bold',
-    title: 'Global AI Assistant',
-    description: 'Context-aware AI chat assistant available throughout the app. Create slides, manage playlists, set timers, update schedules, and proofread content with natural language.'
-  },
-  {
-    icon: 'ph:sparkle-bold',
-    title: 'AI Automation',
-    description: 'Automated slide proofreading, timer session assignment, and AI prompt generation. Smart corrections highlighted automatically for quick review.'
-  },
-  {
-    icon: 'ph:crosshair-bold',
-    title: 'Advanced ProPresenter Control',
-    description: 'Multi-instance ProPresenter connections, per-slide activation, stage layout changes, timer synchronization, and custom click configurations for complete control.'
-  },
-  {
-    icon: 'ph:download-simple-bold',
-    title: 'Multiple Import Options',
-    description: 'Import from text files, Live Slides sessions, network masters, or generate content with AI. Flexible import workflows for any scenario.'
-  },
-  {
-    icon: 'ph:image-bold',
-    title: 'AI Schedule Extraction',
-    description: 'Upload an image of your schedule and let AI extract all sessions automatically. Perfect for quickly importing schedules from printed materials.'
-  },
-  {
-    icon: 'ph:video-camera-bold',
-    title: 'Video & Audio Recorder',
-    description: 'Professional video and audio recording with camera and microphone support. Record high-quality video (MP4/WebM) and audio (WAV/MP3) with real-time level monitoring.'
-  },
-  {
-    icon: 'ph:paint-brush-bold',
-    title: 'Modern Interface',
-    description: 'Beautiful dark and light themes with an intuitive, organized layout. Searchable help system, keyboard shortcuts, and smooth animations throughout.'
-  }
-];
 ---
 
-<section id="features" class="bg-zinc-50 py-16 md:py-32">
-  <div class="mx-auto max-w-6xl px-6">
-    <div class="text-center">
-      <h2 class="text-balance text-4xl font-semibold lg:text-5xl">Built to cover your needs</h2>
-      <p class="mt-4 text-muted-foreground">Comprehensive automation tools for modern worship and presentation teams</p>
+<section id="features" class="py-20 md:py-32 overflow-hidden">
+  <div class="mx-auto max-w-7xl px-6">
+    <!-- Section Header -->
+    <div class="text-center mb-16 md:mb-24">
+      <p class="text-sm font-semibold tracking-widest text-zinc-500 uppercase mb-4">Everything you need</p>
+      <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-zinc-900">
+        Powerful features,<br />
+        <span class="bg-gradient-to-r from-blue-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent">endless possibilities</span>
+      </h2>
     </div>
 
-    <div class="mx-auto mt-12 grid gap-6 md:mt-16 sm:grid-cols-2 lg:grid-cols-3">
-      {features.map((feature) => (
-        <div class="group relative overflow-hidden rounded-2xl border border-zinc-200 bg-white p-6 transition-all duration-300 hover:border-zinc-300 hover:shadow-lg hover:-translate-y-1">
-          <!-- Icon -->
-          <div class="mb-4 inline-flex rounded-xl bg-zinc-100 p-3 transition-colors group-hover:bg-zinc-900 group-hover:text-white">
-            <Icon name={feature.icon} class="size-6" />
+    <!-- AI Hero Section -->
+    <div class="relative mb-8">
+      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 p-8 md:p-12 lg:p-16">
+        <!-- Animated gradient orbs -->
+        <div class="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full blur-3xl opacity-60"></div>
+        <div class="absolute bottom-0 left-0 w-72 h-72 bg-gradient-to-tr from-fuchsia-500/20 to-pink-500/20 rounded-full blur-3xl opacity-40"></div>
+
+        <div class="relative z-10 grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
+          <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 text-sm text-white/80 mb-6">
+              <Icon name="ph:sparkle-fill" class="size-4 text-amber-400" />
+              Powered by AI
+            </div>
+            <h3 class="text-3xl md:text-4xl font-bold text-white mb-4">
+              AI that understands your workflow
+            </h3>
+            <p class="text-lg text-zinc-400 leading-relaxed mb-8">
+              From GPT-4 to Gemini to Groq — choose your AI provider. Our intelligent processing splits content perfectly,
+              extracts schedules from images, detects Bible verses in speech, and automates proofreading.
+              All with a natural language assistant at your fingertips.
+            </p>
+            <div class="flex flex-wrap gap-3">
+              {['OpenAI GPT-4', 'Google Gemini', 'Groq', 'AssemblyAI'].map((provider) => (
+                <span class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-zinc-300">
+                  {provider}
+                </span>
+              ))}
+            </div>
           </div>
 
-          <h3 class="font-semibold text-zinc-900">{feature.title}</h3>
-          <p class="mt-2 text-sm leading-relaxed text-zinc-600">{feature.description}</p>
+          <!-- AI Features Grid -->
+          <div class="grid grid-cols-2 gap-4">
+            {[
+              { icon: 'ph:robot-bold', label: 'Smart Processing', desc: 'Auto-split content' },
+              { icon: 'ph:chat-circle-dots-bold', label: 'AI Assistant', desc: 'Natural language' },
+              { icon: 'ph:image-bold', label: 'Image Extract', desc: 'Schedule from photos' },
+              { icon: 'ph:sparkle-bold', label: 'Auto Proofread', desc: 'Smart corrections' },
+            ].map((item) => (
+              <div class="group/card p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
+                <div class="size-10 rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center mb-3">
+                  <Icon name={item.icon} class="size-5 text-white" />
+                </div>
+                <p class="font-medium text-white text-sm">{item.label}</p>
+                <p class="text-xs text-zinc-500">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bento Grid -->
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+
+      <!-- Live Collaboration - Wide -->
+      <div class="md:col-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 p-8">
+        <div class="absolute top-4 right-4 flex gap-1">
+          <span class="size-3 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="size-3 rounded-full bg-emerald-300 animate-pulse delay-75"></span>
+          <span class="size-3 rounded-full bg-emerald-200 animate-pulse delay-150"></span>
+        </div>
+        <div class="flex flex-col md:flex-row md:items-center gap-6">
+          <div class="flex-1">
+            <div class="size-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/25">
+              <Icon name="ph:users-three-bold" class="size-7 text-white" />
+            </div>
+            <h3 class="text-2xl font-bold text-zinc-900 mb-2">Real-time Collaboration</h3>
+            <p class="text-zinc-600 leading-relaxed">
+              WebSocket-powered Live Slides let your team edit from any browser. Share URLs, sync across devices,
+              and see changes instantly. Perfect for remote teams and distributed workflows.
+            </p>
+          </div>
+          <div class="flex items-center gap-3 md:flex-col">
+            {['Live Slides', 'Network Sync', 'Remote Access'].map((tag) => (
+              <span class="px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- SmartVerses - Tall -->
+      <div class="md:row-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-b from-amber-50 via-orange-50 to-rose-50 border border-amber-100 p-8">
+        <div class="h-full flex flex-col">
+          <div class="size-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center mb-6 shadow-lg shadow-amber-500/25">
+            <Icon name="ph:book-open-text-bold" class="size-7 text-white" />
+          </div>
+          <h3 class="text-2xl font-bold text-zinc-900 mb-3">SmartVerses</h3>
+          <p class="text-zinc-600 leading-relaxed mb-6">
+            Revolutionary Bible tools powered by AI. Detect verses spoken in sermons, find paraphrased references,
+            and display scripture instantly.
+          </p>
+          <div class="mt-auto space-y-3">
+            {[
+              { icon: 'ph:microphone-bold', text: 'Live transcription' },
+              { icon: 'ph:magnifying-glass-bold', text: 'Smart verse detection' },
+              { icon: 'ph:quotes-bold', text: 'Paraphrase matching' },
+              { icon: 'ph:play-circle-bold', text: 'Instant Go Live' },
+            ].map((item) => (
+              <div class="flex items-center gap-3 text-sm">
+                <div class="size-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                  <Icon name={item.icon} class="size-4 text-amber-600" />
+                </div>
+                <span class="text-zinc-700">{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- Stage Assist -->
+      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 p-8">
+        <div class="size-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/25">
+          <Icon name="ph:timer-bold" class="size-6 text-white" />
+        </div>
+        <h3 class="text-xl font-bold text-zinc-900 mb-2">Stage Assist</h3>
+        <p class="text-sm text-zinc-600 leading-relaxed">
+          Countdown timers, schedule automation, and dynamic session management. Keep your events running on time.
+        </p>
+      </div>
+
+      <!-- ProPresenter Control -->
+      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-100 p-8">
+        <div class="size-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center mb-4 shadow-lg shadow-violet-500/25">
+          <Icon name="ph:desktop-tower-bold" class="size-6 text-white" />
+        </div>
+        <h3 class="text-xl font-bold text-zinc-900 mb-2">ProPresenter Control</h3>
+        <p class="text-sm text-zinc-600 leading-relaxed">
+          Multi-instance connections, per-slide activation, stage layouts, and custom click patterns. Total control.
+        </p>
+      </div>
+
+      <!-- Templates - Wide -->
+      <div class="md:col-span-2 lg:col-span-2 group relative overflow-hidden rounded-3xl bg-zinc-900 p-8">
+        <div class="flex flex-col md:flex-row md:items-center gap-6">
+          <div class="flex-1">
+            <div class="size-12 rounded-xl bg-white/10 flex items-center justify-center mb-4">
+              <Icon name="ph:stack-bold" class="size-6 text-white" />
+            </div>
+            <h3 class="text-xl font-bold text-white mb-2">Flexible Templates</h3>
+            <p class="text-zinc-400 text-sm leading-relaxed">
+              Four processing modes — Simple, Regex, JavaScript, or AI-Powered. Build templates that match your exact workflow.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            {['Simple', 'Regex', 'JavaScript', 'AI'].map((mode, i) => (
+              <div class={`px-3 py-2 rounded-lg text-xs font-medium ${
+                i === 3 ? 'bg-gradient-to-r from-blue-500 to-violet-500 text-white' : 'bg-white/10 text-zinc-300'
+              }`}>
+                {mode}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- Recording -->
+      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-100 p-8">
+        <div class="size-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 flex items-center justify-center mb-4 shadow-lg shadow-rose-500/25">
+          <Icon name="ph:video-camera-bold" class="size-6 text-white" />
+        </div>
+        <h3 class="text-xl font-bold text-zinc-900 mb-2">Recording Studio</h3>
+        <p class="text-sm text-zinc-600 leading-relaxed">
+          Professional video & audio capture. MP4, WebM, WAV, MP3 with real-time monitoring.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Bottom Features Strip -->
+    <div class="mt-8 flex flex-wrap justify-center gap-4">
+      {[
+        { icon: 'ph:microphone-stage-bold', label: 'Live Testimonies' },
+        { icon: 'ph:download-simple-bold', label: 'Multiple Imports' },
+        { icon: 'ph:paint-brush-bold', label: 'Modern UI' },
+        { icon: 'ph:keyboard-bold', label: 'Keyboard Shortcuts' },
+        { icon: 'ph:moon-bold', label: 'Dark & Light Themes' },
+      ].map((item) => (
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 text-sm font-medium hover:bg-zinc-200 transition-colors">
+          <Icon name={item.icon} class="size-4" />
+          {item.label}
         </div>
       ))}
     </div>
