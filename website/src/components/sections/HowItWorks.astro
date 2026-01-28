@@ -1,0 +1,47 @@
+---
+const steps = [
+  {
+    number: '1',
+    title: 'Configure Templates',
+    description: 'Set up templates with output paths, file naming conventions, and processing types.'
+  },
+  {
+    number: '2',
+    title: 'Link to ProPresenter',
+    description: "Use ProPresenter's Linked Text feature to connect text boxes to the files ProAssist generates."
+  },
+  {
+    number: '3',
+    title: 'Import Content',
+    description: 'Import from text files, Live Slides sessions, or use AI to generate content automatically.'
+  },
+  {
+    number: '4',
+    title: 'Go Live',
+    description: 'Click any slide to instantly update ProPresenter. Use Stage Assist for timer management.'
+  }
+];
+---
+
+<section id="how-it-works" class="py-16 md:py-32">
+  <div class="mx-auto max-w-5xl px-6">
+    <div class="text-center">
+      <h2 class="text-balance text-4xl font-semibold lg:text-5xl">How It Works</h2>
+      <p class="mt-4 text-muted-foreground">Get started in minutes with a simple setup process</p>
+    </div>
+
+    <div class="mx-auto mt-12 grid max-w-3xl gap-8 md:mt-16">
+      {steps.map((step) => (
+        <div class="flex gap-6 items-start">
+          <div class="flex size-12 shrink-0 items-center justify-center rounded-xl border bg-background text-lg font-semibold shadow-sm">
+            {step.number}
+          </div>
+          <div>
+            <h3 class="font-medium text-lg">{step.title}</h3>
+            <p class="mt-1 text-muted-foreground">{step.description}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

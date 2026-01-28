@@ -1,0 +1,28 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/sections/Header.astro';
+import Hero from '../components/sections/Hero.astro';
+import Features from '../components/sections/Features.astro';
+import HowItWorks from '../components/sections/HowItWorks.astro';
+import Download from '../components/sections/Download.astro';
+import Footer from '../components/sections/Footer.astro';
+---
+
+<Layout title="ProAssist - AI-Powered Automation for ProPresenter">
+  <div class="min-h-screen bg-background">
+    <div class="relative z-10">
+      <Header />
+      <Hero />
+      <Features />
+      <HowItWorks />
+      <Download />
+      <Footer />
+    </div>
+  </div>
+</Layout>
+
+<style>
+  :target {
+    scroll-margin-top: 5rem;
+  }
+</style>

@@ -1,0 +1,12 @@
+---
+interface Props {
+  icon: string;
+  class?: string;
+}
+
+const { icon, class: className = '' } = Astro.props;
+---
+
+<div class={`w-14 h-14 bg-gradient-to-r from-purple-deep to-cyan-bright rounded-xl flex items-center justify-center text-2xl mb-4 ${className}`}>
+  {icon}
+</div>

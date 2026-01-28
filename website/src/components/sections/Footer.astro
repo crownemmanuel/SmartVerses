@@ -1,0 +1,67 @@
+---
+const links = {
+  product: [
+    { href: '#features', label: 'Features' },
+    { href: '#how-it-works', label: 'How It Works' },
+    { href: '#download', label: 'Download' },
+  ],
+  resources: [
+    { href: 'https://github.com/crownemmanuel/proassist', label: 'GitHub' },
+    { href: 'https://github.com/crownemmanuel/proassist/issues', label: 'Report Issues' },
+    { href: 'https://github.com/crownemmanuel/proassist/releases', label: 'All Releases' },
+  ]
+};
+---
+
+<footer class="border-t py-12 px-4">
+  <div class="max-w-6xl mx-auto">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+      <div class="col-span-2 md:col-span-1">
+        <a href="#" class="flex items-center gap-2 mb-4">
+          <img src="/ProAssist.png" alt="ProAssist" class="h-8 w-8 rounded-lg" />
+          <span class="font-semibold">ProAssist</span>
+        </a>
+        <p class="text-sm text-muted-foreground">
+          AI-powered automation for ProPresenter and live presentations.
+        </p>
+      </div>
+
+      <div>
+        <h3 class="font-semibold mb-4">Product</h3>
+        <ul class="space-y-2 text-sm text-muted-foreground">
+          {links.product.map((link) => (
+            <li>
+              <a href={link.href} class="hover:text-foreground transition-colors">{link.label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="font-semibold mb-4">Resources</h3>
+        <ul class="space-y-2 text-sm text-muted-foreground">
+          {links.resources.map((link) => (
+            <li>
+              <a href={link.href} target="_blank" class="hover:text-foreground transition-colors">{link.label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="font-semibold mb-4">Connect</h3>
+        <ul class="space-y-2 text-sm text-muted-foreground">
+          <li>
+            <a href="https://github.com/crownemmanuel" target="_blank" class="hover:text-foreground transition-colors">
+              @crownemmanuel
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="mt-8 pt-8 border-t text-center text-sm text-muted-foreground">
+      <p>Made with ❤️ by Emmanuel Crown</p>
+    </div>
+  </div>
+</footer>

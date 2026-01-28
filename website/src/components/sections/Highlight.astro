@@ -1,0 +1,26 @@
+---
+import Button from '../ui/Button.astro';
+---
+
+<section class="py-20 px-4 bg-gradient-to-r from-purple-deep to-cyan-bright relative overflow-hidden">
+  <!-- Decorative background -->
+  <div class="absolute inset-0 pointer-events-none">
+    <div class="absolute top-0 left-1/4 w-96 h-96 bg-white/10 rounded-full blur-[128px]"></div>
+    <div class="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-bright/20 rounded-full blur-[128px]"></div>
+  </div>
+
+  <div class="relative max-w-4xl mx-auto text-center">
+    <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-6">
+      Built for Worship Teams & Live Events
+    </h2>
+    <p class="text-lg sm:text-xl text-white/90 mb-10 leading-relaxed max-w-3xl mx-auto">
+      Whether you're running a Sunday service, live conference, or any presentation that needs
+      real-time text updates, ProAssist streamlines your workflow. From AI-powered slide generation
+      to timer management, Bible verse lookup, live testimonies, and real-time collaboration—everything
+      you need is in one powerful application.
+    </p>
+    <Button href="#download" variant="secondary" size="lg" class="bg-white/15 border-white/30 hover:bg-white/25">
+      Get Started Today
+    </Button>
+  </div>
+</section>

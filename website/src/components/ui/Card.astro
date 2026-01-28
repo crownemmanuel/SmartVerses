@@ -1,0 +1,35 @@
+---
+interface Props {
+  variant?: 'default' | 'featured' | 'gradient';
+  class?: string;
+  hover?: boolean;
+}
+
+const { variant = 'default', class: className = '', hover = true } = Astro.props;
+
+const baseStyles = 'rounded-2xl p-6 transition-all duration-300 relative overflow-hidden';
+
+const variants = {
+  default: 'bg-white/[0.03] border border-white/[0.08]',
+  featured: 'bg-gradient-to-br from-purple-deep/20 to-cyan-bright/10 border border-purple-deep/30',
+  gradient: 'bg-gradient-to-r from-purple-deep to-cyan-bright border-none shadow-[0_20px_60px_rgba(123,47,191,0.4)]',
+};
+
+const hoverStyles = hover ? 'hover:bg-white/[0.06] hover:-translate-y-1 hover:border-purple-deep/30' : '';
+
+const classes = `${baseStyles} ${variants[variant]} ${hoverStyles} ${className}`;
+---
+
+<div class={classes}>
+  <!-- Top accent line for default cards -->
+  {variant === 'default' && (
+    <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-purple-deep to-cyan-bright opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+  )}
+  <slot />
+</div>
+
+<style>
+  div:hover .absolute {
+    opacity: 0.8;
+  }
+</style>

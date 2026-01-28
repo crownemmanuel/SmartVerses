@@ -1,0 +1,48 @@
+---
+const features = [
+  {
+    icon: '⚡',
+    title: 'AI-Powered Processing',
+    description: 'Leverage OpenAI GPT-4, Google Gemini, and Groq to intelligently split and format your content into perfectly sized slides.'
+  },
+  {
+    icon: '⚙️',
+    title: 'Flexible Templates',
+    description: 'Four processing types: Simple, Regex, JavaScript, and AI-Powered. Create custom templates with color coding and layout options.'
+  },
+  {
+    icon: '✨',
+    title: 'Real-Time Sync',
+    description: 'Instantly update ProPresenter slides with "Go Live" functionality. Changes appear immediately on screen.'
+  }
+];
+---
+
+<section id="features" class="bg-zinc-50 py-16 md:py-32">
+  <div class="mx-auto max-w-5xl px-6">
+    <div class="text-center">
+      <h2 class="text-balance text-4xl font-semibold lg:text-5xl">Built to cover your needs</h2>
+      <p class="mt-4 text-muted-foreground">Comprehensive automation tools for modern worship and presentation teams</p>
+    </div>
+
+    <div class="mx-auto mt-8 grid max-w-sm gap-6 md:mt-16 md:max-w-full md:grid-cols-3">
+      {features.map((feature) => (
+        <div class="group rounded-xl border bg-background p-6 text-center shadow-sm shadow-zinc-950/5">
+          <!-- Card Decorator -->
+          <div class="relative mx-auto size-36 duration-200 [--color-border:color-mix(in_oklab,var(--color-zinc-950)10%,transparent)] group-hover:[--color-border:color-mix(in_oklab,var(--color-zinc-950)20%,transparent)]" style="mask-image: radial-gradient(circle, black 40%, transparent 60%);">
+            <div
+              aria-hidden
+              class="absolute inset-0 bg-[linear-gradient(to_right,var(--color-border)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border)_1px,transparent_1px)] bg-[size:24px_24px]"
+            ></div>
+            <div class="bg-background absolute inset-0 m-auto flex size-12 items-center justify-center border-l border-t text-2xl">
+              {feature.icon}
+            </div>
+          </div>
+
+          <h3 class="mt-6 font-medium">{feature.title}</h3>
+          <p class="mt-3 text-sm text-muted-foreground">{feature.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

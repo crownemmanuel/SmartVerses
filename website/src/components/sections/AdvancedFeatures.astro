@@ -1,0 +1,85 @@
+---
+import Card from '../ui/Card.astro';
+import FeatureIcon from '../ui/FeatureIcon.astro';
+
+const features = [
+  {
+    icon: '🎙️',
+    title: 'Live Transcription',
+    description: 'Real-time speech-to-text with AssemblyAI integration. Automatically detect Bible references in speech and trigger ProPresenter slides instantly.'
+  },
+  {
+    icon: '🔍',
+    title: 'Smart Bible Search',
+    description: 'Direct reference parsing (John 3:16) or AI-powered phrase search. Navigate between verses, detect paraphrased content, and extract key points.'
+  },
+  {
+    icon: '📅',
+    title: 'Schedule Automation',
+    description: 'Automatically trigger ProPresenter slides and change stage layouts when timer sessions start. Dynamic time adjustment keeps everything on track.'
+  },
+  {
+    icon: '🌍',
+    title: 'Remote Access',
+    description: 'Access timer controls remotely via shareable links. Perfect for stage managers and production teams working from different locations.'
+  },
+  {
+    icon: '🔄',
+    title: 'Multi-Device Sync',
+    description: 'Keep playlists and schedules synchronized across multiple devices. Master/Slave/Peer modes ensure everyone stays in sync.'
+  },
+  {
+    icon: '🎬',
+    title: 'ProPresenter Control',
+    description: 'Control multiple ProPresenter instances simultaneously. Configure per-slide activation, stage layouts, timer sync, and custom click patterns.'
+  },
+  {
+    icon: '🎥',
+    title: 'Professional Recording',
+    description: 'Record high-quality video and audio directly within ProAssist. Choose from multiple formats, select devices, and organize by session.'
+  }
+];
+---
+
+<section id="advanced" class="py-20 px-4">
+  <div class="max-w-7xl mx-auto">
+    <!-- Section Header -->
+    <div class="text-center mb-16">
+      <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
+        Advanced Capabilities
+      </h2>
+      <p class="text-lg text-muted-foreground max-w-2xl mx-auto">
+        Powerful tools for professional production teams
+      </p>
+    </div>
+
+    <!-- Features Grid -->
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      {features.map((feature, index) => (
+        <Card class={`group opacity-0 animate-fade-in`} style={`animation-delay: ${index * 0.1}s`}>
+          <FeatureIcon icon={feature.icon} />
+          <h3 class="text-lg font-semibold mb-2 text-foreground">
+            {feature.title}
+          </h3>
+          <p class="text-sm text-muted-foreground leading-relaxed">
+            {feature.description}
+          </p>
+        </Card>
+      ))}
+    </div>
+  </div>
+</section>
+
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.remove('opacity-0');
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('#advanced .group').forEach((el) => {
+    observer.observe(el);
+  });
+</script>
