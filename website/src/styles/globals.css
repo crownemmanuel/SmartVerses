@@ -106,3 +106,16 @@
 .delay-300 { animation-delay: 0.3s; }
 .delay-500 { animation-delay: 0.5s; }
 .delay-750 { animation-delay: 0.75s; }
+
+@keyframes shine {
+  from {
+    transform: translateX(-100%) skewX(-12deg);
+  }
+  to {
+    transform: translateX(200%) skewX(-12deg);
+  }
+}
+
+.group-hover\:animate-shine {
+  animation: shine 1s ease-in-out;
+}
