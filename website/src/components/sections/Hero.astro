@@ -71,23 +71,43 @@
             </a>
           </div>
 
-          <!-- Trust badges -->
-          <div class="mt-12 animate-fade-in-blur delay-500">
-            <p class="text-sm text-muted-foreground mb-4">Trusted by teams at:</p>
-            <div class="flex items-center gap-8 opacity-60">
-              <span class="text-xl font-bold text-zinc-400">Church</span>
-              <span class="text-xl font-bold text-zinc-400">Events</span>
-              <span class="text-xl font-bold text-zinc-400">Media</span>
-            </div>
+          <!-- Feature pills -->
+          <div class="mt-10 flex flex-wrap gap-2 animate-fade-in-blur delay-500">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-xs font-medium">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              AI-Powered
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              Real-time Sync
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+              Bible Detection
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              Open Source
+            </span>
           </div>
         </div>
 
         <!-- Right side: Smart Verses Demo with 3D perspective -->
-        <div class="relative animate-fade-in-blur delay-500" style="perspective: 1000px;">
-          <!-- Decorative gradient behind -->
-          <div class="absolute -inset-4 bg-gradient-to-tr from-blue-500/10 via-transparent to-emerald-500/10 rounded-3xl blur-2xl"></div>
+        <div id="demo-wrapper" class="relative animate-fade-in-blur delay-500" style="perspective: 1200px;">
+          <!-- Layered 3D background elements -->
+          <div class="absolute -inset-4 bg-gradient-to-tr from-blue-500/20 via-purple-500/10 to-emerald-500/20 rounded-3xl blur-3xl opacity-60"></div>
 
-          <div class="relative bg-zinc-900 rounded-2xl border border-zinc-700 p-5 shadow-2xl shadow-zinc-950/40 demo-card" style="transform: rotateY(-8deg) rotateX(2deg); transform-style: preserve-3d;">
+          <!-- Back layer - offset card (larger and more offset) -->
+          <div id="demo-back-layer" class="absolute -inset-2 bg-zinc-700/80 rounded-2xl border border-zinc-500/30 transition-transform duration-300 ease-out" style="transform: translateZ(-80px) translateX(40px) translateY(40px); transform-style: preserve-3d;"></div>
+
+          <!-- Middle layer - gradient accent (slightly larger) -->
+          <div id="demo-mid-layer" class="absolute -inset-1 bg-gradient-to-br from-blue-500/30 to-emerald-500/30 rounded-2xl border border-zinc-600/40 transition-transform duration-300 ease-out" style="transform: translateZ(-40px) translateX(20px) translateY(20px); transform-style: preserve-3d;"></div>
+
+          <!-- Main card -->
+          <div id="demo-card" class="relative bg-zinc-900 rounded-2xl border border-zinc-700 p-5 shadow-2xl shadow-zinc-950/40 transition-transform duration-300 ease-out overflow-hidden" style="transform-style: preserve-3d;">
+            <!-- Glare/shine effect -->
+            <div id="demo-glare" class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 rounded-2xl" style="background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15) 0%, transparent 60%);"></div>
+
             <!-- Header -->
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-sm font-semibold text-white">Smart Verses</h3>
@@ -288,5 +308,85 @@
     document.addEventListener('DOMContentLoaded', startSmartVersesDemo);
   } else {
     startSmartVersesDemo();
+  }
+</script>
+
+<script>
+  // Interactive 3D tilt effect
+  function init3DEffect() {
+    const wrapper = document.getElementById('demo-wrapper');
+    const card = document.getElementById('demo-card');
+    const backLayer = document.getElementById('demo-back-layer');
+    const midLayer = document.getElementById('demo-mid-layer');
+    const glare = document.getElementById('demo-glare');
+
+    if (!wrapper || !card) return;
+
+    const maxRotation = 15;
+
+    function handleMouseMove(e: MouseEvent) {
+      const rect = wrapper.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      // Calculate mouse position as percentage
+      const mouseX = ((e.clientX - rect.left) / rect.width) * 100;
+      const mouseY = ((e.clientY - rect.top) / rect.height) * 100;
+
+      // Calculate rotation based on mouse position relative to center
+      const rotateY = ((e.clientX - centerX) / (rect.width / 2)) * maxRotation;
+      const rotateX = -((e.clientY - centerY) / (rect.height / 2)) * maxRotation;
+
+      // Apply transforms to main card
+      card.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg) translateZ(30px) scale(1.02)`;
+
+      // Apply offset transforms to back layers for parallax depth
+      if (backLayer) {
+        backLayer.style.transform = `translateZ(-80px) translateX(${40 + rotateY * 1.2}px) translateY(${40 - rotateX * 1.2}px) rotateY(${rotateY * 0.3}deg) rotateX(${rotateX * 0.3}deg)`;
+      }
+      if (midLayer) {
+        midLayer.style.transform = `translateZ(-40px) translateX(${20 + rotateY * 0.7}px) translateY(${20 - rotateX * 0.7}px) rotateY(${rotateY * 0.5}deg) rotateX(${rotateX * 0.5}deg)`;
+      }
+
+      // Move glare effect to follow mouse
+      if (glare) {
+        glare.style.background = `radial-gradient(circle at ${mouseX}% ${mouseY}%, rgba(255,255,255,0.2) 0%, transparent 50%)`;
+        glare.style.opacity = '1';
+      }
+    }
+
+    function handleMouseLeave() {
+      // Reset to default position with smooth transition
+      card.style.transform = 'rotateY(-5deg) rotateX(2deg) translateZ(0px) scale(1)';
+      if (backLayer) {
+        backLayer.style.transform = 'translateZ(-80px) translateX(40px) translateY(40px)';
+      }
+      if (midLayer) {
+        midLayer.style.transform = 'translateZ(-40px) translateX(20px) translateY(20px)';
+      }
+      if (glare) {
+        glare.style.opacity = '0';
+      }
+    }
+
+    function handleMouseEnter() {
+      // Faster transitions on enter for responsiveness
+      card.style.transition = 'transform 0.1s ease-out';
+      if (backLayer) backLayer.style.transition = 'transform 0.1s ease-out';
+      if (midLayer) midLayer.style.transition = 'transform 0.1s ease-out';
+    }
+
+    wrapper.addEventListener('mousemove', handleMouseMove);
+    wrapper.addEventListener('mouseleave', handleMouseLeave);
+    wrapper.addEventListener('mouseenter', handleMouseEnter);
+
+    // Set initial state
+    handleMouseLeave();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init3DEffect);
+  } else {
+    init3DEffect();
   }
 </script>
