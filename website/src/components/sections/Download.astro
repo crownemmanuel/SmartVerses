@@ -1,10 +1,10 @@
 ---
-import { Apple, Windows, Linux } from 'lucide-astro';
+import { Icon } from 'astro-icon/components';
 
 const platforms = [
-  { name: 'macOS', subtitle: 'Apple Silicon & Intel', platform: 'mac' },
-  { name: 'Windows', subtitle: 'Windows 10 & 11', platform: 'windows' },
-  { name: 'Linux', subtitle: 'AppImage, DEB & RPM', platform: 'linux' }
+  { icon: 'simple-icons:apple', name: 'macOS', subtitle: 'Apple Silicon & Intel', platform: 'mac' },
+  { icon: 'simple-icons:windows', name: 'Windows', subtitle: 'Windows 10 & 11', platform: 'windows' },
+  { icon: 'simple-icons:linux', name: 'Linux', subtitle: 'AppImage, DEB & RPM', platform: 'linux' }
 ];
 ---
 
@@ -14,12 +14,10 @@ const platforms = [
     <p class="mt-4 text-muted-foreground">Available for macOS, Windows, and Linux. Free and open source.</p>
 
     <div class="mx-auto mt-12 grid max-w-3xl gap-6 md:grid-cols-3">
-      {platforms.map((platform, index) => (
+      {platforms.map((platform) => (
         <div class="group rounded-xl border bg-background p-6 text-center shadow-sm shadow-zinc-950/5 transition-shadow hover:shadow-md">
           <div class="flex justify-center mb-4 transition-transform group-hover:scale-110">
-            {index === 0 && <Apple size={48} class="text-foreground" />}
-            {index === 1 && <Windows size={48} class="text-foreground" />}
-            {index === 2 && <Linux size={48} class="text-foreground" />}
+            <Icon name={platform.icon} class="size-12 text-foreground" />
           </div>
           <h3 class="font-medium">{platform.name}</h3>
           <p class="text-sm text-muted-foreground mb-4">{platform.subtitle}</p>
