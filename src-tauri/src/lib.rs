@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use futures_util::{SinkExt, StreamExt};
+use warp::http::StatusCode;
+use warp::Reply;
 use warp::Filter;
 use warp::ws::{Message as WarpWsMessage, WebSocket};
 use rust_embed::RustEmbed;
@@ -14,6 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use base64::Engine;
 use tauri::Emitter;
+
+mod window_commands;
+use window_commands::{open_dialog, close_dialog};
 
 // ============================================================================
 // Embedded Frontend Assets
@@ -83,6 +88,38 @@ pub struct TimerState {
     pub session_name: Option<String>,
     pub end_time: Option<String>,
     pub is_overrun: bool,
+}
+
+// ============================================================================
+// Types for Display (Audience Display)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DisplayScripture {
+    pub verse_text: String,
+    pub reference: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DisplayState {
+    pub scripture: DisplayScripture,
+    pub slides: Vec<String>,
+    pub settings: serde_json::Value, // DisplaySettings as JSON
+}
+
+// ============================================================================
+// Types for HTTP API v1
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiScriptureGoLiveRequest {
+    pub reference: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTimerStartRequest {
+    pub seconds: Option<f64>,
+    pub minutes: Option<f64>,
 }
 
 // ============================================================================
@@ -202,6 +239,14 @@ pub enum WsMessage {
     TimerUpdate { timer_state: TimerState },
     #[serde(rename = "join_timer")]
     JoinTimer,
+    #[serde(rename = "join_display")]
+    JoinDisplay,
+    #[serde(rename = "display_update")]
+    DisplayUpdate { 
+        scripture: DisplayScripture,
+        slides: Vec<String>,
+        settings: serde_json::Value,
+    },
     #[serde(rename = "error")]
     Error { message: String },
 }
@@ -211,10 +256,12 @@ struct ServerState {
     sessions: RwLock<HashMap<String, LiveSlideSession>>,
     schedule: RwLock<ScheduleState>,
     timer_state: RwLock<TimerState>,
+    display_state: RwLock<DisplayState>,
     broadcast_tx: broadcast::Sender<String>,
     running: RwLock<bool>,
     port: RwLock<u16>,
     shutdown_tx: RwLock<Option<tokio::sync::oneshot::Sender<()>>>,
+    api_enabled: RwLock<bool>,
 }
 
 // Global state for the Network Sync server
@@ -246,10 +293,19 @@ lazy_static::lazy_static! {
             end_time: None,
             is_overrun: false,
         }),
+        display_state: RwLock::new(DisplayState {
+            scripture: DisplayScripture {
+                verse_text: String::new(),
+                reference: String::new(),
+            },
+            slides: Vec::new(),
+            settings: serde_json::json!({}),
+        }),
         broadcast_tx: broadcast::channel(100).0,
         running: RwLock::new(false),
         port: RwLock::new(9876),
         shutdown_tx: RwLock::new(None),
+        api_enabled: RwLock::new(false),
     });
     
     static ref SYNC_SERVER_STATE: Arc<SyncServerState> = Arc::new(SyncServerState {
@@ -507,6 +563,18 @@ async fn handle_ws_connection(ws: WebSocket, state: Arc<ServerState>) {
                                 let _ = state.broadcast_tx.send(json);
                             }
                         }
+                        WsMessage::JoinDisplay => {
+                            // Send current display state to the joining client
+                            let display_state = state.display_state.read().await;
+                            let update = WsMessage::DisplayUpdate {
+                                scripture: display_state.scripture.clone(),
+                                slides: display_state.slides.clone(),
+                                settings: display_state.settings.clone(),
+                            };
+                            if let Ok(json) = serde_json::to_string(&update) {
+                                let _ = state.broadcast_tx.send(json);
+                            }
+                        }
                         WsMessage::TranscriptionStream { .. } => {
                             // Re-broadcast browser transcription stream messages to all clients.
                             // We forward the original JSON string so fields remain intact.
@@ -532,6 +600,17 @@ fn serve_embedded_file(path: &str) -> Option<(Vec<u8>, String)> {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
         return Some((content.data.to_vec(), mime.to_string()));
     }
+
+    // In dev, fall back to serving from /public when dist isn't built yet.
+    if cfg!(debug_assertions) && !path.contains("..") {
+        let public_path = std::path::Path::new("../public").join(path);
+        if public_path.exists() {
+            if let Ok(data) = std::fs::read(&public_path) {
+                let mime = mime_guess::from_path(&public_path).first_or_octet_stream();
+                return Some((data, mime.to_string()));
+            }
+        }
+    }
     
     // For SPA routing, return index.html for non-file paths
     if !path.contains('.') || path.ends_with('/') {
@@ -543,11 +622,15 @@ fn serve_embedded_file(path: &str) -> Option<(Vec<u8>, String)> {
     None
 }
 
+fn json_response(value: serde_json::Value, status: StatusCode) -> warp::reply::Response {
+    warp::reply::with_status(warp::reply::json(&value), status).into_response()
+}
+
 // ============================================================================
 // Combined HTTP + WebSocket Server
 // ============================================================================
 
-async fn run_combined_server(port: u16) -> Result<(), String> {
+async fn run_combined_server(port: u16, app: tauri::AppHandle) -> Result<(), String> {
     let state = SERVER_STATE.clone();
     
     // Create shutdown channel
@@ -597,6 +680,166 @@ async fn run_combined_server(port: u16) -> Result<(), String> {
                 Ok::<_, warp::Rejection>(warp::reply::json(&response))
             }
         });
+
+    // API v1: Scripture go-live
+    let api_app = app.clone();
+    let api_scripture_state = state.clone();
+    let api_scripture_route = warp::path("api")
+        .and(warp::path("v1"))
+        .and(warp::path("scripture"))
+        .and(warp::path("go-live"))
+        .and(warp::path::end())
+        .and(warp::post())
+        .and(warp::body::json())
+        .and_then(move |body: ApiScriptureGoLiveRequest| {
+            let state_clone = api_scripture_state.clone();
+            let app_clone = api_app.clone();
+            async move {
+                if !*state_clone.api_enabled.read().await {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "api_disabled" }),
+                        StatusCode::FORBIDDEN,
+                    ));
+                }
+
+                let reference = body.reference.trim().to_string();
+                if reference.is_empty() {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "reference_required" }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                if let Err(err) = app_clone.emit(
+                    "api-scripture-go-live",
+                    serde_json::json!({ "reference": reference }),
+                ) {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({
+                            "error": "emit_failed",
+                            "detail": err.to_string()
+                        }),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ));
+                }
+
+                Ok::<_, warp::Rejection>(json_response(
+                    serde_json::json!({
+                        "status": "queued",
+                        "reference": reference
+                    }),
+                    StatusCode::OK,
+                ))
+            }
+        });
+
+    // API v1: Timer start
+    let api_timer_state = state.clone();
+    let api_timer_app = app.clone();
+    let api_timer_route = warp::path("api")
+        .and(warp::path("v1"))
+        .and(warp::path("timer"))
+        .and(warp::path("start"))
+        .and(warp::path::end())
+        .and(warp::post())
+        .and(warp::body::json())
+        .and_then(move |body: ApiTimerStartRequest| {
+            let state_clone = api_timer_state.clone();
+            let app_clone = api_timer_app.clone();
+            async move {
+                if !*state_clone.api_enabled.read().await {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "api_disabled" }),
+                        StatusCode::FORBIDDEN,
+                    ));
+                }
+
+                let raw_seconds = body
+                    .seconds
+                    .or_else(|| body.minutes.map(|m| m * 60.0))
+                    .unwrap_or(0.0);
+
+                if !raw_seconds.is_finite() || raw_seconds <= 0.0 {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "seconds_required" }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                let seconds = raw_seconds.floor() as i64;
+                if seconds <= 0 {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "seconds_required" }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                if let Err(err) = app_clone.emit(
+                    "api-timer-start",
+                    serde_json::json!({ "seconds": seconds }),
+                ) {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({
+                            "error": "emit_failed",
+                            "detail": err.to_string()
+                        }),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ));
+                }
+
+                Ok::<_, warp::Rejection>(json_response(
+                    serde_json::json!({
+                        "status": "queued",
+                        "seconds": seconds
+                    }),
+                    StatusCode::OK,
+                ))
+            }
+        });
+
+    // API docs route - serve api-docs.html
+    let api_docs_route = warp::path("api")
+        .and(warp::path("docs"))
+        .and(warp::path::end())
+        .map(|| {
+            match serve_embedded_file("api-docs.html") {
+                Some((content, _)) => {
+                    warp::http::Response::builder()
+                        .header("Content-Type", "text/html")
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(content)
+                        .unwrap()
+                }
+                None => {
+                    warp::http::Response::builder()
+                        .status(404)
+                        .body(b"API docs not found".to_vec())
+                        .unwrap()
+                }
+            }
+        });
+
+    // API OpenAPI spec
+    let api_openapi_route = warp::path("api")
+        .and(warp::path("openapi.json"))
+        .and(warp::path::end())
+        .map(|| {
+            match serve_embedded_file("api-openapi.json") {
+                Some((content, mime)) => {
+                    warp::http::Response::builder()
+                        .header("Content-Type", mime)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(content)
+                        .unwrap()
+                }
+                None => {
+                    warp::http::Response::builder()
+                        .status(404)
+                        .body(b"OpenAPI spec not found".to_vec())
+                        .unwrap()
+                }
+            }
+        });
     
     // Schedule view route - serve schedule-view.html
     let schedule_view_route = warp::path("schedule")
@@ -637,6 +880,27 @@ async fn run_combined_server(port: u16) -> Result<(), String> {
                     warp::http::Response::builder()
                         .status(404)
                         .body(b"LiveSlides landing page not found".to_vec())
+                        .unwrap()
+                }
+            }
+        });
+
+    // Display route - serve display.html for web audience display
+    let display_route = warp::path("display")
+        .and(warp::path::end())
+        .map(|| {
+            match serve_embedded_file("display.html") {
+                Some((content, _)) => {
+                    warp::http::Response::builder()
+                        .header("Content-Type", "text/html")
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(content)
+                        .unwrap()
+                }
+                None => {
+                    warp::http::Response::builder()
+                        .status(404)
+                        .body(b"Display page not found".to_vec())
                         .unwrap()
                 }
             }
@@ -704,8 +968,13 @@ async fn run_combined_server(port: u16) -> Result<(), String> {
     let routes = ws_route
         .or(schedule_api_route)
         .or(live_slides_api_route)
+        .or(api_scripture_route)
+        .or(api_timer_route)
+        .or(api_docs_route)
+        .or(api_openapi_route)
         .or(schedule_view_route)
         .or(live_slides_landing_route)
+        .or(display_route)
         .or(root_route)
         .or(static_route)
         .with(cors);
@@ -899,6 +1168,275 @@ fn greet(name: &str) -> String {
 fn toggle_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
     window.open_devtools();
     Ok(())
+}
+
+// Safe monitor information structure for serialization
+// Note: workArea is not included as it's not available via the Monitor API
+// and was causing serialization errors when it was None
+#[derive(Debug, Clone, Serialize)]
+struct SafeMonitorInfo {
+    name: Option<String>,
+    position: (i32, i32),
+    size: (u32, u32),
+    scale_factor: f64,
+}
+
+// Get available monitors safely (avoids workArea serialization issues)
+#[tauri::command]
+fn get_available_monitors_safe(
+    window: tauri::WebviewWindow,
+) -> Result<Vec<SafeMonitorInfo>, String> {
+    match window.available_monitors() {
+        Ok(monitors) => {
+            let mut safe_monitors = Vec::new();
+            for monitor in monitors {
+                let pos = monitor.position();
+                let size = monitor.size();
+                let scale = monitor.scale_factor();
+                
+                safe_monitors.push(SafeMonitorInfo {
+                    name: monitor.name().map(|s| s.clone()),
+                    position: (pos.x, pos.y),
+                    size: (size.width, size.height),
+                    scale_factor: scale,
+                });
+            }
+            Ok(safe_monitors)
+        }
+        Err(e) => {
+            eprintln!("[Display] Failed to get monitors: {:?}", e);
+            Err(format!("Failed to get monitors: {:?}", e))
+        }
+    }
+}
+
+// Create or show the audience display window
+#[tauri::command]
+fn open_audience_display_window(
+    app_handle: tauri::AppHandle,
+    parent_window: tauri::WebviewWindow,
+    monitor_index: Option<usize>,
+) -> Result<(), String> {
+    use tauri::{Manager, WebviewWindowBuilder};
+
+    const WINDOW_LABEL: &str = "audience-display";
+
+    // Check if window already exists
+    if let Some(existing_window) = app_handle.get_webview_window(WINDOW_LABEL) {
+        // Window exists, just focus it
+        if let Err(e) = existing_window.set_focus() {
+            eprintln!("[Display] Error focusing audience display window: {:?}", e);
+            return Err(format!("Failed to focus window: {:?}", e));
+        }
+        return Ok(());
+    }
+
+    // Helper to get offset position from parent
+    let get_offset_position = || -> (f64, f64, i32, i32) {
+        let offset_x = 100.0;
+        let offset_y = 100.0;
+        match (parent_window.outer_position(), parent_window.outer_size()) {
+            (Ok(pos), Ok(size)) => {
+                let logical_x = pos.x as f64 + size.width as f64 + offset_x;
+                let logical_y = pos.y as f64;
+                let physical_x = pos.x + size.width as i32 + offset_x as i32;
+                let physical_y = pos.y;
+                (logical_x, logical_y, physical_x, physical_y)
+            }
+            _ => (offset_x, offset_y, offset_x as i32, offset_y as i32)
+        }
+    };
+
+    // Determine window position and size
+    #[allow(unused_variables)]
+    let (new_x, new_y, width, height, is_fullscreen, physical_x, physical_y, physical_width, physical_height) = if let Some(index) = monitor_index {
+        // Try to find the monitor by index
+        match parent_window.available_monitors() {
+            Ok(monitors) => {
+                if let Some(monitor) = monitors.get(index) {
+                    let pos = monitor.position();
+                    let size = monitor.size();
+                    let scale = monitor.scale_factor();
+                    let logical_x = pos.x as f64 / scale;
+                    let logical_y = pos.y as f64 / scale;
+                    let logical_width = size.width as f64 / scale;
+                    let logical_height = size.height as f64 / scale;
+                    println!(
+                        "[Display] Opening on monitor {}: pos=({},{}), size={}x{}, scale={}",
+                        index, pos.x, pos.y, size.width, size.height, scale
+                    );
+                    (
+                        logical_x,
+                        logical_y,
+                        logical_width,
+                        logical_height,
+                        true,
+                        pos.x,
+                        pos.y,
+                        size.width,
+                        size.height,
+                    )
+                } else {
+                    eprintln!("[Display] Monitor index {} not found, falling back to offset", index);
+                    let (x, y, phys_x, phys_y) = get_offset_position();
+                    (x, y, 1200.0, 800.0, false, phys_x, phys_y, 1200, 800)
+                }
+            }
+            Err(e) => {
+                eprintln!("[Display] Failed to get available monitors: {:?}", e);
+                let (x, y, phys_x, phys_y) = get_offset_position();
+                (x, y, 1200.0, 800.0, false, phys_x, phys_y, 1200, 800)
+            }
+        }
+    } else {
+        let (x, y, phys_x, phys_y) = get_offset_position();
+        (x, y, 1200.0, 800.0, false, phys_x, phys_y, 1200, 800)
+    };
+
+    let build_window = || {
+        let window_builder = WebviewWindowBuilder::new(
+            &app_handle,
+            WINDOW_LABEL,
+            tauri::WebviewUrl::App("/audience-display".into())
+        )
+            .title("Audience Display")
+            .decorations(!is_fullscreen) // No decorations if fullscreen
+            .min_inner_size(800.0, 600.0)
+            .resizable(true)
+            .visible(false) // Start hidden to avoid flickering
+            .focused(false); // Don't steal focus from main window
+
+        #[cfg(target_os = "windows")]
+        let window_builder = window_builder
+            .inner_size(physical_width as f64, physical_height as f64)
+            .position(physical_x as f64, physical_y as f64);
+
+        #[cfg(not(target_os = "windows"))]
+        let window_builder = window_builder
+            .inner_size(width, height)
+            .position(new_x, new_y); // Position on selected monitor
+
+        window_builder
+    };
+
+    // Try to set parent window (helps with window management on most platforms).
+    // On macOS, parenting keeps the window tied to the same Space and makes it
+    // move with the parent, which breaks dual-monitor display behavior.
+    #[cfg(not(target_os = "macos"))]
+    let window_builder = {
+        let window_builder = build_window();
+        if is_fullscreen {
+            window_builder
+        } else {
+            match window_builder.parent(&parent_window) {
+                Ok(builder) => builder,
+                Err(e) => {
+                    eprintln!("[Display] Warning: Could not set parent window: {:?}", e);
+                    // Recreate the builder without parent since parent() consumes it
+                    build_window()
+                }
+            }
+        }
+    };
+
+    #[cfg(target_os = "macos")]
+    let window_builder = build_window();
+
+    match window_builder.build() {
+        Ok(window) => {
+            if is_fullscreen {
+                // On macOS, maximizing can pull the window back to the active Space.
+                // We already set position/size to the target monitor, so skip maximize there.
+                #[cfg(target_os = "windows")]
+                {
+                    if let Err(e) = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(
+                        physical_x as f64,
+                        physical_y as f64,
+                    ))) {
+                        eprintln!("[Display] Failed to set window position: {:?}", e);
+                    }
+                    if let Err(e) = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                        physical_width as f64,
+                        physical_height as f64,
+                    ))) {
+                        eprintln!("[Display] Failed to set window size: {:?}", e);
+                    }
+                }
+                #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+                {
+                    if let Err(e) = window.maximize() {
+                        eprintln!("[Display] Failed to maximize window: {:?}", e);
+                    }
+                }
+            }
+            if let Err(e) = window.show() {
+                eprintln!("[Display] Failed to show window: {:?}", e);
+            }
+            println!("[Display] Audience display window created successfully");
+            Ok(())
+        },
+        Err(e) => {
+            eprintln!("[Display] Error creating audience display window: {:?}", e);
+            Err(format!("Failed to create window: {:?}", e))
+        }
+    }
+}
+
+// ============================================================================
+// Audience Display Test Window (Fresh Flow)
+// ============================================================================
+
+
+
+
+
+
+// ============================================================================
+// Font Enumeration
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SystemFont {
+    pub family: String,
+    pub postscript_name: Option<String>,
+}
+
+// Get available system fonts
+#[tauri::command]
+fn get_available_system_fonts() -> Result<Vec<SystemFont>, String> {
+    use fontdb::Database;
+    
+    let mut db = Database::new();
+    db.load_system_fonts();
+    
+    let mut fonts: Vec<SystemFont> = Vec::new();
+    let mut seen_families = std::collections::HashSet::new();
+    
+    // Iterate through all fonts in the database
+    // db.faces() returns an iterator over FaceInfo references
+    for face in db.faces() {
+        // Get the font family name
+        let family = face
+            .families
+            .first()
+            .map(|f| f.0.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+        
+        // Only add each family once (avoid duplicates)
+        if !seen_families.contains(&family) {
+            seen_families.insert(family.clone());
+            
+            fonts.push(SystemFont {
+                family: family.clone(),
+                postscript_name: Some(face.post_script_name.clone()),
+            });
+        }
+    }
+    
+    // Sort fonts alphabetically by family name
+    fonts.sort_by(|a, b| a.family.to_lowercase().cmp(&b.family.to_lowercase()));
+    
+    Ok(fonts)
 }
 
 // ============================================================================
@@ -1260,6 +1798,21 @@ lazy_static::lazy_static! {
     static ref AUDIO_RECORDING_STOP_FLAG: Mutex<Option<std::sync::Arc<AtomicBool>>> = Mutex::new(None);
     static ref AUDIO_RECORDING_START_TIME: Mutex<Option<std::time::Instant>> = Mutex::new(None);
     static ref AUDIO_RECORDING_FILE_PATH: Mutex<Option<String>> = Mutex::new(None);
+    
+    // Video streaming recording state - writes chunks to disk as they arrive
+    static ref VIDEO_RECORDING_RUNNING: AtomicBool = AtomicBool::new(false);
+    static ref VIDEO_RECORDING_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
+    static ref VIDEO_RECORDING_FILE_PATH: Mutex<Option<String>> = Mutex::new(None);
+    static ref VIDEO_RECORDING_START_TIME: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    static ref VIDEO_RECORDING_BYTES_WRITTEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    
+    // Web Audio streaming recording state - writes chunks to disk for crash safety
+    // Note: This streams raw WebM/Opus data; MP3 conversion happens after recording stops
+    static ref WEB_AUDIO_RECORDING_RUNNING: AtomicBool = AtomicBool::new(false);
+    static ref WEB_AUDIO_RECORDING_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
+    static ref WEB_AUDIO_RECORDING_FILE_PATH: Mutex<Option<String>> = Mutex::new(None);
+    static ref WEB_AUDIO_RECORDING_START_TIME: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    static ref WEB_AUDIO_RECORDING_BYTES_WRITTEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 }
 
 #[tauri::command]
@@ -1365,6 +1918,9 @@ fn start_native_audio_recording(
                 let mut resample_buffer: Vec<f32> = Vec::new();
                 let mut resample_pos: f64 = 0.0;
                 let mut skipped_frames: usize = 0;
+                // Flush counter for crash safety - flush every ~1 second of audio
+                let mut samples_since_flush: usize = 0;
+                let flush_interval: usize = target_sample_rate as usize; // ~1 second
 
                 selected.build_input_stream(
                     &stream_config,
@@ -1416,6 +1972,7 @@ fn start_native_audio_recording(
                                     for sample in &resample_buffer {
                                         let i16_sample = (*sample * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
                                         let _ = writer.write_sample(i16_sample);
+                                        samples_since_flush += 1;
                                     }
                                 } else {
                                     let data = &data[start_idx..];
@@ -1430,8 +1987,16 @@ fn start_native_audio_recording(
                                             .clamp(-1.0, 1.0);
                                         let i16_sample = (mono * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
                                         let _ = writer.write_sample(i16_sample);
+                                        samples_since_flush += 1;
                                         i += channels as usize;
                                     }
+                                }
+
+                                // Flush to disk periodically for crash safety
+                                // This ensures audio data is on disk even if app crashes
+                                if samples_since_flush >= flush_interval {
+                                    let _ = writer.flush();
+                                    samples_since_flush = 0;
                                 }
                             }
                         }
@@ -1444,6 +2009,9 @@ fn start_native_audio_recording(
                 let stop_flag = stop_flag_clone.clone();
                 let wav_writer = wav_writer_clone.clone();
                 let mut skipped_frames: usize = 0;
+                // Flush counter for crash safety - flush every ~1 second of audio
+                let mut samples_since_flush: usize = 0;
+                let flush_interval: usize = target_sample_rate as usize; // ~1 second
 
                 selected.build_input_stream(
                     &stream_config,
@@ -1475,7 +2043,14 @@ fn start_native_audio_recording(
                                     }
                                     let mono = (sum / channels as i32) as i16;
                                     let _ = writer.write_sample(mono);
+                                    samples_since_flush += 1;
                                     i += channels as usize;
+                                }
+
+                                // Flush to disk periodically for crash safety
+                                if samples_since_flush >= flush_interval {
+                                    let _ = writer.flush();
+                                    samples_since_flush = 0;
                                 }
                             }
                         }
@@ -1588,7 +2163,501 @@ fn get_audio_recording_duration() -> f64 {
 }
 
 // ============================================================================
-// AssemblyAI Token Generation (Tauri Backend)
+// Streaming Video Recording (Production-Grade - No Memory Accumulation)
+// ============================================================================
+//
+// This implementation writes video chunks directly to disk as they arrive from
+// the frontend MediaRecorder API, avoiding the memory accumulation that causes
+// "Out of Memory" crashes during long recordings (1+ hours).
+//
+// How it works:
+// 1. Frontend calls start_streaming_video_recording() to initialize the file
+// 2. Each MediaRecorder ondataavailable event sends the chunk via append_video_chunk()
+// 3. Chunks are written directly to disk - no accumulation in memory
+// 4. Frontend calls finalize_streaming_video_recording() to properly close the file
+//
+// Memory usage: O(1) constant, regardless of recording length
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VideoRecordingInfo {
+    pub file_path: String,
+    pub duration_seconds: f64,
+    pub bytes_written: u64,
+}
+
+#[tauri::command]
+fn start_streaming_video_recording(file_path: String) -> Result<String, String> {
+    use std::fs::{create_dir_all, File};
+    use std::path::Path;
+
+    // Stop any existing recording first
+    let _ = finalize_streaming_video_recording();
+
+    // Normalize file path (expand ~)
+    let mut normalized_path = file_path.trim().to_string();
+    if normalized_path.starts_with("~/") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map_err(|_| "home_dir_unavailable".to_string())?;
+        normalized_path = format!("{}/{}", home.trim_end_matches('/'), &normalized_path[2..]);
+    }
+
+    // Create parent directories if needed
+    if let Some(parent) = Path::new(&normalized_path).parent() {
+        if !parent.exists() {
+            create_dir_all(parent).map_err(|e| format!("create_dir_failed:{}", e))?;
+        }
+    }
+
+    // Create/truncate the video file
+    let file = File::create(&normalized_path)
+        .map_err(|e| format!("create_video_file_failed:{}", e))?;
+
+    // Store state
+    {
+        let mut guard = VIDEO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        *guard = Some(file);
+    }
+    {
+        let mut guard = VIDEO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        *guard = Some(normalized_path.clone());
+    }
+    {
+        let mut guard = VIDEO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        *guard = Some(std::time::Instant::now());
+    }
+    VIDEO_RECORDING_BYTES_WRITTEN.store(0, Ordering::SeqCst);
+    VIDEO_RECORDING_RUNNING.store(true, Ordering::SeqCst);
+
+    println!("[video_recording] Started streaming recording to: {}", normalized_path);
+    Ok(normalized_path)
+}
+
+#[tauri::command]
+fn append_video_chunk(chunk_base64: String) -> Result<u64, String> {
+    use std::io::Write;
+
+    if !VIDEO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Err("not_recording".to_string());
+    }
+
+    // Decode base64 chunk
+    let chunk_data = base64::engine::general_purpose::STANDARD
+        .decode(&chunk_base64)
+        .map_err(|e| format!("base64_decode_failed:{}", e))?;
+
+    let chunk_size = chunk_data.len() as u64;
+
+    // Write directly to file
+    {
+        let mut guard = VIDEO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        if let Some(ref mut file) = *guard {
+            file.write_all(&chunk_data)
+                .map_err(|e| format!("write_chunk_failed:{}", e))?;
+            // Flush to ensure data is persisted (optional - can be removed for better performance)
+            // file.flush().map_err(|e| format!("flush_failed:{}", e))?;
+        } else {
+            return Err("file_not_open".to_string());
+        }
+    }
+
+    // Update bytes written counter
+    let total = VIDEO_RECORDING_BYTES_WRITTEN.fetch_add(chunk_size, Ordering::SeqCst) + chunk_size;
+
+    Ok(total)
+}
+
+#[tauri::command]
+fn finalize_streaming_video_recording() -> Result<VideoRecordingInfo, String> {
+    if !VIDEO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Err("not_recording".to_string());
+    }
+
+    // Get recording info before closing
+    let duration_seconds = {
+        let guard = VIDEO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        guard.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0)
+    };
+
+    let file_path = {
+        let guard = VIDEO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        guard.clone().unwrap_or_default()
+    };
+
+    let bytes_written = VIDEO_RECORDING_BYTES_WRITTEN.load(Ordering::SeqCst);
+
+    // Close the file (drop triggers flush and close)
+    {
+        let mut guard = VIDEO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        if let Some(file) = guard.take() {
+            // Sync all data to disk before closing
+            let _ = file.sync_all();
+            drop(file);
+        }
+    }
+
+    // Clear state
+    VIDEO_RECORDING_RUNNING.store(false, Ordering::SeqCst);
+    {
+        let mut guard = VIDEO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    {
+        let mut guard = VIDEO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    VIDEO_RECORDING_BYTES_WRITTEN.store(0, Ordering::SeqCst);
+
+    println!(
+        "[video_recording] Finalized: {} ({:.1}s, {} bytes)",
+        file_path, duration_seconds, bytes_written
+    );
+
+    Ok(VideoRecordingInfo {
+        file_path,
+        duration_seconds,
+        bytes_written,
+    })
+}
+
+#[tauri::command]
+fn is_video_streaming_recording() -> bool {
+    VIDEO_RECORDING_RUNNING.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn get_video_recording_stats() -> Result<VideoRecordingInfo, String> {
+    if !VIDEO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Err("not_recording".to_string());
+    }
+
+    let duration_seconds = {
+        let guard = VIDEO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        guard.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0)
+    };
+
+    let file_path = {
+        let guard = VIDEO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        guard.clone().unwrap_or_default()
+    };
+
+    let bytes_written = VIDEO_RECORDING_BYTES_WRITTEN.load(Ordering::SeqCst);
+
+    Ok(VideoRecordingInfo {
+        file_path,
+        duration_seconds,
+        bytes_written,
+    })
+}
+
+#[tauri::command]
+fn abort_streaming_video_recording() -> Result<(), String> {
+    if !VIDEO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let file_path = {
+        let guard = VIDEO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        guard.clone()
+    };
+
+    // Close the file
+    {
+        let mut guard = VIDEO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+
+    // Clear state
+    VIDEO_RECORDING_RUNNING.store(false, Ordering::SeqCst);
+    {
+        let mut guard = VIDEO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    {
+        let mut guard = VIDEO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    VIDEO_RECORDING_BYTES_WRITTEN.store(0, Ordering::SeqCst);
+
+    // Optionally delete the incomplete file
+    if let Some(path) = file_path {
+        let _ = std::fs::remove_file(&path);
+        println!("[video_recording] Aborted and deleted incomplete file: {}", path);
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Streaming Web Audio Recording (Production-Grade - Crash Safe)
+// ============================================================================
+//
+// Similar to video streaming, this writes audio chunks directly to disk as they
+// arrive from the browser MediaRecorder. The raw format is typically WebM/Opus.
+// After recording stops, the frontend converts to MP3 if needed.
+//
+// Crash Safety: If app crashes, the WebM file on disk contains all audio up to
+// that point. It can be recovered or converted manually.
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WebAudioRecordingInfo {
+    pub file_path: String,
+    pub duration_seconds: f64,
+    pub bytes_written: u64,
+}
+
+#[tauri::command]
+fn start_streaming_web_audio_recording(file_path: String) -> Result<String, String> {
+    use std::fs::{create_dir_all, File};
+    use std::path::Path;
+
+    // Stop any existing recording first
+    let _ = finalize_streaming_web_audio_recording();
+
+    // Normalize file path (expand ~)
+    let mut normalized_path = file_path.trim().to_string();
+    if normalized_path.starts_with("~/") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map_err(|_| "home_dir_unavailable".to_string())?;
+        normalized_path = format!("{}/{}", home.trim_end_matches('/'), &normalized_path[2..]);
+    }
+
+    // Create parent directories if needed
+    if let Some(parent) = Path::new(&normalized_path).parent() {
+        if !parent.exists() {
+            create_dir_all(parent).map_err(|e| format!("create_dir_failed:{}", e))?;
+        }
+    }
+
+    // Create/truncate the audio file
+    let file = File::create(&normalized_path)
+        .map_err(|e| format!("create_audio_file_failed:{}", e))?;
+
+    // Store state
+    {
+        let mut guard = WEB_AUDIO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        *guard = Some(file);
+    }
+    {
+        let mut guard = WEB_AUDIO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        *guard = Some(normalized_path.clone());
+    }
+    {
+        let mut guard = WEB_AUDIO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        *guard = Some(std::time::Instant::now());
+    }
+    WEB_AUDIO_RECORDING_BYTES_WRITTEN.store(0, Ordering::SeqCst);
+    WEB_AUDIO_RECORDING_RUNNING.store(true, Ordering::SeqCst);
+
+    println!("[web_audio_recording] Started streaming to: {}", normalized_path);
+    Ok(normalized_path)
+}
+
+#[tauri::command]
+fn append_web_audio_chunk(chunk_base64: String) -> Result<u64, String> {
+    use std::io::Write;
+
+    if !WEB_AUDIO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Err("not_recording".to_string());
+    }
+
+    // Decode base64 chunk
+    let chunk_data = base64::engine::general_purpose::STANDARD
+        .decode(&chunk_base64)
+        .map_err(|e| format!("base64_decode_failed:{}", e))?;
+
+    let chunk_size = chunk_data.len() as u64;
+
+    // Write directly to file
+    {
+        let mut guard = WEB_AUDIO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        if let Some(ref mut file) = *guard {
+            file.write_all(&chunk_data)
+                .map_err(|e| format!("write_chunk_failed:{}", e))?;
+        } else {
+            return Err("file_not_open".to_string());
+        }
+    }
+
+    // Update bytes written counter
+    let total = WEB_AUDIO_RECORDING_BYTES_WRITTEN.fetch_add(chunk_size, Ordering::SeqCst) + chunk_size;
+
+    Ok(total)
+}
+
+#[tauri::command]
+fn finalize_streaming_web_audio_recording() -> Result<WebAudioRecordingInfo, String> {
+    if !WEB_AUDIO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Err("not_recording".to_string());
+    }
+
+    // Get recording info before closing
+    let duration_seconds = {
+        let guard = WEB_AUDIO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        guard.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0)
+    };
+
+    let file_path = {
+        let guard = WEB_AUDIO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        guard.clone().unwrap_or_default()
+    };
+
+    let bytes_written = WEB_AUDIO_RECORDING_BYTES_WRITTEN.load(Ordering::SeqCst);
+
+    // Close the file (drop triggers flush and close)
+    {
+        let mut guard = WEB_AUDIO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        if let Some(file) = guard.take() {
+            let _ = file.sync_all();
+            drop(file);
+        }
+    }
+
+    // Clear state
+    WEB_AUDIO_RECORDING_RUNNING.store(false, Ordering::SeqCst);
+    {
+        let mut guard = WEB_AUDIO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    {
+        let mut guard = WEB_AUDIO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    WEB_AUDIO_RECORDING_BYTES_WRITTEN.store(0, Ordering::SeqCst);
+
+    println!(
+        "[web_audio_recording] Finalized: {} ({:.1}s, {} bytes)",
+        file_path, duration_seconds, bytes_written
+    );
+
+    Ok(WebAudioRecordingInfo {
+        file_path,
+        duration_seconds,
+        bytes_written,
+    })
+}
+
+#[tauri::command]
+fn is_web_audio_streaming_recording() -> bool {
+    WEB_AUDIO_RECORDING_RUNNING.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn get_web_audio_recording_stats() -> Result<WebAudioRecordingInfo, String> {
+    if !WEB_AUDIO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Err("not_recording".to_string());
+    }
+
+    let duration_seconds = {
+        let guard = WEB_AUDIO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        guard.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0)
+    };
+
+    let file_path = {
+        let guard = WEB_AUDIO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        guard.clone().unwrap_or_default()
+    };
+
+    let bytes_written = WEB_AUDIO_RECORDING_BYTES_WRITTEN.load(Ordering::SeqCst);
+
+    Ok(WebAudioRecordingInfo {
+        file_path,
+        duration_seconds,
+        bytes_written,
+    })
+}
+
+#[tauri::command]
+fn abort_streaming_web_audio_recording() -> Result<(), String> {
+    if !WEB_AUDIO_RECORDING_RUNNING.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let file_path = {
+        let guard = WEB_AUDIO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        guard.clone()
+    };
+
+    // Close the file
+    {
+        let mut guard = WEB_AUDIO_RECORDING_FILE.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+
+    // Clear state
+    WEB_AUDIO_RECORDING_RUNNING.store(false, Ordering::SeqCst);
+    {
+        let mut guard = WEB_AUDIO_RECORDING_FILE_PATH.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    {
+        let mut guard = WEB_AUDIO_RECORDING_START_TIME.lock().map_err(|_| "lock_failed")?;
+        *guard = None;
+    }
+    WEB_AUDIO_RECORDING_BYTES_WRITTEN.store(0, Ordering::SeqCst);
+
+    // Optionally delete the incomplete file
+    if let Some(path) = file_path {
+        let _ = std::fs::remove_file(&path);
+        println!("[web_audio_recording] Aborted and deleted: {}", path);
+    }
+
+    Ok(())
+}
+
+/// Read a file and return its contents as base64.
+/// Used to read the streamed WebM audio file for MP3 conversion.
+#[tauri::command]
+fn read_file_as_base64(file_path: String) -> Result<String, String> {
+    use std::fs::File;
+    use std::io::Read;
+    use std::path::Path;
+
+    // Normalize file path (expand ~)
+    let mut normalized_path = file_path.trim().to_string();
+    if normalized_path.starts_with("~/") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map_err(|_| "home_dir_unavailable".to_string())?;
+        normalized_path = format!("{}/{}", home.trim_end_matches('/'), &normalized_path[2..]);
+    }
+
+    if !Path::new(&normalized_path).exists() {
+        return Err(format!("file_not_found:{}", normalized_path));
+    }
+
+    let mut file = File::open(&normalized_path)
+        .map_err(|e| format!("open_failed:{}", e))?;
+    
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)
+        .map_err(|e| format!("read_failed:{}", e))?;
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&buffer))
+}
+
+/// Delete a file (used to clean up temp WebM files after MP3 conversion)
+#[tauri::command]
+fn delete_file(file_path: String) -> Result<(), String> {
+    // Normalize file path (expand ~)
+    let mut normalized_path = file_path.trim().to_string();
+    if normalized_path.starts_with("~/") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map_err(|_| "home_dir_unavailable".to_string())?;
+        normalized_path = format!("{}/{}", home.trim_end_matches('/'), &normalized_path[2..]);
+    }
+
+    std::fs::remove_file(&normalized_path)
+        .map_err(|e| format!("delete_failed:{}", e))?;
+
+    println!("[file] Deleted: {}", normalized_path);
+    Ok(())
+}
+
+// ============================================================================
+// AssemblyAI Token Generation (Tauri Backend) - Universal Streaming v3
 // ============================================================================
 
 #[derive(Debug, Deserialize)]
@@ -1596,19 +2665,28 @@ struct AssemblyAiTokenResponse {
     token: String,
 }
 
+/// Generate a temporary token for AssemblyAI Universal Streaming (v3).
+/// 
+/// The v3 API uses GET https://streaming.assemblyai.com/v3/token with query params.
+/// Maximum expires_in_seconds is 600 (10 minutes).
 #[tauri::command]
-async fn assemblyai_create_realtime_token(
+async fn assemblyai_create_streaming_token(
     api_key: String,
-    expires_in: Option<u64>,
+    expires_in_seconds: Option<u64>,
 ) -> Result<String, String> {
-    let expires_in = expires_in.unwrap_or(3600);
+    // v3 API limits expires_in_seconds to max 600 seconds (10 minutes)
+    let expires_in = expires_in_seconds.unwrap_or(600).min(600);
 
     let client = reqwest::Client::new();
+    // v3 uses GET with query parameters instead of POST with JSON body
+    let url = format!(
+        "https://streaming.assemblyai.com/v3/token?expires_in_seconds={}",
+        expires_in
+    );
+
     let resp = client
-        .post("https://api.assemblyai.com/v2/realtime/token")
+        .get(&url)
         .header("Authorization", api_key)
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({ "expires_in": expires_in }))
         .send()
         .await
         .map_err(|e| format!("assemblyai_token_request_failed:{}", e))?;
@@ -1631,6 +2709,15 @@ async fn assemblyai_create_realtime_token(
         .map_err(|e| format!("assemblyai_token_parse_failed:{}:{}", e, body))?;
 
     Ok(parsed.token)
+}
+
+// Keep old function name as alias for backward compatibility during transition
+#[tauri::command]
+async fn assemblyai_create_realtime_token(
+    api_key: String,
+    expires_in: Option<u64>,
+) -> Result<String, String> {
+    assemblyai_create_streaming_token(api_key, expires_in).await
 }
 
 #[tauri::command]
@@ -1734,7 +2821,7 @@ fn ensure_output_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn start_live_slides_server(port: u16) -> Result<String, String> {
+async fn start_live_slides_server(app: tauri::AppHandle, port: u16) -> Result<String, String> {
     let state = SERVER_STATE.clone();
     
     // Check if already running
@@ -1747,8 +2834,9 @@ async fn start_live_slides_server(port: u16) -> Result<String, String> {
     
     // Start combined HTTP + WebSocket server in background
     let port_clone = port;
+    let app_handle = app.clone();
     tokio::spawn(async move {
-        if let Err(e) = run_combined_server(port_clone).await {
+        if let Err(e) = run_combined_server(port_clone, app_handle).await {
             eprintln!("Server error: {}", e);
         }
         // Mark as not running when server stops
@@ -1852,6 +2940,13 @@ async fn get_live_slides_server_info() -> Result<LiveSlidesState, String> {
 }
 
 #[tauri::command]
+async fn set_api_enabled(enabled: bool) -> Result<(), String> {
+    let state = SERVER_STATE.clone();
+    *state.api_enabled.write().await = enabled;
+    Ok(())
+}
+
+#[tauri::command]
 fn get_local_ip() -> String {
     local_ip_address::local_ip()
         .map(|ip| ip.to_string())
@@ -1913,6 +3008,42 @@ async fn update_timer_state(
             end_time,
             is_overrun,
         },
+    };
+    if let Ok(json) = serde_json::to_string(&update) {
+        let _ = state.broadcast_tx.send(json);
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_display_state(
+    verse_text: String,
+    reference: String,
+    slides: Vec<String>,
+    settings: serde_json::Value,
+) -> Result<(), String> {
+    let state = SERVER_STATE.clone();
+    
+    // Update display state
+    {
+        let mut display_state = state.display_state.write().await;
+        display_state.scripture = DisplayScripture {
+            verse_text: verse_text.clone(),
+            reference: reference.clone(),
+        };
+        display_state.slides = slides.clone();
+        display_state.settings = settings.clone();
+    }
+    
+    // Broadcast display update to all connected clients
+    let update = WsMessage::DisplayUpdate {
+        scripture: DisplayScripture {
+            verse_text,
+            reference,
+        },
+        slides,
+        settings,
     };
     if let Ok(json) = serde_json::to_string(&update) {
         let _ = state.broadcast_tx.send(json);
@@ -2064,13 +3195,119 @@ async fn update_sync_playlists(playlists: serde_json::Value) -> Result<(), Strin
     Ok(())
 }
 
+// ============================================================================
+// MIDI Support
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MidiDevice {
+    pub id: String,
+    pub name: String,
+}
+
+#[tauri::command]
+fn list_midi_output_devices() -> Result<Vec<MidiDevice>, String> {
+    use midir::MidiOutput;
+    
+    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+        .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
+    
+    let ports = midi_out.ports();
+    let mut devices = Vec::new();
+    
+    for (i, port) in ports.iter().enumerate() {
+        if let Ok(name) = midi_out.port_name(port) {
+            devices.push(MidiDevice {
+                id: i.to_string(),
+                name,
+            });
+        }
+    }
+    
+    Ok(devices)
+}
+
+#[tauri::command]
+fn send_midi_note(
+    device_id: String,
+    channel: u8,
+    note: u8,
+    velocity: u8,
+) -> Result<(), String> {
+    use midir::MidiOutput;
+    
+    // Validate channel (0-15, but we'll use 1-16 for user input)
+    let channel = if channel == 0 || channel > 16 {
+        return Err("Channel must be between 1 and 16".to_string());
+    } else {
+        channel - 1 // Convert to 0-15 for MIDI
+    };
+    
+    // Validate note (0-127)
+    if note > 127 {
+        return Err("Note must be between 0 and 127".to_string());
+    }
+    
+    // Validate velocity (0-127)
+    if velocity > 127 {
+        return Err("Velocity must be between 0 and 127".to_string());
+    }
+    
+    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+        .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
+    
+    let ports = midi_out.ports();
+    let device_index: usize = device_id.parse()
+        .map_err(|_| format!("Invalid device ID: {}", device_id))?;
+    
+    if device_index >= ports.len() {
+        return Err(format!("Device ID {} out of range ({} devices available)", device_index, ports.len()));
+    }
+    
+    let port = &ports[device_index];
+    
+    // Create connection
+    let mut conn_out = midi_out.connect(port, "proassist-midi-out")
+        .map_err(|e| format!("Failed to connect to MIDI device: {}", e))?;
+    
+    // Send Note On message: 0x90 + channel (0-15), note (0-127), velocity (0-127)
+    let status = 0x90 | channel;
+    let message = [status, note, velocity];
+    
+    conn_out.send(&message)
+        .map_err(|e| format!("Failed to send MIDI message: {}", e))?;
+    
+    // Send Note Off message immediately (0x80 + channel, note, 0)
+    // This creates a short note trigger
+    let status_off = 0x80 | channel;
+    let message_off = [status_off, note, 0];
+    
+    // Small delay to ensure note is registered
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    
+    conn_out.send(&message_off)
+        .map_err(|e| format!("Failed to send MIDI note off: {}", e))?;
+    
+    // Connection is dropped here, which closes it
+    drop(conn_out);
+    
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_window_state::Builder::new().build());
+    }
+
+    builder
         .setup(|app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -2079,6 +3316,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             toggle_devtools,
+            get_available_monitors_safe,
+            open_audience_display_window,
+            open_dialog,
+            close_dialog,
+            get_available_system_fonts,
             list_native_audio_input_devices,
             start_native_audio_stream,
             stop_native_audio_stream,
@@ -2087,7 +3329,26 @@ pub fn run() {
             stop_native_audio_recording,
             is_audio_recording,
             get_audio_recording_duration,
-            assemblyai_create_realtime_token,
+            // Streaming video recording commands (production-grade - no memory accumulation)
+            start_streaming_video_recording,
+            append_video_chunk,
+            finalize_streaming_video_recording,
+            is_video_streaming_recording,
+            get_video_recording_stats,
+            abort_streaming_video_recording,
+            // Streaming web audio recording commands (crash-safe MP3 recording)
+            start_streaming_web_audio_recording,
+            append_web_audio_chunk,
+            finalize_streaming_web_audio_recording,
+            is_web_audio_streaming_recording,
+            get_web_audio_recording_stats,
+            abort_streaming_web_audio_recording,
+            // File utilities for audio conversion
+            read_file_as_base64,
+            delete_file,
+            // AssemblyAI Universal Streaming v3 token
+            assemblyai_create_streaming_token,
+            assemblyai_create_realtime_token, // backward compat alias
             write_text_to_file,
             write_binary_to_file,
             ensure_output_folder,
@@ -2097,9 +3358,11 @@ pub fn run() {
             delete_live_slide_session,
             get_live_slide_sessions,
             get_live_slides_server_info,
+            set_api_enabled,
             get_local_ip,
             update_schedule,
             update_timer_state,
+            update_display_state,
             // Network Sync commands
             start_sync_server,
             stop_sync_server,
@@ -2107,7 +3370,10 @@ pub fn run() {
             broadcast_sync_message,
             update_sync_playlists,
             // Live Slides generic broadcast
-            broadcast_live_slides_message
+            broadcast_live_slides_message,
+            // MIDI commands
+            list_midi_output_devices,
+            send_midi_note
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

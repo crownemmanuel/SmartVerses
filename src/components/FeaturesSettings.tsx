@@ -7,12 +7,12 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  FaHome,
   FaClock,
   FaStickyNote,
   FaBible,
   FaCircle,
   FaToggleOn,
+  FaUser,
 } from "react-icons/fa";
 import {
   loadEnabledFeatures,
@@ -35,7 +35,7 @@ const FEATURES: FeatureConfig[] = [
     key: "slides",
     label: "Slides",
     description: "Main slide management and presentation control",
-    icon: <FaHome />,
+    icon: <FaStickyNote />,
     color: "#3b82f6",
   },
   {
@@ -49,7 +49,7 @@ const FEATURES: FeatureConfig[] = [
     key: "liveTestimonies",
     label: "Live Testimonies",
     description: "Display and manage live testimonies from congregation",
-    icon: <FaStickyNote />,
+    icon: <FaUser />,
     color: "#ec4899",
   },
   {
@@ -231,23 +231,6 @@ const FeaturesSettings: React.FC = () => {
             </div>
           );
         })}
-      </div>
-
-      {/* Warning */}
-      <div
-        style={{
-          marginTop: "var(--spacing-5)",
-          padding: "var(--spacing-3)",
-          backgroundColor: "rgba(251, 191, 36, 0.1)",
-          borderRadius: "10px",
-          border: "1px solid rgba(251, 191, 36, 0.2)",
-          fontSize: "0.9rem",
-          color: "var(--app-text-color-secondary)",
-        }}
-      >
-        <strong style={{ color: "#fbbf24" }}>Note:</strong> Disabling a feature will hide it
-        from the navigation bar. Any background processes for that feature will also be stopped.
-        You can re-enable features at any time.
       </div>
 
       {/* Save Status */}

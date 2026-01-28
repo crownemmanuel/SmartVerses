@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/ProAssist.png" />
+    <title>Audience Display - ProAssist</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+            color: #ffffff;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .text-box {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 8px;
+            overflow: hidden;
+        }
+
+        .text-content {
+            line-height: 1.2;
+            white-space: pre-wrap;
+            word-break: break-word;
+            width: 100%;
+        }
+
+        .reference-box {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 6px;
+            overflow: hidden;
+        }
+
+        .reference-content {
+            line-height: 1.1;
+            white-space: pre-wrap;
+            word-break: break-word;
+            width: 100%;
+        }
+
+        .slide-line {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 8px;
+            overflow: hidden;
+        }
+
+        .slide-line-content {
+            line-height: 1.2;
+            white-space: pre-wrap;
+            word-break: break-word;
+            width: 100%;
+        }
+
+        .timer-overlay {
+            position: fixed;
+            right: 28px;
+            bottom: 24px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background-color: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+            font-size: 32px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            display: none;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        body:hover .connection-status {
+            opacity: 1;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ef4444;
+        }
+
+        .status-indicator.connected {
+            background-color: #22c55e;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status">
+        <div class="status-indicator" id="statusIndicator"></div>
+        <span id="statusText">Connecting...</span>
+    </div>
+
+    <div class="text-box" id="textBox" style="display: none;">
+        <div class="text-content" id="textContent"></div>
+    </div>
+
+    <div class="reference-box" id="referenceBox" style="display: none;">
+        <div class="reference-content" id="referenceContent"></div>
+    </div>
+
+    <div class="timer-overlay" id="timerOverlay"></div>
+
+    <script>
+        let ws = null;
+        let scripture = { verseText: '', reference: '' };
+        let slides = [];
+        let timerState = {
+            is_running: false,
+            time_left: 0,
+            session_name: null,
+            is_overrun: false,
+        };
+        let settings = {
+            backgroundColor: '#000000',
+            backgroundImagePath: '',
+            textFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            referenceFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            textStyle: {
+                color: '#ffffff',
+                bold: false,
+                italic: false,
+                stroke: undefined,
+                shadow: undefined,
+            },
+            referenceStyle: {
+                color: '#ffffff',
+                bold: false,
+                italic: false,
+                stroke: undefined,
+                shadow: undefined,
+            },
+            layout: {
+                text: { x: 0.08, y: 0.1, width: 0.84, height: 0.6 },
+                reference: { x: 0.08, y: 0.75, width: 0.84, height: 0.16 },
+            },
+            slidesLayout: [
+                { x: 0.08, y: 0.62, width: 0.84, height: 0.12 },
+                { x: 0.08, y: 0.76, width: 0.84, height: 0.12 },
+            ],
+            slidesLineStyles: [],
+            showTimer: false,
+            timerFontSize: 32,
+        };
+        let backgroundImageUrl = '';
+        const slideBoxes = [];
+        const slideContents = [];
+        const maxSlideLines = 6;
+
+        for (let i = 0; i < maxSlideLines; i++) {
+            const box = document.createElement('div');
+            box.className = 'slide-line';
+            box.style.display = 'none';
+            const content = document.createElement('div');
+            content.className = 'slide-line-content';
+            box.appendChild(content);
+            document.body.appendChild(box);
+            slideBoxes.push(box);
+            slideContents.push(content);
+        }
+
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+            if (connected) {
+                indicator.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                indicator.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function getFontStyle(style) {
+            const css = {
+                color: style.color,
+                fontWeight: style.bold ? 'bold' : 'normal',
+                fontStyle: style.italic ? 'italic' : 'normal',
+            };
+
+            if (style.stroke) {
+                css.webkitTextStroke = `${style.stroke.width}px ${style.stroke.color}`;
+                css.textStroke = `${style.stroke.width}px ${style.stroke.color}`;
+            }
+
+            if (style.shadow) {
+                css.textShadow = `${style.shadow.offsetX}px ${style.shadow.offsetY}px ${style.shadow.blur}px ${style.shadow.color}`;
+            }
+
+            return css;
+        }
+
+        function applyStyles(element, styles) {
+            Object.assign(element.style, styles);
+        }
+
+        function resolveLineStyle(base, override) {
+            const style = override || {};
+            return {
+                color: style.color ?? base.color,
+                bold: style.bold ?? base.bold,
+                italic: style.italic ?? base.italic,
+                stroke: style.stroke ?? base.stroke,
+                shadow: style.shadow ?? base.shadow,
+            };
+        }
+
+        function resolveLineFontFamily(baseFont, override) {
+            return (override && override.fontFamily) ? override.fontFamily : baseFont;
+        }
+
+        function rectStyle(rect) {
+            return {
+                left: `${rect.x * 100}%`,
+                top: `${rect.y * 100}%`,
+                width: `${rect.width * 100}%`,
+                height: `${rect.height * 100}%`,
+            };
+        }
+
+        function hasSlideContent() {
+            return slides.some((line) => line && line.trim().length > 0);
+        }
+
+        function formatTime(seconds) {
+            const isNegative = seconds < 0;
+            const absoluteSeconds = Math.abs(seconds);
+            const minutes = Math.floor(absoluteSeconds / 60);
+            const remainingSeconds = absoluteSeconds % 60;
+            return `${isNegative ? '-' : ''}${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+        }
+
+        function autoFontSize(boxElement, contentElement, text, minSize = 14, maxSize = 220) {
+            if (!text || !boxElement || !contentElement) return minSize;
+
+            // Get container dimensions (accounting for padding)
+            const computedStyle = window.getComputedStyle(boxElement);
+            const paddingH = parseFloat(computedStyle.paddingLeft) + parseFloat(computedStyle.paddingRight);
+            const paddingV = parseFloat(computedStyle.paddingTop) + parseFloat(computedStyle.paddingBottom);
+            const containerWidth = boxElement.clientWidth - paddingH;
+            const containerHeight = boxElement.clientHeight - paddingV;
+            
+            if (containerWidth <= 0 || containerHeight <= 0) return minSize;
+
+            // Binary search for optimal font size
+            let low = minSize;
+            let high = maxSize;
+            let best = minSize;
+
+            while (low <= high) {
+                const mid = Math.floor((low + high) / 2);
+                contentElement.style.fontSize = `${mid}px`;
+                
+                // Force a reflow to get accurate measurements
+                void contentElement.offsetWidth;
+                
+                // Check if content fits within container
+                const fits = contentElement.scrollWidth <= containerWidth && 
+                             contentElement.scrollHeight <= containerHeight;
+
+                if (fits) {
+                    best = mid;
+                    low = mid + 1;
+                } else {
+                    high = mid - 1;
+                }
+            }
+
+            // Set final font size
+            contentElement.style.fontSize = `${best}px`;
+            return best;
+        }
+
+        function updateDisplay() {
+            // Update background
+            document.body.style.backgroundColor = settings.backgroundColor;
+            if (backgroundImageUrl) {
+                document.body.style.backgroundImage = `url(${backgroundImageUrl})`;
+                document.body.style.backgroundSize = 'cover';
+                document.body.style.backgroundPosition = 'center';
+            } else {
+                document.body.style.backgroundImage = '';
+            }
+
+            const slideActive = hasSlideContent();
+
+            // Update text box
+            const textBox = document.getElementById('textBox');
+            const textContent = document.getElementById('textContent');
+            
+            if (!slideActive && scripture.verseText) {
+                textBox.style.display = 'flex';
+                applyStyles(textBox, rectStyle(settings.layout.text));
+                textContent.textContent = scripture.verseText;
+                textContent.style.fontFamily = settings.textFont;
+                applyStyles(textContent, getFontStyle(settings.textStyle));
+                
+                // Auto font size - use requestAnimationFrame to ensure layout is complete
+                requestAnimationFrame(() => {
+                    autoFontSize(textBox, textContent, scripture.verseText, 14, 220);
+                });
+            } else {
+                textBox.style.display = 'none';
+            }
+
+            // Update reference box
+            const referenceBox = document.getElementById('referenceBox');
+            const referenceContent = document.getElementById('referenceContent');
+            
+            if (!slideActive && scripture.reference) {
+                referenceBox.style.display = 'flex';
+                applyStyles(referenceBox, rectStyle(settings.layout.reference));
+                referenceContent.textContent = scripture.reference;
+                referenceContent.style.fontFamily = settings.referenceFont;
+                applyStyles(referenceContent, getFontStyle(settings.referenceStyle));
+                
+                // Auto font size - use requestAnimationFrame to ensure layout is complete
+                requestAnimationFrame(() => {
+                    autoFontSize(referenceBox, referenceContent, scripture.reference, 12, 160);
+                });
+            } else {
+                referenceBox.style.display = 'none';
+            }
+
+            // Update slide lines
+            const layout = Array.isArray(settings.slidesLayout) ? settings.slidesLayout : [];
+            for (let i = 0; i < maxSlideLines; i++) {
+                const content = slides[i] || '';
+                const box = slideBoxes[i];
+                const contentEl = slideContents[i];
+                if (slideActive && content.trim()) {
+                    const rect = layout[i] || (layout.length > 0 ? layout[layout.length - 1] : null) || { x: 0.08, y: 0.62, width: 0.84, height: 0.12 };
+                    box.style.display = 'flex';
+                    applyStyles(box, rectStyle(rect));
+                    contentEl.textContent = content;
+                    const lineOverride = Array.isArray(settings.slidesLineStyles) ? settings.slidesLineStyles[i] : null;
+                    contentEl.style.fontFamily = resolveLineFontFamily(settings.textFont, lineOverride);
+                    const lineStyle = resolveLineStyle(
+                        settings.textStyle,
+                        lineOverride
+                    );
+                    applyStyles(contentEl, getFontStyle(lineStyle));
+                    requestAnimationFrame(() => {
+                        autoFontSize(box, contentEl, content, 14, 300);
+                    });
+                } else {
+                    box.style.display = 'none';
+                }
+            }
+
+            // Update timer overlay
+            const timerOverlay = document.getElementById('timerOverlay');
+            const shouldShowTimer = settings.showTimer && (timerState.is_running || timerState.time_left !== 0);
+            if (shouldShowTimer) {
+                const isOverrun = timerState.time_left < 0;
+                timerOverlay.style.display = 'block';
+                timerOverlay.style.fontSize = `${settings.timerFontSize || 150}px`;
+                timerOverlay.style.color = isOverrun ? '#ef4444' : '#ffffff';
+                timerOverlay.textContent = formatTime(timerState.time_left);
+            } else {
+                timerOverlay.style.display = 'none';
+            }
+        }
+
+        function loadBackgroundImage(imageUrl) {
+            if (!imageUrl) {
+                backgroundImageUrl = '';
+                updateDisplay();
+                return;
+            }
+
+            // Accept data URLs, http/https URLs
+            if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://') || imageUrl.startsWith('data:')) {
+                backgroundImageUrl = imageUrl;
+                updateDisplay();
+            } else {
+                // Local file paths won't work in the browser - clear it
+                backgroundImageUrl = '';
+                updateDisplay();
+            }
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateConnectionStatus(true);
+                
+                // Send join message for display updates
+                ws.send(JSON.stringify({
+                    type: 'join_display'
+                }));
+                ws.send(JSON.stringify({
+                    type: 'join_timer'
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    if (message.type === 'display_update') {
+                        scripture = {
+                            verseText: message.scripture?.verse_text || '',
+                            reference: message.scripture?.reference || '',
+                        };
+                        slides = Array.isArray(message.slides) ? message.slides : [];
+                        if (message.settings) {
+                            // Merge settings, preserving defaults
+                            settings = {
+                                ...settings,
+                                ...message.settings,
+                                textStyle: message.settings.textStyle ? { ...settings.textStyle, ...message.settings.textStyle } : settings.textStyle,
+                                referenceStyle: message.settings.referenceStyle ? { ...settings.referenceStyle, ...message.settings.referenceStyle } : settings.referenceStyle,
+                                layout: message.settings.layout ? { ...settings.layout, ...message.settings.layout } : settings.layout,
+                                slidesLayout: Array.isArray(message.settings.slidesLayout) ? message.settings.slidesLayout : settings.slidesLayout,
+                                slidesLineStyles: Array.isArray(message.settings.slidesLineStyles)
+                                    ? message.settings.slidesLineStyles.map((style) =>
+                                          style && typeof style === 'object' ? style : {}
+                                      )
+                                    : settings.slidesLineStyles,
+                                showTimer: message.settings.showTimer !== undefined ? message.settings.showTimer : settings.showTimer,
+                                timerFontSize: typeof message.settings.timerFontSize === 'number' ? message.settings.timerFontSize : settings.timerFontSize,
+                            };
+                            // Use backgroundImageDataUrl for web display (data URL sent from app)
+                            if (message.settings.backgroundImageDataUrl) {
+                                loadBackgroundImage(message.settings.backgroundImageDataUrl);
+                            } else if (message.settings.backgroundImageDataUrl === '' || 
+                                       (message.settings.backgroundImagePath === '' && !message.settings.backgroundImageDataUrl)) {
+                                backgroundImageUrl = '';
+                            }
+                        }
+                        updateDisplay();
+                    } else if (message.type === 'timer_update') {
+                        timerState = {
+                            is_running: message.timer_state?.is_running || false,
+                            time_left: typeof message.timer_state?.time_left === 'number' ? message.timer_state.time_left : 0,
+                            session_name: message.timer_state?.session_name || null,
+                            end_time: message.timer_state?.end_time || null,
+                            is_overrun: message.timer_state?.is_overrun || false,
+                        };
+                        updateDisplay();
+                    }
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus(false);
+                // Attempt to reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        // Initial load
+        connectWebSocket();
+
+        // Update display on window resize
+        window.addEventListener('resize', () => {
+            updateDisplay();
+        });
+    </script>
+</body>
+</html>

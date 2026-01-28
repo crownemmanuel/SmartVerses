@@ -39,6 +39,7 @@
    - ✅ Local build passes (`npm run build`)
    - ✅ All version numbers are updated
    - ✅ All changes are committed
+   - ✅ Tag message describes what's in the release (not just "bump" or "release")
 
 ## Release Workflow
 
@@ -58,7 +59,16 @@ git push origin main
 npm run build
 
 # 4. If build passes, create and push tag (CI/CD will create the release automatically)
-git tag -a vX.Y.Z -m "Release version X.Y.Z - Description"
+# IMPORTANT: Tag message must describe what's in this release, not just "bump" or "release"
+# Good examples:
+#   "Release version X.Y.Z - Bug fixes and performance improvements"
+#   "Release version X.Y.Z - Added Firebase error handling and UI cleanup"
+#   "Release version X.Y.Z - Fixed blank screen issue and improved error boundaries"
+# Bad examples (DO NOT USE):
+#   "Bump version"
+#   "Release"
+#   "Version update"
+git tag -a vX.Y.Z -m "Release version X.Y.Z - Short description of changes"
 git push origin vX.Y.Z
 ```
 
@@ -71,7 +81,7 @@ If you already pushed a tag with build errors:
 1. Delete tag locally: `git tag -d vX.Y.Z`
 2. Delete tag remotely: `git push origin --delete vX.Y.Z`
 3. Fix build errors and commit
-4. Recreate tag: `git tag -a vX.Y.Z -m "Release message"`
+4. Recreate tag with descriptive message: `git tag -a vX.Y.Z -m "Release version X.Y.Z - Short description of changes"`
 5. Push tag again: `git push origin vX.Y.Z`
 
 ## Important Reminders
@@ -81,6 +91,7 @@ If you already pushed a tag with build errors:
 - **Never skip the local build** - CI will fail if build has errors
 - **Always update all version files** - Keep them in sync
 - **Test before release** - Verify the build works locally first
+- **Always use descriptive tag messages** - Tag messages should describe what's in the release (e.g., "Bug fixes and performance improvements", "Added Firebase error handling", "Fixed blank screen issue"), NOT generic messages like "bump", "release", or "version update"
 
 ## If You Accidentally Created a Release Manually
 
@@ -88,7 +99,7 @@ If a release was created manually (via `gh release create` or GitHub UI):
 
 1. Delete the release: `gh release delete vX.Y.Z --yes`
 2. Delete the remote tag: `git push origin --delete vX.Y.Z`
-3. Create a new tag: `git tag -a vX.Y.Z -m "Release version X.Y.Z - Description"`
+3. Create a new tag with descriptive message: `git tag -a vX.Y.Z -m "Release version X.Y.Z - Short description of changes"`
 4. Push the tag: `git push origin vX.Y.Z`
 5. Let CI/CD create the release automatically
 
@@ -157,6 +168,28 @@ When adding external URL features:
 3. Identify which directive is blocking (connect-src, script-src, etc.)
 4. Add the required domain/URL pattern to that directive
 5. Rebuild and test again
+
+## Audience Display Implementation
+
+**CRITICAL: DUAL IMPLEMENTATION REQUIREMENT**
+
+The Audience Display feature has two distinct implementations based on the operating system. When making changes to the audience display logic, UI, or window management, **YOU MUST UPDATE BOTH IMPLEMENTATIONS** unless specifically instructed otherwise.
+
+1.  **Windows Implementation**:
+    *   **Settings Checkbox**: "Enable audience screen (Windows)" (controlled by `settings.windowAudienceScreen`)
+    *   **Mechanism**: Uses `invoke("open_dialog", { dialogWindow: "audience-test", ... })`
+    *   **Window Label**: `dialog-audience-test` (handled via `window_commands.rs`)
+    *   **Closing**: Uses `invoke("close_dialog", { dialogWindow: "audience-test" })`
+
+2.  **Mac Implementation**:
+    *   **Settings Checkbox**: "Enable audience screen (Mac)" (controlled by `settings.enabled`)
+    *   **Mechanism**: Uses `openDisplayWindow(settings)` (which calls `invoke("open_audience_display_window", ...)`)
+    *   **Window Label**: `audience-display` (standard Tauri multi-window)
+    *   **Closing**: Uses `closeDisplayWindow()` (frontend-driven)
+
+**Requirement**:
+*   If you change how the display opens, closes, or updates content, verify and apply changes to **BOTH** code paths in `src/components/DisplaySettings.tsx`, `src/services/displayService.ts`, and `src-tauri/src/window_commands.rs` (or relevant backend files).
+*   Ensure UI changes in `DisplaySettings.tsx` respect the OS-specific rendering logic (`osType` check).
 
 ## See Also
 

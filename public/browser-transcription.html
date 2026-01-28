@@ -359,6 +359,9 @@
     let isRecording = false;
     let transcriptSegments = [];
     let interimText = '';
+    let currentTurnOrder = null;
+    let finalizedTurnOrder = null;
+    const formatTurns = true;
     
     // Get URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -515,13 +518,16 @@
           console.log('Using pre-generated token from ProAssist app');
         } else {
           // Fall back to getting token via API (may have CORS issues)
-          const tokenResponse = await fetch('https://api.assemblyai.com/v2/realtime/token', {
-            method: 'POST',
+          // v3 uses GET with query params instead of POST with JSON body
+          // Note: max expires_in_seconds is 600 (10 minutes) in v3
+          const tokenUrl = new URL('https://streaming.assemblyai.com/v3/token');
+          tokenUrl.searchParams.set('expires_in_seconds', '600');
+          
+          const tokenResponse = await fetch(tokenUrl.toString(), {
+            method: 'GET',
             headers: {
-              'Authorization': apiKey,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ expires_in: 3600 })
+              'Authorization': apiKey
+            }
           });
           
           if (!tokenResponse.ok) {
@@ -533,11 +539,17 @@
           token = tokenData.token;
         }
         
-        // Connect to AssemblyAI WebSocket
-        assemblySocket = new WebSocket(`wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${token}`);
+        // Connect to AssemblyAI WebSocket (v3 Universal Streaming)
+        const wsUrl = new URL('wss://streaming.assemblyai.com/v3/ws');
+        wsUrl.searchParams.set('sample_rate', '16000');
+        wsUrl.searchParams.set('token', token);
+        wsUrl.searchParams.set('format_turns', 'true');
+        wsUrl.searchParams.set('encoding', 'pcm_s16le');
+        
+        assemblySocket = new WebSocket(wsUrl.toString());
         
         assemblySocket.onopen = async () => {
-          console.log('Connected to AssemblyAI');
+          console.log('Connected to AssemblyAI Universal Streaming (v3)');
           assemblyDot.classList.remove('disconnected');
           assemblyDot.classList.add('connected');
           
@@ -546,12 +558,16 @@
         };
         
         assemblySocket.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          handleTranscript(data);
+          try {
+            const data = JSON.parse(event.data);
+            handleTranscript(data);
+          } catch (err) {
+            console.error('Error parsing WebSocket message:', err);
+          }
         };
         
         assemblySocket.onclose = (event) => {
-          console.log('AssemblyAI connection closed:', event.code, event.reason);
+          console.log('AssemblyAI v3 connection closed:', event.code, event.reason);
           assemblyDot.classList.remove('connected');
           assemblyDot.classList.add('disconnected');
           if (isRecording) {
@@ -560,7 +576,7 @@
         };
         
         assemblySocket.onerror = (error) => {
-          console.error('AssemblyAI WebSocket error:', error);
+          console.error('AssemblyAI v3 WebSocket error:', error);
           showError('AssemblyAI connection error. Check your API key.');
         };
         
@@ -592,9 +608,8 @@
           const inputData = e.inputBuffer.getChannelData(0);
           const pcm16 = float32ToPCM16(inputData);
           
-          // Send as base64
-          const base64 = arrayBufferToBase64(pcm16.buffer);
-          assemblySocket.send(JSON.stringify({ audio_data: base64 }));
+          // v3 expects raw PCM bytes as binary WebSocket messages
+          assemblySocket.send(pcm16.buffer);
         };
         
         source.connect(processor);
@@ -621,9 +636,15 @@
       }
       
       if (assemblySocket) {
+        if (assemblySocket.readyState === WebSocket.OPEN) {
+          assemblySocket.send(JSON.stringify({ type: 'Terminate' }));
+        }
         assemblySocket.close();
         assemblySocket = null;
       }
+      
+      currentTurnOrder = null;
+      finalizedTurnOrder = null;
       
       setStatus('idle');
       startBtn.style.display = 'inline-block';
@@ -631,12 +652,86 @@
       updateStartButton();
     }
     
+    /**
+     * Handle v3 Universal Streaming messages
+     * v3 uses 'Turn' events with end_of_turn flag instead of PartialTranscript/FinalTranscript
+     */
     function handleTranscript(data) {
+      // Handle v3 message types
+      if (data.type === 'Begin') {
+        console.log('AssemblyAI v3 session started:', data.id);
+        return;
+      }
+      
+      if (data.type === 'Termination') {
+        console.log('AssemblyAI v3 session terminated. Audio:', data.audio_duration_seconds, 's');
+        return;
+      }
+      
+      if (data.type === 'Error') {
+        console.error('AssemblyAI v3 error:', data.error);
+        showError('AssemblyAI error: ' + (data.error || 'Unknown error'));
+        return;
+      }
+      
+      if (data.type === 'Turn') {
+        const transcript = data.transcript || '';
+        const endOfTurn = data.end_of_turn === true;
+        const formatted = data.turn_is_formatted === true;
+        const turnOrder = data.turn_order || 0;
+        
+        if (turnOrder !== currentTurnOrder) {
+          currentTurnOrder = turnOrder;
+          finalizedTurnOrder = null;
+        }
+        
+        const shouldFinalize = transcript && (formatted || (!formatTurns && endOfTurn)) && finalizedTurnOrder !== turnOrder;
+        
+        if (shouldFinalize) {
+          finalizedTurnOrder = turnOrder;
+          
+          // Final transcript
+          const segment = {
+            id: `segment-${Date.now()}`,
+            text: transcript,
+            timestamp: Date.now(),
+            isFinal: true
+          };
+          
+          transcriptSegments.push(segment);
+          interimText = '';
+          updateTranscriptDisplay();
+          
+          // Send final to ProAssist
+          sendToProAssist({
+            type: 'transcription_stream',
+            kind: 'final',
+            timestamp: Date.now(),
+            engine: 'assemblyai',
+            text: transcript,
+            segment: segment
+          });
+        } else if (transcript) {
+          // Interim transcript
+          interimText = transcript;
+          updateTranscriptDisplay();
+          
+          // Send interim to ProAssist
+          sendToProAssist({
+            type: 'transcription_stream',
+            kind: 'interim',
+            timestamp: Date.now(),
+            engine: 'assemblyai',
+            text: transcript
+          });
+        }
+        return;
+      }
+      
+      // Legacy v2 fallback (in case server temporarily sends old format)
       if (data.message_type === 'PartialTranscript' && data.text) {
         interimText = data.text;
         updateTranscriptDisplay();
-        
-        // Send interim to ProAssist
         sendToProAssist({
           type: 'transcription_stream',
           kind: 'interim',
@@ -644,7 +739,6 @@
           engine: 'assemblyai',
           text: data.text
         });
-        
       } else if (data.message_type === 'FinalTranscript' && data.text) {
         const segment = {
           id: `segment-${Date.now()}`,
@@ -652,12 +746,9 @@
           timestamp: Date.now(),
           isFinal: true
         };
-        
         transcriptSegments.push(segment);
         interimText = '';
         updateTranscriptDisplay();
-        
-        // Send final to ProAssist
         sendToProAssist({
           type: 'transcription_stream',
           kind: 'final',

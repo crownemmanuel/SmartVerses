@@ -209,6 +209,85 @@ export function getParseContext(): BibleParseContext {
 // =============================================================================
 
 /**
+ * Transcription error corrections for Bible book names
+ * Maps common transcription errors to correct book names
+ * Only applies when followed by a number or "chapter"
+ * 
+ * To add more corrections, simply add entries to this object.
+ * Format: 'error text': 'correct book name'
+ * 
+ * Note: Multi-word errors should be listed before single-word errors
+ * that might match within them (e.g., "fast chronicles" before "fast")
+ */
+const TRANSCRIPTION_ERRORS: Record<string, string> = {
+  // Multi-word corrections (order matters - longer patterns first)
+  'fast chronicles': 'Chronicles',
+  'fast kings': 'Kings',
+  'fast samuel': 'Samuel',
+  'the tronomy': 'Deuteronomy',
+  // Single word corrections
+  'axe': 'Acts',
+  'romance': 'Romans',
+  'viticus': 'Leviticus',
+  'route': 'Ruth',
+  'look': 'Luke',
+};
+
+/**
+ * Normalize transcription errors in Bible book names
+ * Only corrects when the word/phrase is followed by:
+ * - A numeric number (e.g., "3", "16")
+ * - A number word (e.g., "three", "sixteen")
+ * - The word "chapter" or "ch" abbreviation
+ * 
+ * This prevents false positives in general text where these words
+ * might appear in other contexts.
+ * 
+ * Examples:
+ * - "axe chapter 1" -> "Acts chapter 1"
+ * - "romance 3:5" -> "Romans 3:5"
+ * - "fast chronicles chapter 2" -> "Chronicles chapter 2"
+ * - "1 fast chronicles 5" -> "1 Chronicles 5"
+ */
+function normalizeTranscriptionErrors(text: string): string {
+  let normalized = text;
+  
+  // Pattern to match number words (common ones from speech-to-text)
+  const numberWords = '(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)';
+  
+  // Pattern that must follow the error word/phrase
+  // Matches: space + (number | number word | chapter/ch)
+  const requiredFollowPattern = `\\s+(?:\\d+|${numberWords}|chapter|ch\\.?)\\b`;
+  
+  // Process entries in reverse length order (longer patterns first)
+  // This ensures "fast chronicles" is matched before just "fast"
+  const sortedEntries = Object.entries(TRANSCRIPTION_ERRORS).sort(
+    (a, b) => b[0].length - a[0].length
+  );
+  
+  for (const [error, correction] of sortedEntries) {
+    // Escape special regex characters in the error text
+    const escapedError = error.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Create pattern: word boundary + error text + word boundary + required follow pattern
+    // The word boundaries ensure we match complete words/phrases, not partial matches
+    const pattern = new RegExp(
+      `\\b${escapedError}\\b${requiredFollowPattern}`,
+      'gi'
+    );
+    
+    normalized = normalized.replace(pattern, (match) => {
+      // Replace the error portion with the correction, keeping the following text
+      // The match includes the error + the required follow pattern
+      // We replace just the error part, keeping the rest
+      return match.replace(new RegExp(`\\b${escapedError}\\b`, 'i'), correction);
+    });
+  }
+  
+  return normalized;
+}
+
+/**
  * Simple number word to digit conversion
  * Handles basic written numbers commonly used in speech
  */
@@ -419,7 +498,12 @@ function preprocessBibleReference(reference: string): string {
   // Example: "chaper" -> "chapter"
   normalized = normalized.replace(/\bchaper\b/gi, "chapter");
 
-  // Step 1c: Remove stray slashes/backslashes before book names (e.g., "\Psalms 91:2")
+  // Step 1d: Normalize transcription errors in Bible book names
+  // This corrects common misspellings like "axe" -> "Acts", "Romance" -> "Romans"
+  // Only applies when followed by a number or "chapter"
+  normalized = normalizeTranscriptionErrors(normalized);
+
+  // Step 1e: Remove stray slashes/backslashes before book names (e.g., "\Psalms 91:2")
   normalized = normalized.replace(
     new RegExp(`[\\\\/]+(?=${BOOKS_REGEX_FLEX})`, "gi"),
     ""

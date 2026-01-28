@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { checkForUpdatesOnStartup, downloadAndInstallUpdate, UpdateInfo } from '../utils/updater';
+import { checkForUpdatesOnStartup, downloadAndInstallUpdate, UpdateInfo, saveSkippedVersion } from '../utils/updater';
 
 interface UpdateNotificationProps {
   checkOnMount?: boolean;
@@ -39,6 +39,14 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   };
 
   const handleDismiss = () => {
+    setShowNotification(false);
+  };
+
+  const handleSkipVersion = () => {
+    if (updateInfo?.version) {
+      saveSkippedVersion(updateInfo.version);
+      console.log(`[UpdateNotification] Skipped version ${updateInfo.version}`);
+    }
     setShowNotification(false);
   };
 
@@ -87,6 +95,12 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               style={styles.dismissButton}
             >
               Later
+            </button>
+            <button 
+              onClick={handleSkipVersion} 
+              style={styles.skipButton}
+            >
+              Skip This Version
             </button>
           </div>
         )}
@@ -145,6 +159,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   buttons: {
     display: 'flex',
+    flexDirection: 'column',
     gap: '12px',
   },
   updateButton: {
@@ -165,6 +180,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: 'transparent',
     color: '#a0a0b0',
     border: '1px solid #3d3d54',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  skipButton: {
+    flex: 1,
+    padding: '12px 24px',
+    backgroundColor: 'transparent',
+    color: '#8b5cf6',
+    border: '1px solid #6d28d9',
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 500,

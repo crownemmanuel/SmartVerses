@@ -1,0 +1,150 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ProAssist API v1",
+    "version": "1.0.0",
+    "description": "HTTP API for controlling Scripture Go Live and countdown timers. Enable it in Network Settings."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/v1/scripture/go-live": {
+      "post": {
+        "summary": "Go live with a scripture reference",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string",
+                    "example": "John 3:16"
+                  }
+                },
+                "required": ["reference"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "reference": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request" },
+          "403": { "description": "API disabled" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/v1/timer/start": {
+      "post": {
+        "summary": "Start a countdown timer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seconds": { "type": "number", "example": 300 },
+                  "minutes": { "type": "number", "example": 5 }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "seconds": { "type": "number" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request" },
+          "403": { "description": "API disabled" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/schedule": {
+      "get": {
+        "summary": "Get current schedule and active session",
+        "responses": {
+          "200": {
+            "description": "Schedule payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schedule": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "number" },
+                          "session": { "type": "string" },
+                          "start_time": { "type": "string" },
+                          "end_time": { "type": "string" },
+                          "duration": { "type": "string" },
+                          "minister": { "type": "string" }
+                        }
+                      }
+                    },
+                    "currentSessionIndex": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/live-slides": {
+      "get": {
+        "summary": "Get live slide sessions",
+        "responses": {
+          "200": {
+            "description": "Live slide sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessions": { "type": "array", "items": { "type": "object" } },
+                    "server_running": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   NetworkSyncMode,
   NetworkSyncSettings,
@@ -10,8 +10,20 @@ import {
   networkSyncManager,
   saveNetworkSyncSettings,
 } from "../services/networkSyncService";
-import { getLocalIp } from "../services/liveSlideService";
+import {
+  getLocalIp,
+  getLiveSlidesServerInfo,
+  loadLiveSlidesSettings,
+  saveLiveSlidesSettings,
+  startLiveSlidesServer,
+  stopLiveSlidesServer,
+} from "../services/liveSlideService";
+import {
+  DEFAULT_LIVE_SLIDES_SETTINGS,
+  LiveSlidesSettings as LiveSlidesSettingsType,
+} from "../types/liveSlides";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
+import { setApiEnabled } from "../services/apiService";
 import "../App.css";
 
 const NetworkSettings: React.FC = () => {
@@ -30,6 +42,12 @@ const NetworkSettings: React.FC = () => {
   }>({ text: "", type: "" });
   const [localIp, setLocalIp] = useState<string>("Loading...");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>("");
+  const [apiServerRunning, setApiServerRunning] = useState(false);
+  const [apiMessage, setApiMessage] = useState<{
+    text: string;
+    type: "success" | "error" | "";
+  }>({ text: "", type: "" });
   
   // Connection test state
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -38,9 +56,28 @@ const NetworkSettings: React.FC = () => {
     message: string;
   }>({ status: "idle", message: "" });
 
+  // Web Server (Live Slides Server) state
+  const [webServerSettings, setWebServerSettings] = useState<LiveSlidesSettingsType>(
+    DEFAULT_LIVE_SLIDES_SETTINGS
+  );
+  const [webServerRunning, setWebServerRunning] = useState<boolean>(false);
+  const [webServerStatusText, setWebServerStatusText] = useState<string>("");
+  const [isTogglingWebServer, setIsTogglingWebServer] = useState(false);
+  const [webServerMessage, setWebServerMessage] = useState<{
+    text: string;
+    type: "success" | "error" | "";
+  }>({ text: "", type: "" });
+  const [webServerSettingsLoaded, setWebServerSettingsLoaded] = useState(false);
+
   useEffect(() => {
     setSyncSettings(loadNetworkSyncSettings());
     refreshSyncServerStatus();
+
+    // Load Web Server settings
+    const loadedWebServerSettings = loadLiveSlidesSettings();
+    setWebServerSettings(loadedWebServerSettings);
+    setWebServerSettingsLoaded(true);
+    refreshWebServerStatus();
 
     getLocalIp()
       .then((ip) => setLocalIp(ip))
@@ -49,7 +86,10 @@ const NetworkSettings: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(refreshSyncServerStatus, 5000);
+    const interval = setInterval(() => {
+      refreshSyncServerStatus();
+      refreshWebServerStatus();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -79,6 +119,25 @@ const NetworkSettings: React.FC = () => {
     { delayMs: 600, enabled: settingsLoaded && !syncServerRunning, skipFirstRun: true }
   );
 
+  // Auto-save Web Server settings on change (debounced)
+  useDebouncedEffect(
+    () => {
+      try {
+        if (webServerSettings.serverPort < 1024 || webServerSettings.serverPort > 65535) {
+          throw new Error("Port must be between 1024 and 65535");
+        }
+        saveLiveSlidesSettings(webServerSettings);
+        setWebServerMessage({ text: "All changes saved", type: "success" });
+        setTimeout(() => setWebServerMessage({ text: "", type: "" }), 2000);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        setWebServerMessage({ text: msg, type: "error" });
+      }
+    },
+    [webServerSettings, webServerSettingsLoaded],
+    { delayMs: 600, enabled: webServerSettingsLoaded, skipFirstRun: true }
+  );
+
   const refreshSyncServerStatus = async () => {
     try {
       const status = await getSyncStatus();
@@ -94,6 +153,82 @@ const NetworkSettings: React.FC = () => {
     }
   };
 
+  const refreshWebServerStatus = async () => {
+    try {
+      const info = await getLiveSlidesServerInfo();
+      setWebServerRunning(info.server_running);
+      setWebServerStatusText(
+        info.server_running ? `${info.local_ip}:${info.server_port}` : "Stopped"
+      );
+    } catch {
+      setWebServerRunning(false);
+      setWebServerStatusText("Stopped");
+    }
+  };
+  const refreshApiServerInfo = useCallback(async () => {
+    const fallbackHost =
+      localIp && !localIp.startsWith("Unable") && !localIp.startsWith("Loading")
+        ? localIp
+        : "localhost";
+    const fallbackPort = loadLiveSlidesSettings().serverPort;
+
+    try {
+      const info = await getLiveSlidesServerInfo();
+      const host = info.local_ip || fallbackHost;
+      const port = info.server_port || fallbackPort;
+      setApiBaseUrl(`http://${host}:${port}`);
+      setApiServerRunning(info.server_running);
+    } catch {
+      setApiBaseUrl(`http://${fallbackHost}:${fallbackPort}`);
+      setApiServerRunning(false);
+    }
+  }, [localIp]);
+
+  const ensureApiServerRunning = useCallback(async () => {
+    const settings = loadLiveSlidesSettings();
+    try {
+      const info = await getLiveSlidesServerInfo();
+      if (!info.server_running) {
+        try {
+          await startLiveSlidesServer(info.server_port || settings.serverPort);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.toLowerCase().includes("already running")) {
+            throw error;
+          }
+        }
+      }
+    } catch (error) {
+      try {
+        await startLiveSlidesServer(settings.serverPort);
+      } catch (startError) {
+        throw startError;
+      }
+    } finally {
+      await refreshApiServerInfo();
+    }
+  }, [refreshApiServerInfo]);
+
+  useEffect(() => {
+    refreshApiServerInfo();
+  }, [refreshApiServerInfo]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    setApiEnabled(syncSettings.apiEnabled).catch((error) => {
+      console.warn("[API] Failed to update API toggle:", error);
+    });
+  }, [settingsLoaded, syncSettings.apiEnabled]);
+
+  useEffect(() => {
+    if (!settingsLoaded || !syncSettings.apiEnabled) return;
+    ensureApiServerRunning().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setApiMessage({ text: message, type: "error" });
+      setTimeout(() => setApiMessage({ text: "", type: "" }), 4000);
+    });
+  }, [ensureApiServerRunning, settingsLoaded, syncSettings.apiEnabled]);
+
   const handleSyncSettingChange = (
     field: keyof NetworkSyncSettings,
     value: string | number | boolean
@@ -102,6 +237,48 @@ const NetworkSettings: React.FC = () => {
       ...prev,
       [field]: value,
     }));
+  };
+
+  const handleWebServerSettingChange = (
+    field: keyof LiveSlidesSettingsType,
+    value: string | number | boolean
+  ) => {
+    setWebServerSettings((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleToggleWebServer = async () => {
+    setIsTogglingWebServer(true);
+    setWebServerMessage({ text: "", type: "" });
+    try {
+      if (webServerRunning) {
+        await stopLiveSlidesServer();
+      } else {
+        await startLiveSlidesServer(webServerSettings.serverPort);
+      }
+      await refreshWebServerStatus();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setWebServerMessage({ text: `Server action failed: ${msg}`, type: "error" });
+      setTimeout(() => setWebServerMessage({ text: "", type: "" }), 5000);
+    } finally {
+      setIsTogglingWebServer(false);
+    }
+  };
+
+  const handleApiToggle = (enabled: boolean) => {
+    setSyncSettings((prev) => {
+      const next = { ...prev, apiEnabled: enabled };
+      saveNetworkSyncSettings(next);
+      return next;
+    });
+    setApiMessage({
+      text: enabled ? "API enabled" : "API disabled",
+      type: "success",
+    });
+    setTimeout(() => setApiMessage({ text: "", type: "" }), 2000);
   };
 
   const handleSyncModeChange = (mode: NetworkSyncMode) => {
@@ -267,9 +444,262 @@ const NetworkSettings: React.FC = () => {
     }
   };
 
+  const handleOpenApiDocs = async () => {
+    setApiMessage({ text: "", type: "" });
+
+    try {
+      if (syncSettings.apiEnabled) {
+        await ensureApiServerRunning();
+      } else {
+        await refreshApiServerInfo();
+      }
+
+      const fallbackHost =
+        localIp && !localIp.startsWith("Unable") && !localIp.startsWith("Loading")
+          ? localIp
+          : "localhost";
+      const fallbackPort = loadLiveSlidesSettings().serverPort;
+      const baseUrl =
+        apiBaseUrl || `http://${fallbackHost}:${fallbackPort}`;
+      const url = `${baseUrl}/api/docs`;
+
+      const opener = await import("@tauri-apps/plugin-opener");
+      await opener.openUrl(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setApiMessage({ text: message, type: "error" });
+      setTimeout(() => setApiMessage({ text: "", type: "" }), 4000);
+      try {
+        const fallbackHost =
+          localIp && !localIp.startsWith("Unable") && !localIp.startsWith("Loading")
+            ? localIp
+            : "localhost";
+        const fallbackPort = loadLiveSlidesSettings().serverPort;
+        const url = `${apiBaseUrl || `http://${fallbackHost}:${fallbackPort}`}/api/docs`;
+        window.open(url, "_blank", "noopener");
+      } catch {
+        // Ignore fallback errors
+      }
+    }
+  };
+
   return (
     <div style={{ maxWidth: "800px" }}>
-      <h2 style={{ marginBottom: "var(--spacing-4)" }}>Network Sync Settings</h2>
+      <h2 style={{ marginBottom: "var(--spacing-4)" }}>Network Settings</h2>
+
+      {/* Web Server Settings Section */}
+      <div
+        style={{
+          marginBottom: "var(--spacing-5)",
+          padding: "var(--spacing-4)",
+          backgroundColor: "var(--app-header-bg)",
+          borderRadius: "12px",
+          border: "1px solid var(--app-border-color)",
+        }}
+      >
+        <h3
+          style={{
+            marginTop: 0,
+            marginBottom: "var(--spacing-4)",
+            fontSize: "1.25rem",
+            fontWeight: 600,
+          }}
+        >
+          Web Server Settings
+        </h3>
+
+        {/* Network Information */}
+        <div style={{ marginBottom: "var(--spacing-4)" }}>
+          <h4 style={{ marginBottom: "var(--spacing-2)", fontSize: "1rem" }}>
+            Network Information
+          </h4>
+          <div
+            style={{
+              padding: "var(--spacing-3)",
+              backgroundColor: "var(--app-input-bg-color)",
+              borderRadius: "8px",
+              border: "1px solid var(--app-border-color)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>Local IP Address:</span>
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  padding: "4px 12px",
+                  backgroundColor: "var(--app-bg-color)",
+                  borderRadius: "4px",
+                }}
+              >
+                {localIp}
+              </span>
+            </div>
+            <p
+              style={{
+                margin: "var(--spacing-2) 0 0 0",
+                fontSize: "0.85em",
+                color: "var(--app-text-color-secondary)",
+              }}
+            >
+              Other devices on your local network can connect using this IP
+              address.
+            </p>
+          </div>
+        </div>
+
+        {/* Server Control */}
+        <div style={{ marginBottom: "var(--spacing-4)" }}>
+          <h4 style={{ marginBottom: "var(--spacing-2)", fontSize: "1rem" }}>
+            Server Status
+          </h4>
+          <div
+            style={{
+              padding: "var(--spacing-3)",
+              backgroundColor: "var(--app-input-bg-color)",
+              borderRadius: "8px",
+              border: "1px solid var(--app-border-color)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "var(--spacing-3)",
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: "4px" }}>
+                Status:{" "}
+                <span style={{ color: webServerRunning ? "#22c55e" : "#9ca3af" }}>
+                  {webServerRunning ? "Running" : "Stopped"}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: "0.9em",
+                  color: "var(--app-text-color-secondary)",
+                }}
+              >
+                {webServerStatusText}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
+              <button
+                onClick={handleToggleWebServer}
+                disabled={isTogglingWebServer}
+                className={webServerRunning ? "secondary" : "primary"}
+                style={{ minWidth: "140px" }}
+              >
+                {webServerRunning
+                  ? isTogglingWebServer
+                    ? "Stopping..."
+                    : "Stop Server"
+                  : isTogglingWebServer
+                  ? "Starting..."
+                  : "Start Server"}
+              </button>
+              <button
+                onClick={refreshWebServerStatus}
+                disabled={isTogglingWebServer}
+                className="secondary"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Server Configuration */}
+        <div>
+          <h4 style={{ marginBottom: "var(--spacing-2)", fontSize: "1rem" }}>
+            Server Configuration
+          </h4>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--spacing-3)",
+            }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "var(--spacing-1)",
+                  fontWeight: 500,
+                }}
+              >
+                Server Port
+              </label>
+              <input
+                type="number"
+                value={webServerSettings.serverPort}
+                onChange={(e) =>
+                  handleWebServerSettingChange("serverPort", parseInt(e.target.value, 10) || 9876)
+                }
+                min={1024}
+                max={65535}
+                style={{ width: "150px", padding: "var(--spacing-2)" }}
+              />
+              <p
+                style={{
+                  marginTop: "var(--spacing-1)",
+                  fontSize: "0.85em",
+                  color: "var(--app-text-color-secondary)",
+                }}
+              >
+                Port for the web server (default: 9876). Must be between 1024
+                and 65535. This server handles both HTTP and WebSocket
+                connections.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--spacing-2)",
+                padding: "var(--spacing-3)",
+                backgroundColor: "var(--app-bg-color)",
+                borderRadius: "8px",
+              }}
+            >
+              <input
+                type="checkbox"
+                id="autoStartWebServer"
+                checked={webServerSettings.autoStartServer}
+                onChange={(e) =>
+                  handleWebServerSettingChange("autoStartServer", e.target.checked)
+                }
+                style={{ width: "auto", margin: 0 }}
+              />
+              <label
+                htmlFor="autoStartWebServer"
+                style={{ margin: 0, cursor: "pointer", fontWeight: 500 }}
+              >
+                Auto-start server when app opens
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Save Status */}
+        {webServerMessage.text && (
+          <div
+            style={{
+              marginTop: "var(--spacing-3)",
+              padding: "var(--spacing-2)",
+              color: webServerMessage.type === "success" ? "#22c55e" : "#dc2626",
+              fontSize: "0.9em",
+            }}
+          >
+            {webServerMessage.text}
+          </div>
+        )}
+      </div>
 
       {/* Network Sync Section */}
       <div
@@ -1032,6 +1462,118 @@ const NetworkSettings: React.FC = () => {
             )}
           </div>
         )}
+      </div>
+
+      {/* HTTP API Section */}
+      <div
+        style={{
+          marginBottom: "var(--spacing-5)",
+          padding: "var(--spacing-4)",
+          backgroundColor: "var(--app-header-bg)",
+          borderRadius: "12px",
+          border: "1px solid var(--app-border-color)",
+        }}
+      >
+        <h3
+          style={{
+            marginTop: 0,
+            marginBottom: "var(--spacing-3)",
+            fontSize: "1.25rem",
+            fontWeight: 600,
+          }}
+        >
+          HTTP API (v1)
+        </h3>
+        <div
+          style={{
+            marginBottom: "var(--spacing-4)",
+            padding: "var(--spacing-3)",
+            backgroundColor: "var(--app-input-bg-color)",
+            borderRadius: "8px",
+            border: "1px solid var(--app-border-color)",
+          }}
+        >
+          <p style={{ margin: "0 0 var(--spacing-2) 0", fontWeight: 500 }}>
+            About the API
+          </p>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.9em",
+              color: "var(--app-text-color-secondary)",
+            }}
+          >
+            The API lets external systems trigger Scripture Go Live and start
+            countdown timers. It runs on the Live Slides web server.
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--spacing-2)",
+            marginBottom: "var(--spacing-3)",
+          }}
+        >
+          <input
+            type="checkbox"
+            id="enableApi"
+            checked={syncSettings.apiEnabled}
+            onChange={(e) => handleApiToggle(e.target.checked)}
+            style={{ width: "auto", margin: 0 }}
+          />
+          <label
+            htmlFor="enableApi"
+            style={{ margin: 0, cursor: "pointer", fontWeight: 500 }}
+          >
+            Enable API
+          </label>
+        </div>
+
+        <div
+          style={{
+            padding: "var(--spacing-3)",
+            backgroundColor: "var(--app-input-bg-color)",
+            borderRadius: "8px",
+            border: "1px solid var(--app-border-color)",
+            marginBottom: "var(--spacing-3)",
+            fontSize: "0.9em",
+          }}
+        >
+          <div style={{ marginBottom: "6px" }}>
+            Base URL:{" "}
+            <span style={{ fontWeight: 600 }}>
+              {apiBaseUrl || "http://localhost:9876"}
+            </span>
+          </div>
+          <div style={{ color: "var(--app-text-color-secondary)" }}>
+            Server status:{" "}
+            <span style={{ color: apiServerRunning ? "#22c55e" : "#9ca3af" }}>
+              {apiServerRunning ? "Running" : "Stopped"}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
+          <button
+            onClick={handleOpenApiDocs}
+            className="secondary"
+            disabled={!syncSettings.apiEnabled}
+          >
+            Open Documentation
+          </button>
+          {apiMessage.text && (
+            <span
+              style={{
+                color: apiMessage.type === "success" ? "#22c55e" : "#dc2626",
+                fontSize: "0.9em",
+              }}
+            >
+              {apiMessage.text}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

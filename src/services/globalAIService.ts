@@ -426,13 +426,13 @@ function getAIConfig(): AIConfig | null {
     
     if (provider === "openai" && appSettings.openAIConfig?.apiKey) {
       apiKey = appSettings.openAIConfig.apiKey;
-      model = "gpt-4o";
+      model = appSettings.defaultAIModel || "gpt-4o";
     } else if (provider === "gemini" && appSettings.geminiConfig?.apiKey) {
       apiKey = appSettings.geminiConfig.apiKey;
-      model = "gemini-1.5-flash-latest";
+      model = appSettings.defaultAIModel || "gemini-1.5-flash-latest";
     } else if (provider === "groq" && appSettings.groqConfig?.apiKey) {
       apiKey = appSettings.groqConfig.apiKey;
-      model = "llama-3.3-70b-versatile";
+      model = appSettings.defaultAIModel || "llama-3.3-70b-versatile";
     }
     
     if (apiKey) {

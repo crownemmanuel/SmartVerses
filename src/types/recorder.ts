@@ -48,6 +48,7 @@ export interface MediaDeviceOption {
 // ============================================================================
 
 export type VideoFormat = 'mp4' | 'webm';
+export type VideoAudioCodec = 'aac' | 'opus';
 export type VideoResolution = '720p' | '1080p' | '1440p' | '4k';
 export type AudioFormat = 'mp3' | 'wav';
 export type AudioBitrate = '128k' | '192k' | '320k';
@@ -57,11 +58,14 @@ export type NamingPattern = 'timestamp' | 'session_timestamp' | 'custom_timestam
 export interface RecorderSettings {
   // Device settings
   selectedVideoDeviceId: string | null;
+  selectedVideoAudioDeviceId: string | null;
   selectedAudioDeviceId: string | null;
   
   // Video settings
   videoFormat: VideoFormat;
+  videoAudioCodec: VideoAudioCodec;
   videoResolution: VideoResolution;
+  videoAudioDelayMs: number;
   
   // Audio settings
   audioFormat: AudioFormat;
@@ -76,9 +80,12 @@ export interface RecorderSettings {
 
 export const DEFAULT_RECORDER_SETTINGS: RecorderSettings = {
   selectedVideoDeviceId: null,
+  selectedVideoAudioDeviceId: null,
   selectedAudioDeviceId: null,
   videoFormat: 'mp4',
+  videoAudioCodec: 'aac',
   videoResolution: '1080p',
+  videoAudioDelayMs: 0,
   audioFormat: 'wav',
   audioBitrate: '320k',
   outputBasePath: '~/Documents/ProAssist/Recordings',

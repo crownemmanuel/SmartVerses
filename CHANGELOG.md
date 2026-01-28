@@ -2,6 +2,117 @@
 
 All notable changes to ProAssist will be documented in this file.
 
+## [0.6.9] - 2026-01-27
+
+### Added
+- **Word Highlighting in Bible Verse Search**: Implemented word highlighting in Bible verse search results for better visibility
+- **HTTP Call Automation**: Added HTTP call automation feature for schedule automations
+- **Transcription Time Limit**: Added transcription time limit with auto-stop protection to prevent overcharging
+- **Blank Presentation Creation**: Added feature to create blank presentations in ProPresenter
+- **Audio Level Meter**: Added audio level meter to Live Transcription panel for real-time audio monitoring
+- **API Documentation**: Updated API docs styling and endpoints
+
+### Fixed
+- **Transcription Limit Prompt**: Fixed transcription limit prompt re-appearing after auto-stop
+- **Remote Transcription De-duplication**: Fixed remote transcription de-duplication and useEffect dependency cycle
+- **Icons Update**: Updated icons for Slides and Live Testimonies
+
+### Changed
+- **Release Process**: Updated release process rules to require descriptive tag messages
+
+## [0.6.7] - 2026-01-21
+
+### Changed
+- Version bump to 0.6.7
+
+## [0.6.6] - 2026-01-20
+
+### Added
+- **Groq Model Token Limits Display**: Added token limits (TPD and RPD) to all Groq model selector labels
+  - Model dropdowns now show "Free tokens per day" and "Free requests per day" for each Groq model
+  - Helps users understand rate limits when selecting models
+  - Updated tip text to explain RPD (free request per day) and TPD (free token per day)
+
+### Changed
+- **Minimum App Width**: Increased minimum window width from 800px to 1000px for better UI layout
+- **Responsive Button Labels**: "Live Slides" and "Live Transcription" buttons now hide text labels when window width is 1000px or less
+  - Shows only icons on smaller widths to prevent UI from looking cramped
+  - Full labels displayed when window is wider than 1000px
+
+## [0.6.5] - 2026-01-19
+
+### Fixed
+- **Audio Recording Race Condition**: Fixed critical bug where audio files were not being saved to disk
+  - Fixed race condition between chunk writes and file finalization in streaming audio recording
+  - Added promise tracking to ensure all chunks are written before closing file
+  - Audio recordings now properly save to disk in the correct location
+- **MP3 Encoding Error**: Fixed "MPEGMode is not defined" error during MP3 conversion
+  - Replaced `lamejs` with `@breezystack/lamejs` for ES module bundler compatibility
+  - MP3 conversion now works correctly after recording stops
+- **Recording UX**: Fixed two-click issue when starting new recording after previous recording
+  - Record button now starts recording immediately (no second click needed)
+  - Automatically cleans up previous recording state when starting new recording
+  - Removed redundant "New Recording" button
+
+### Changed
+- **Audio Recording Logging**: Added comprehensive logging for debugging audio recording issues
+- **Vite Configuration**: Updated build config for better CommonJS module handling
+
+## [0.6.4] - 2026-01-19
+
+### Added
+- **Crash-Safe Streaming Recording**: Production-grade video and audio recording with real-time disk streaming
+  - Video chunks streamed directly to disk (no memory accumulation)
+  - MP3 audio streams to temp WebM file, converts after recording
+  - WAV audio flushes to disk every second
+  - Record for 10+ hours without memory issues
+  - All recordings preserved even if app crashes or power is lost
+  - Recovery documentation and FFmpeg commands in Help section
+
+## [0.6.3] - 2026-01-18
+
+### Fixed
+- **Video Recording Automation**: Keep video feed always live for automation support
+  - Video preview stays active after recording stops (no more blank screen)
+  - Automation can now start new recordings without re-engaging camera
+  - Removed 'New Recording' button - record button always starts new recording
+  - Show brief 'Recording saved!' message below live feed after save
+- **Remote Transcription AI Detection**: Fixed AI paraphrase detection for remote transcription source
+  - When using remote transcription source, now also runs AI paraphrase detection
+  - Detected paraphrased Bible references are displayed with confidence scores
+  - Scripture references (both direct and paraphrased) are included in websocket rebroadcast
+  - Key points from AI analysis are also preserved and broadcast
+
+### Changed
+- **Video Recording Controls**: Simplified video recording controls flow
+  - Record button always starts new recording (whether idle or stopped)
+  - Camera feed remains live throughout recording lifecycle
+
+## [0.6.2] - 2026-01-18
+
+### Fixed
+- **TypeScript Build Errors**: Fixed TypeScript compilation errors in RecorderPage
+  - Added explicit VideoRecorderConfig type import and annotation
+  - Added BlobEvent type annotation for ondataavailable handler
+  - Improved type safety for video recorder creation
+- **Audio Device Selection**: Fixed audio device selection for browser getUserMedia API
+  - Native audio device IDs (from Tauri) don't work with browser getUserMedia
+  - Added fallback to default audio device when native ID fails
+  - Fixes audio meter visualization and web audio recording (MP3 mode)
+- **Audio Recording Mono Output**: Fixed audio recording to properly output mono audio
+  - Use Web Audio API to force mono output for web audio recording (MP3)
+  - Browser channelCount constraint is unreliable, explicit mixing ensures mono
+  - Properly clean up audio context when recording stops
+- **Video Recorder Preview**: Removed video playback preview after recording due to WebView compatibility issues
+  - Video files are still saved correctly to disk and can be played in external players
+  - Shows "Recording saved!" confirmation message instead of video player
+  - Audio playback preview continues to work as before
+
+### Changed
+- **Recorder Page**: Simplified video recording UI to show success message instead of attempting video playback
+  - Removed video blob URL and asset protocol URL handling for preview
+  - Cleaned up unused video playback state variables and refs
+
 ## [0.6.1] - 2026-01-16
 
 ### Changed

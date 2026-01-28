@@ -13,13 +13,15 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { FaMicrophone, FaStop, FaPaperPlane, FaRobot, FaPlay, FaSearch, FaChevronDown, FaChevronUp, FaTrash, FaStopCircle, FaExternalLinkAlt, FaEllipsisH, FaDownload, FaSpinner } from "react-icons/fa";
+import { FaMicrophone, FaStop, FaPaperPlane, FaRobot, FaPlay, FaSearch, FaChevronDown, FaChevronUp, FaTrash, FaStopCircle, FaExternalLinkAlt, FaEllipsisH, FaDownload, FaSpinner, FaCog } from "react-icons/fa";
 import {
   SmartVersesSettings,
   SmartVersesChatMessage,
   DetectedBibleReference,
   KeyPoint,
+  ParaphrasedVerse,
   TranscriptionStatus,
   TranscriptionSegment,
   DEFAULT_SMART_VERSES_SETTINGS,
@@ -32,17 +34,27 @@ import {
   resetParseContext,
   getVerseNavigation,
   loadVerseByComponents,
+  parseVerseReference,
+  lookupVerse,
 } from "../services/smartVersesBibleService";
 import {
-  AssemblyAITranscriptionService,
   loadSmartVersesSettings,
+  createTranscriptionService,
+  ITranscriptionService,
 } from "../services/transcriptionService";
+import { isModelDownloaded } from "../services/offlineModelService";
+import { getOfflineModelPreloadStatus } from "../services/offlineModelPreloadService";
 import {
   analyzeTranscriptChunk,
   searchBibleWithAI,
   resolveParaphrasedVerses,
 } from "../services/smartVersesAIService";
 import { searchBibleTextAsReferences } from "../services/bibleTextSearchService";
+import {
+  loadDisplaySettings,
+  openDisplayWindow,
+  sendScriptureToDisplay,
+} from "../services/displayService";
 import { triggerPresentationOnConnections } from "../services/propresenterService";
 import { broadcastTranscriptionStreamMessage } from "../services/transcriptionBroadcastService";
 import { LiveSlidesWebSocket, getLiveSlidesServerInfo } from "../services/liveSlideService";
@@ -89,6 +101,150 @@ function saveChatHistory(history: SmartVersesChatMessage[]): void {
   }
 }
 
+const SMART_VERSES_TRANSCRIPT_DISPLAY_KEY = "proassist-smartverses-transcript-display";
+
+type TranscriptDisplayOptions = {
+  showTranscript: boolean;
+  showScriptureRefs: boolean;
+  showKeyPoints: boolean;
+};
+
+const DEFAULT_TRANSCRIPT_DISPLAY_OPTIONS: TranscriptDisplayOptions = {
+  showTranscript: true,
+  showScriptureRefs: true,
+  showKeyPoints: false,
+};
+
+function loadTranscriptDisplayOptions(): TranscriptDisplayOptions {
+  try {
+    const stored = localStorage.getItem(SMART_VERSES_TRANSCRIPT_DISPLAY_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Partial<TranscriptDisplayOptions>;
+      return {
+        showTranscript:
+          typeof parsed.showTranscript === "boolean"
+            ? parsed.showTranscript
+            : DEFAULT_TRANSCRIPT_DISPLAY_OPTIONS.showTranscript,
+        showScriptureRefs:
+          typeof parsed.showScriptureRefs === "boolean"
+            ? parsed.showScriptureRefs
+            : DEFAULT_TRANSCRIPT_DISPLAY_OPTIONS.showScriptureRefs,
+        showKeyPoints:
+          typeof parsed.showKeyPoints === "boolean"
+            ? parsed.showKeyPoints
+            : DEFAULT_TRANSCRIPT_DISPLAY_OPTIONS.showKeyPoints,
+      };
+    }
+  } catch (err) {
+    console.error("Failed to load transcript display options:", err);
+  }
+  return DEFAULT_TRANSCRIPT_DISPLAY_OPTIONS;
+}
+
+function saveTranscriptDisplayOptions(options: TranscriptDisplayOptions): void {
+  try {
+    localStorage.setItem(
+      SMART_VERSES_TRANSCRIPT_DISPLAY_KEY,
+      JSON.stringify(options)
+    );
+  } catch (err) {
+    console.error("Failed to save transcript display options:", err);
+  }
+}
+
+async function resolveReferencesFromList(
+  references: string[],
+  transcriptText: string
+): Promise<DetectedBibleReference[]> {
+  const results: DetectedBibleReference[] = [];
+  const now = Date.now();
+
+  for (const reference of references) {
+    const parsed = parseVerseReference(reference);
+    if (!parsed || parsed.length === 0) continue;
+    const verseText = await lookupVerse(parsed[0]);
+    if (!verseText) continue;
+
+    results.push({
+      id: `ref-${now}-${Math.random().toString(36).slice(2, 10)}`,
+      reference: parsed[0].displayRef,
+      displayRef: parsed[0].displayRef,
+      verseText,
+      source: "direct",
+      transcriptText,
+      timestamp: now,
+      book: parsed[0].book,
+      chapter: parsed[0].chapter,
+      verse: parsed[0].startVerse,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Renders verse text with highlighted words in bold light yellow
+ * @param verseText - The verse text to render
+ * @param highlightWords - Array of words to highlight (case-insensitive)
+ * @returns JSX element with highlighted words
+ */
+function renderHighlightedVerseText(
+  verseText: string,
+  highlightWords?: string[]
+): React.ReactNode {
+  if (!highlightWords || highlightWords.length === 0) {
+    return verseText;
+  }
+
+  // Create a regex pattern that matches any of the highlight words (case-insensitive, whole word)
+  const wordsPattern = highlightWords
+    .map((word) => word.trim())
+    .filter((word) => word.length > 0)
+    .map((word) => `\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+    .join('|');
+
+  if (!wordsPattern) {
+    return verseText;
+  }
+
+  const regex = new RegExp(`(${wordsPattern})`, 'gi');
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  // Reset regex lastIndex to ensure we start from the beginning
+  regex.lastIndex = 0;
+
+  while ((match = regex.exec(verseText)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(verseText.substring(lastIndex, match.index));
+    }
+
+    // Add the highlighted match
+    parts.push(
+      <span
+        key={`highlight-${match.index}`}
+        style={{
+          fontWeight: 'bold',
+          color: '#fef08a', // Light yellow
+        }}
+      >
+        {match[0]}
+      </span>
+    );
+
+    lastIndex = regex.lastIndex;
+  }
+
+  // Add remaining text after the last match
+  if (lastIndex < verseText.length) {
+    parts.push(verseText.substring(lastIndex));
+  }
+
+  return parts.length > 0 ? <>{parts}</> : verseText;
+}
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -111,8 +267,16 @@ const SmartVersesPage: React.FC = () => {
   const [transcriptHistory, setTranscriptHistory] = useState<TranscriptionSegment[]>([]);
   const [detectedReferences, setDetectedReferences] = useState<DetectedBibleReference[]>([]);
   const [transcriptKeyPoints, setTranscriptKeyPoints] = useState<Record<string, KeyPoint[]>>({});
-  const transcriptionServiceRef = useRef<AssemblyAITranscriptionService | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [transcriptionElapsedMs, setTranscriptionElapsedMs] = useState(0);
+  const [showTranscriptionLimitPrompt, setShowTranscriptionLimitPrompt] = useState(false);
+  const transcriptionServiceRef = useRef<ITranscriptionService | null>(null);
   const detectedReferencesRef = useRef<DetectedBibleReference[]>([]);
+  const transcriptionStartRef = useRef<number | null>(null);
+  const transcriptionNextPromptAtRef = useRef<number | null>(null);
+  const transcriptionPromptTimeoutRef = useRef<number | null>(null);
+  const transcriptionPromptReasonRef = useRef<"limit" | "snooze" | null>(null);
+  const transcriptionStatusRef = useRef<TranscriptionStatus>("idle");
   
   // Browser transcription WebSocket
   const browserTranscriptionWsRef = useRef<LiveSlidesWebSocket | null>(null);
@@ -138,6 +302,9 @@ const SmartVersesPage: React.FC = () => {
   const [transcriptMenuOpen, setTranscriptMenuOpen] = useState(false);
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState("");
   const transcriptMenuRef = useRef<HTMLDivElement | null>(null);
+  const [transcriptDisplayOptions, setTranscriptDisplayOptions] = useState<TranscriptDisplayOptions>(
+    () => loadTranscriptDisplayOptions()
+  );
 
   // Live state - tracks which reference is currently live (only one at a time)
   const [liveReferenceId, setLiveReferenceId] = useState<string | null>(null);
@@ -148,6 +315,7 @@ const SmartVersesPage: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   // =============================================================================
   // TRANSCRIPTION EVENT BRIDGE (for Slides page)
@@ -261,6 +429,8 @@ const SmartVersesPage: React.FC = () => {
       // Cleanup transcription on unmount
       if (transcriptionServiceRef.current) {
         transcriptionServiceRef.current.stopTranscription();
+        // Call destroy() to properly terminate workers and release resources
+        transcriptionServiceRef.current.destroy?.();
       }
       // Cleanup browser transcription WebSocket on unmount
       if (browserTranscriptionWsRef.current) {
@@ -269,10 +439,22 @@ const SmartVersesPage: React.FC = () => {
     };
   }, [reloadSettings]);
 
+  useEffect(() => {
+    const win = window as Window & { __smartVersesActive?: boolean };
+    win.__smartVersesActive = true;
+    return () => {
+      win.__smartVersesActive = false;
+    };
+  }, []);
+
   // Keep a ref to the latest detected references so we can de-dupe reliably inside async callbacks
   useEffect(() => {
     detectedReferencesRef.current = detectedReferences;
   }, [detectedReferences]);
+
+  useEffect(() => {
+    transcriptionStatusRef.current = transcriptionStatus;
+  }, [transcriptionStatus]);
 
   const shouldAttemptDirectParse = useCallback((text: string): boolean => {
     const t = text.trim();
@@ -384,6 +566,35 @@ const SmartVersesPage: React.FC = () => {
     };
   }, [transcriptMenuOpen]);
 
+  useEffect(() => {
+    saveTranscriptDisplayOptions(transcriptDisplayOptions);
+  }, [transcriptDisplayOptions]);
+
+  const handleToggleTranscriptOption = useCallback(
+    (key: keyof TranscriptDisplayOptions) => {
+      setTranscriptDisplayOptions((prev) => ({
+        ...prev,
+        [key]: !prev[key],
+      }));
+    },
+    []
+  );
+
+  const handleOpenSmartVersesSettings = useCallback(() => {
+    try {
+      localStorage.setItem("proassist-settings-current-view", "smartVerses");
+    } catch (err) {
+      console.error("Failed to persist settings view:", err);
+    }
+    navigate("/settings");
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("navigate-to-settings", { detail: "smartVerses" })
+      );
+    }, 0);
+    setTranscriptMenuOpen(false);
+  }, [navigate]);
+
   const filteredTranscriptHistory = useMemo(() => {
     const query = transcriptSearchQuery.trim().toLowerCase();
     if (!query) return transcriptHistory;
@@ -472,7 +683,7 @@ const SmartVersesPage: React.FC = () => {
   // =============================================================================
 
   const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim()) return;
+    if (!query.trim()) return [];
 
     const queryMessage: SmartVersesChatMessage = {
       id: `query-${Date.now()}`,
@@ -495,14 +706,15 @@ const SmartVersesPage: React.FC = () => {
       isLoading: true,
     }]);
 
+    let references: DetectedBibleReference[] = [];
+    let searchMethod = "direct";
+
     try {
       // STEP 1: Try direct Bible reference parsing (bcv_parser)
       // This handles: "John 3:16", "John 3:1-4, Romans 3:3", etc.
       console.log("🔍 Step 1: Direct reference parsing for:", query);
-      let references = await detectAndLookupReferences(query);
+      references = await detectAndLookupReferences(query);
       console.log("🔍 Direct parsing found:", references.length, "references");
-      
-      let searchMethod = "direct";
 
       // STEP 2: If no direct references found, try secondary search
       if (references.length === 0) {
@@ -576,6 +788,7 @@ const SmartVersesPage: React.FC = () => {
           }];
         }
       });
+      return references;
     } catch (error) {
       console.error("Search error:", error);
       setChatHistory(prev => {
@@ -588,6 +801,7 @@ const SmartVersesPage: React.FC = () => {
           error: error instanceof Error ? error.message : "Unknown error",
         }];
       });
+      return [];
     } finally {
       setIsSearching(false);
     }
@@ -632,27 +846,59 @@ const SmartVersesPage: React.FC = () => {
       }
 
       const basePath = settings.bibleOutputPath?.replace(/\/?$/, "/") || "";
+      const verseText = reference.verseText || "";
+      const displayRef = reference.displayRef || "";
       
+      // Update audience display if enabled (don't block on file output or ProPresenter)
+      const displaySettings = loadDisplaySettings();
+      const shouldUpdateDisplay =
+        displaySettings.enabled ||
+        displaySettings.webEnabled ||
+        displaySettings.windowAudienceScreen;
+      if (shouldUpdateDisplay) {
+        if (displaySettings.enabled) {
+          try {
+            await openDisplayWindow(displaySettings);
+          } catch (error) {
+            console.warn("[Display] Failed to open audience screen:", error);
+          }
+        }
+        try {
+          await sendScriptureToDisplay({
+            verseText,
+            reference: displayRef,
+          });
+        } catch (error) {
+          console.warn("[Display] Failed to update audience screen:", error);
+        }
+      }
+
       // Write verse text to file
       if (basePath && settings.bibleTextFileName) {
         const textFilePath = `${basePath}${settings.bibleTextFileName}`;
-        const verseText = reference.verseText || "";
         console.log(`Writing verse text to: ${textFilePath}, Content: "${verseText}"`);
-        await invoke("write_text_to_file", {
-          filePath: textFilePath,
-          content: verseText,
-        });
+        try {
+          await invoke("write_text_to_file", {
+            filePath: textFilePath,
+            content: verseText,
+          });
+        } catch (error) {
+          console.warn("[SmartVerses] Failed to write verse text file:", error);
+        }
       }
 
       // Write reference to file
       if (basePath && settings.bibleReferenceFileName) {
         const refFilePath = `${basePath}${settings.bibleReferenceFileName}`;
-        const displayRef = reference.displayRef || "";
         console.log(`Writing reference to: ${refFilePath}, Content: "${displayRef}"`);
-        await invoke("write_text_to_file", {
-          filePath: refFilePath,
-          content: displayRef,
-        });
+        try {
+          await invoke("write_text_to_file", {
+            filePath: refFilePath,
+            content: displayRef,
+          });
+        } catch (error) {
+          console.warn("[SmartVerses] Failed to write reference file:", error);
+        }
       }
 
       // Trigger ProPresenter if configured
@@ -660,12 +906,16 @@ const SmartVersesPage: React.FC = () => {
         const { presentationUuid, slideIndex, activationClicks } = settings.proPresenterActivation;
         const clicks = activationClicks ?? 1;
         console.log(`Triggering ProPresenter: ${presentationUuid}, slide ${slideIndex}, clicks: ${clicks}`);
-        await triggerPresentationOnConnections(
-          { presentationUuid, slideIndex },
-          settings.proPresenterConnectionIds,
-          clicks,
-          100
-        );
+        try {
+          await triggerPresentationOnConnections(
+            { presentationUuid, slideIndex },
+            settings.proPresenterConnectionIds,
+            clicks,
+            100
+          );
+        } catch (error) {
+          console.warn("[SmartVerses] Failed to trigger ProPresenter:", error);
+        }
       }
 
       // Add system message
@@ -683,16 +933,34 @@ const SmartVersesPage: React.FC = () => {
           try {
             if (settings.bibleTextFileName) {
               const textFilePath = `${basePath}${settings.bibleTextFileName}`;
-              await invoke("write_text_to_file", { filePath: textFilePath, content: "" });
+              try {
+                await invoke("write_text_to_file", { filePath: textFilePath, content: "" });
+              } catch (error) {
+                console.warn("[SmartVerses] Failed to auto-clear verse text file:", error);
+              }
             }
             if (settings.bibleReferenceFileName) {
               const refFilePath = `${basePath}${settings.bibleReferenceFileName}`;
-              await invoke("write_text_to_file", { filePath: refFilePath, content: "" });
+              try {
+                await invoke("write_text_to_file", { filePath: refFilePath, content: "" });
+              } catch (error) {
+                console.warn("[SmartVerses] Failed to auto-clear reference file:", error);
+              }
             }
-            setLiveReferenceId(null);
-          } catch (e) {
-            console.error("Failed to auto-clear SmartVerses files:", e);
+            const displaySettings = loadDisplaySettings();
+            const shouldUpdateDisplay =
+              displaySettings.enabled ||
+              displaySettings.webEnabled ||
+              displaySettings.windowAudienceScreen;
+            if (shouldUpdateDisplay) {
+              try {
+                await sendScriptureToDisplay({ verseText: "", reference: "" });
+              } catch (error) {
+                console.warn("[Display] Failed to auto-clear audience screen:", error);
+              }
+            }
           } finally {
+            setLiveReferenceId(null);
             autoClearTimeoutRef.current = null;
           }
         }, clearDelay);
@@ -720,19 +988,40 @@ const SmartVersesPage: React.FC = () => {
         if (basePath && settings.bibleTextFileName) {
           const textFilePath = `${basePath}${settings.bibleTextFileName}`;
           console.log(`Clearing verse text file: ${textFilePath}`);
-          await invoke("write_text_to_file", {
-            filePath: textFilePath,
-            content: "",
-          });
+          try {
+            await invoke("write_text_to_file", {
+              filePath: textFilePath,
+              content: "",
+            });
+          } catch (error) {
+            console.warn("[SmartVerses] Failed to clear verse text file:", error);
+          }
         }
 
         if (basePath && settings.bibleReferenceFileName) {
           const refFilePath = `${basePath}${settings.bibleReferenceFileName}`;
           console.log(`Clearing reference file: ${refFilePath}`);
-          await invoke("write_text_to_file", {
-            filePath: refFilePath,
-            content: "",
-          });
+          try {
+            await invoke("write_text_to_file", {
+              filePath: refFilePath,
+              content: "",
+            });
+          } catch (error) {
+            console.warn("[SmartVerses] Failed to clear reference file:", error);
+          }
+        }
+      }
+
+      const displaySettings = loadDisplaySettings();
+      const shouldUpdateDisplay =
+        displaySettings.enabled ||
+        displaySettings.webEnabled ||
+        displaySettings.windowAudienceScreen;
+      if (shouldUpdateDisplay) {
+        try {
+          await sendScriptureToDisplay({ verseText: "", reference: "" });
+        } catch (error) {
+          console.warn("[Display] Failed to clear audience screen:", error);
         }
       }
 
@@ -743,12 +1032,16 @@ const SmartVersesPage: React.FC = () => {
         
         if (clicks > 0) {
           console.log(`Triggering ProPresenter take off: ${presentationUuid}, slide ${slideIndex}, clicks: ${clicks}`);
-          await triggerPresentationOnConnections(
-            { presentationUuid, slideIndex },
-            settings.proPresenterConnectionIds,
-            clicks,
-            100
-          );
+          try {
+            await triggerPresentationOnConnections(
+              { presentationUuid, slideIndex },
+              settings.proPresenterConnectionIds,
+              clicks,
+              100
+            );
+          } catch (error) {
+            console.warn("[SmartVerses] Failed to trigger ProPresenter take off:", error);
+          }
         }
       }
 
@@ -766,6 +1059,26 @@ const SmartVersesPage: React.FC = () => {
       console.error("Error taking off live:", error);
     }
   }, [settings]);
+
+  useEffect(() => {
+    const handleApiGoLive: EventListener = (event) => {
+      const detail = (event as CustomEvent<{ reference?: string }>).detail;
+      const reference = String(detail?.reference ?? "").trim();
+      if (!reference) return;
+      void (async () => {
+        setInputValue(reference);
+        const references = await handleSearch(reference);
+        if (references[0]) {
+          await handleGoLive(references[0]);
+        }
+      })();
+    };
+
+    window.addEventListener("smartverses-api-go-live", handleApiGoLive);
+    return () => {
+      window.removeEventListener("smartverses-api-go-live", handleApiGoLive);
+    };
+  }, [handleGoLive, handleSearch]);
 
   // =============================================================================
   // BROWSER TRANSCRIPTION
@@ -986,7 +1299,6 @@ const SmartVersesPage: React.FC = () => {
         }
         if (m.kind === "interim") {
           setInterimTranscript(m.text || "");
-          scheduleInterimDirectParse(m.text || "");
           setTranscriptionStatus((prev) => (prev === "connecting" ? "recording" : prev));
         } else if (m.kind === "final" && m.text) {
           setInterimTranscript("");
@@ -1014,48 +1326,111 @@ const SmartVersesPage: React.FC = () => {
             }
           }
 
-          // Run local direct parsing (aggressive) for verse refs.
-          detectAndLookupReferences(m.text, {
-            aggressiveSpeechNormalization: true,
-          }).then(async (directRefs) => {
-            if (directRefs.length > 0) {
-              setDetectedReferences((prev) => [...prev, ...directRefs]);
+          (async () => {
+            const scriptureReferences = m.scripture_references || [];
+            const keyPoints: KeyPoint[] = (m.key_points as KeyPoint[]) || [];
+            const paraphrasedVerses = m.paraphrased_verses || [];
 
-              if (settings.autoAddDetectedToHistory) {
-                setChatHistory((prev) => [
-                  ...prev,
-                  {
-                    id: `transcript-${Date.now()}`,
-                    type: "result",
-                    content: `Detected from transcription`,
-                    timestamp: Date.now(),
-                    references: directRefs,
-                  },
-                ]);
-              }
+            if (keyPoints.length > 0) {
+              setTranscriptKeyPoints((prev) => ({
+                ...prev,
+                [segment.id]: keyPoints,
+              }));
+            }
 
-              if (settings.autoTriggerOnDetection && directRefs.length > 0) {
-                handleGoLive(directRefs[0]);
+            if (scriptureReferences.length > 0) {
+              const resolvedDirect = await resolveReferencesFromList(
+                scriptureReferences,
+                m.text
+              );
+              if (resolvedDirect.length > 0) {
+                setDetectedReferences((prev) => [...prev, ...resolvedDirect]);
+
+                if (settings.autoAddDetectedToHistory) {
+                  setChatHistory((prev) => [
+                    ...prev,
+                    {
+                      id: `transcript-${Date.now()}`,
+                      type: "result",
+                      content: `Detected from transcription`,
+                      timestamp: Date.now(),
+                      references: resolvedDirect,
+                    },
+                  ]);
+                }
+
+                if (settings.autoTriggerOnDetection) {
+                  handleGoLive(resolvedDirect[0]);
+                }
               }
             }
-          });
 
-          // Re-broadcast to local Live Slides server if enabled and safe.
-          if (
-            settings.streamTranscriptionsToWebSocket &&
-            remoteRebroadcastAllowedRef.current
-          ) {
-            broadcastTranscriptionStreamMessage({
-              type: "transcription_stream",
-              kind: m.kind,
-              timestamp: m.timestamp || Date.now(),
-              engine: m.engine || settings.transcriptionEngine,
-              text: m.text,
-              segment: m.segment as TranscriptionSegment | undefined,
-              scripture_references: m.scripture_references,
-              key_points: m.key_points as KeyPoint[] | undefined,
-            }).catch(() => {});
-          }
+            if (paraphrasedVerses.length > 0) {
+              const resolvedRefs = await resolveParaphrasedVerses(paraphrasedVerses);
+              if (resolvedRefs.length > 0) {
+                const resolvedWithTranscript = resolvedRefs.map((r) => ({
+                  ...r,
+                  transcriptText: m.text,
+                }));
+
+                // De-dupe against the most recent refs to avoid repeated paraphrase entries.
+                const recent = detectedReferencesRef.current.slice(-5);
+                const recentKeys = new Set(
+                  recent.map((r) => (r.displayRef || "").trim().toLowerCase())
+                );
+                const deduped = resolvedWithTranscript.filter(
+                  (r) => !recentKeys.has((r.displayRef || "").trim().toLowerCase())
+                );
+
+                if (deduped.length > 0) {
+                  setDetectedReferences((prev) => [...prev, ...deduped]);
+                }
+
+                if (settings.autoAddDetectedToHistory) {
+                  if (deduped.length > 0) {
+                    setChatHistory((prev) => [
+                      ...prev,
+                      {
+                        id: `paraphrase-${Date.now()}`,
+                        type: "result",
+                        content: `Paraphrase detected (${Math.round((deduped[0].confidence || 0) * 100)}% confidence)`,
+                        timestamp: Date.now(),
+                        references: deduped,
+                      },
+                    ]);
+                  }
+                }
+
+                if (settings.autoTriggerOnDetection) {
+                  if (deduped.length > 0) {
+                    handleGoLive(deduped[0]);
+                  }
+                }
+              }
+            }
+
+            // Re-broadcast to local Live Slides server if enabled and safe.
+            if (
+              settings.streamTranscriptionsToWebSocket &&
+              remoteRebroadcastAllowedRef.current
+            ) {
+              const wsKeyPoints = keyPoints.length > 0
+                ? keyPoints.map((kp) => ({ text: kp.text, category: kp.category }))
+                : undefined;
+
+              broadcastTranscriptionStreamMessage({
+                type: "transcription_stream",
+                kind: m.kind,
+                timestamp: m.timestamp || Date.now(),
+                engine: m.engine || settings.transcriptionEngine,
+                text: m.text,
+                segment: m.segment as TranscriptionSegment | undefined,
+                scripture_references: scriptureReferences.length ? scriptureReferences : undefined,
+                key_points: wsKeyPoints,
+                paraphrased_verses: paraphrasedVerses.length ? paraphrasedVerses : undefined,
+              }).catch(() => {});
+            }
+          })();
         }
       });
     } catch (error) {
@@ -1090,9 +1465,63 @@ const SmartVersesPage: React.FC = () => {
   }, []);
 
   const handleStartTranscription = useCallback(async () => {
-    if (!settings.assemblyAIApiKey) {
+    // Validate API keys based on selected engine
+    if (settings.transcriptionEngine === "assemblyai" && !settings.assemblyAIApiKey) {
       alert("Please configure your AssemblyAI API key in Settings > SmartVerses");
       return;
+    }
+
+    if (settings.transcriptionEngine === "groq" && !settings.groqApiKey) {
+      alert("Please configure your Groq API key in Settings > SmartVerses");
+      return;
+    }
+
+    // Validate offline models are downloaded
+    const preloadStatus = getOfflineModelPreloadStatus();
+    if (settings.transcriptionEngine === "offline-whisper") {
+      const modelId =
+        settings.offlineWhisperModel || "onnx-community/whisper-base";
+      if (!isModelDownloaded(modelId)) {
+        if (
+          preloadStatus?.modelId === modelId &&
+          preloadStatus.phase !== "ready"
+        ) {
+          const progressLabel = preloadStatus.progress
+            ? ` (${Math.round(preloadStatus.progress)}%)`
+            : "";
+          alert(
+            `The selected Whisper model is still downloading${progressLabel}. Please wait for it to finish.`
+          );
+        } else {
+          alert(
+            "The selected Whisper model is not downloaded yet. Go to Settings > SmartVerses and select it to start the download."
+          );
+        }
+        return;
+      }
+    }
+
+    if (settings.transcriptionEngine === "offline-moonshine") {
+      const modelId =
+        settings.offlineMoonshineModel || "onnx-community/moonshine-base-ONNX";
+      if (!isModelDownloaded(modelId)) {
+        if (
+          preloadStatus?.modelId === modelId &&
+          preloadStatus.phase !== "ready"
+        ) {
+          const progressLabel = preloadStatus.progress
+            ? ` (${Math.round(preloadStatus.progress)}%)`
+            : "";
+          alert(
+            `The selected Moonshine model is still downloading${progressLabel}. Please wait for it to finish.`
+          );
+        } else {
+          alert(
+            "The selected Moonshine model is not downloaded yet. Go to Settings > SmartVerses and select it to start the download."
+          );
+        }
+        return;
+      }
     }
 
     // Reset interim parse state for a fresh session
@@ -1118,8 +1547,8 @@ const SmartVersesPage: React.FC = () => {
     setTranscriptionStatus("connecting");
 
     try {
-      const service = new AssemblyAITranscriptionService(
-        settings.assemblyAIApiKey,
+      const service = createTranscriptionService(
+        settings,
         {
           onInterimTranscript: (text) => {
             setInterimTranscript(text);
@@ -1156,6 +1585,7 @@ const SmartVersesPage: React.FC = () => {
             });
             let keyPoints: KeyPoint[] = [];
             let scriptureReferences: string[] = [];
+            let paraphrasedVersesForWs: ParaphrasedVerse[] = [];
             
             if (directRefs.length > 0) {
               setDetectedReferences(prev => [...prev, ...directRefs]);
@@ -1188,6 +1618,9 @@ const SmartVersesPage: React.FC = () => {
                 settings.enableKeyPointExtraction,
                 {
                   keyPointInstructions: settings.keyPointExtractionInstructions,
+                  overrideProvider: settings.bibleSearchProvider,
+                  overrideModel: settings.bibleSearchModel,
+                  minWords: settings.aiMinWordCount,
                 }
               );
               keyPoints = analysis.keyPoints || [];
@@ -1203,6 +1636,10 @@ const SmartVersesPage: React.FC = () => {
                 analysis.paraphrasedVerses.length,
                 "paraphrased verse(s)"
               );
+
+              if (analysis.paraphrasedVerses.length > 0) {
+                paraphrasedVersesForWs = analysis.paraphrasedVerses;
+              }
 
               if (settings.enableParaphraseDetection && analysis.paraphrasedVerses.length > 0) {
                 const resolvedRefs = await resolveParaphrasedVerses(analysis.paraphrasedVerses);
@@ -1235,9 +1672,6 @@ const SmartVersesPage: React.FC = () => {
 
                   if (deduped.length > 0) {
                     setDetectedReferences(prev => [...prev, ...deduped]);
-                    scriptureReferences = Array.from(
-                      new Set(deduped.map((r) => (r.displayRef || "").trim()).filter(Boolean))
-                    );
                   }
                   
                   if (settings.autoAddDetectedToHistory) {
@@ -1274,6 +1708,9 @@ const SmartVersesPage: React.FC = () => {
                 ? scriptureReferences
                 : undefined,
               key_points: wsKeyPoints,
+              paraphrased_verses: paraphrasedVersesForWs.length
+                ? paraphrasedVersesForWs
+                : undefined,
             });
 
             if (settings.streamTranscriptionsToWebSocket) {
@@ -1286,6 +1723,9 @@ const SmartVersesPage: React.FC = () => {
                 segment,
                 scripture_references: scriptureReferences.length ? scriptureReferences : undefined,
                 key_points: keyPoints.length ? keyPoints : undefined,
+                paraphrased_verses: paraphrasedVersesForWs.length
+                  ? paraphrasedVersesForWs
+                  : undefined,
               }).catch(() => {
                 // If Live Slides server isn't running, silently ignore.
               });
@@ -1297,17 +1737,24 @@ const SmartVersesPage: React.FC = () => {
           },
           onStatusChange: (status) => {
             setTranscriptionStatus(status);
+            if (status !== "recording") {
+              setAudioLevel(0);
+            }
           },
           onConnectionClose: () => {
             setTranscriptionStatus("idle");
+            setAudioLevel(0);
+          },
+          onAudioLevel: (level) => {
+            setAudioLevel((prev) => prev * 0.65 + level * 0.35);
           },
         }
       );
 
       // Configure audio capture mode (WebRTC vs Native)
-      service.setAudioCaptureMode(settings.audioCaptureMode === "native" ? "native" : "webrtc");
+      service.setAudioCaptureMode?.(settings.audioCaptureMode === "native" ? "native" : "webrtc");
       if (settings.audioCaptureMode === "native") {
-        service.setNativeMicrophoneDeviceId(settings.selectedNativeMicrophoneId || null);
+        service.setNativeMicrophoneDeviceId?.(settings.selectedNativeMicrophoneId || null);
       }
 
       if (settings.selectedMicrophoneId) {
@@ -1328,6 +1775,9 @@ const SmartVersesPage: React.FC = () => {
     try {
       if (transcriptionServiceRef.current) {
         await transcriptionServiceRef.current.stopTranscription();
+        // Call destroy() to properly terminate workers and release resources
+        // This is especially important for offline transcription services that use web workers
+        transcriptionServiceRef.current.destroy?.();
         transcriptionServiceRef.current = null;
       }
       // Also disconnect browser transcription WebSocket if connected
@@ -1343,6 +1793,145 @@ const SmartVersesPage: React.FC = () => {
       setIsStopping(false);
     }
   }, [disconnectBrowserTranscriptionWs, disconnectRemoteTranscriptionWs]);
+
+  const transcriptionTimeLimitMinutes = Math.max(
+    1,
+    settings.transcriptionTimeLimitMinutes ?? 120
+  );
+  const transcriptionTimeLimitMs = transcriptionTimeLimitMinutes * 60 * 1000;
+
+  const formatElapsedTime = useCallback((ms: number) => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }, []);
+
+  const formatSnoozeLabel = useCallback((minutes: number) => {
+    if (minutes >= 60 && minutes % 60 === 0) {
+      const hours = minutes / 60;
+      return `${hours} hr${hours === 1 ? "" : "s"}`;
+    }
+    return `${minutes} min`;
+  }, []);
+
+  const formattedElapsedTime = useMemo(
+    () => formatElapsedTime(transcriptionElapsedMs),
+    [formatElapsedTime, transcriptionElapsedMs]
+  );
+  const transcriptionLimitLabel = useMemo(
+    () => formatSnoozeLabel(transcriptionTimeLimitMinutes),
+    [formatSnoozeLabel, transcriptionTimeLimitMinutes]
+  );
+
+  const clearTranscriptionPromptTimeout = useCallback(() => {
+    if (transcriptionPromptTimeoutRef.current) {
+      window.clearTimeout(transcriptionPromptTimeoutRef.current);
+      transcriptionPromptTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resetTranscriptionTimer = useCallback(() => {
+    transcriptionStartRef.current = null;
+    transcriptionNextPromptAtRef.current = null;
+    transcriptionPromptReasonRef.current = null;
+    setTranscriptionElapsedMs(0);
+    setShowTranscriptionLimitPrompt(false);
+    clearTranscriptionPromptTimeout();
+  }, [clearTranscriptionPromptTimeout]);
+
+  const openTranscriptionLimitPrompt = useCallback(() => {
+    if (showTranscriptionLimitPrompt) return;
+    setShowTranscriptionLimitPrompt(true);
+    clearTranscriptionPromptTimeout();
+    transcriptionPromptTimeoutRef.current = window.setTimeout(() => {
+      if (transcriptionStatusRef.current !== "idle") {
+        handleStopTranscription();
+      }
+      setShowTranscriptionLimitPrompt(false);
+    }, 60 * 1000);
+  }, [clearTranscriptionPromptTimeout, handleStopTranscription, showTranscriptionLimitPrompt]);
+
+  const handleTranscriptionSnooze = useCallback(
+    (minutes: number) => {
+      transcriptionNextPromptAtRef.current = Date.now() + minutes * 60 * 1000;
+      transcriptionPromptReasonRef.current = "snooze";
+      setShowTranscriptionLimitPrompt(false);
+      clearTranscriptionPromptTimeout();
+    },
+    [clearTranscriptionPromptTimeout]
+  );
+
+  const handleTranscriptionPromptStop = useCallback(() => {
+    setShowTranscriptionLimitPrompt(false);
+    clearTranscriptionPromptTimeout();
+    handleStopTranscription();
+  }, [clearTranscriptionPromptTimeout, handleStopTranscription]);
+
+  useEffect(() => {
+    if (transcriptionStatus === "idle" || transcriptionStatus === "error") {
+      resetTranscriptionTimer();
+      return;
+    }
+
+    if (transcriptionStatus !== "recording") {
+      return;
+    }
+
+    if (!transcriptionStartRef.current) {
+      const now = Date.now();
+      transcriptionStartRef.current = now;
+      transcriptionNextPromptAtRef.current = now + transcriptionTimeLimitMs;
+      transcriptionPromptReasonRef.current = "limit";
+      setTranscriptionElapsedMs(0);
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (!transcriptionStartRef.current) return;
+      const now = Date.now();
+      setTranscriptionElapsedMs(now - transcriptionStartRef.current);
+
+      const nextPromptAt = transcriptionNextPromptAtRef.current;
+      if (nextPromptAt && now >= nextPromptAt && !showTranscriptionLimitPrompt) {
+        openTranscriptionLimitPrompt();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    transcriptionStatus,
+    transcriptionTimeLimitMs,
+    showTranscriptionLimitPrompt,
+    openTranscriptionLimitPrompt,
+    resetTranscriptionTimer,
+  ]);
+
+  useEffect(() => {
+    if (transcriptionStatus !== "recording") return;
+    if (!transcriptionStartRef.current) return;
+    if (transcriptionPromptReasonRef.current !== "limit") return;
+
+    transcriptionNextPromptAtRef.current =
+      transcriptionStartRef.current + transcriptionTimeLimitMs;
+
+    if (
+      transcriptionNextPromptAtRef.current &&
+      Date.now() >= transcriptionNextPromptAtRef.current &&
+      !showTranscriptionLimitPrompt
+    ) {
+      openTranscriptionLimitPrompt();
+    }
+  }, [
+    transcriptionStatus,
+    transcriptionTimeLimitMs,
+    openTranscriptionLimitPrompt,
+  ]);
 
   useEffect(() => {
     const handleStartRequest = () => {
@@ -1672,7 +2261,7 @@ const SmartVersesPage: React.FC = () => {
           lineHeight: 1.5,
           color: "var(--app-text-color)",
         }}>
-          {ref.verseText}
+          {renderHighlightedVerseText(ref.verseText, ref.highlight)}
         </p>
         {isParaphrase && ref.matchedPhrase && (
           <p style={{
@@ -1815,7 +2404,7 @@ const SmartVersesPage: React.FC = () => {
               }}
             >
               <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.5 }}>
-                {ref.verseText}
+                {renderHighlightedVerseText(ref.verseText, ref.highlight)}
               </p>
               {isParaphrase && ref.matchedPhrase && (
                 <p
@@ -1956,7 +2545,76 @@ const SmartVersesPage: React.FC = () => {
       height: "calc(100vh - 60px)",
       gap: "var(--spacing-4)",
       padding: "var(--spacing-4)",
+      position: "relative",
     }}>
+      <div
+        style={{
+          position: "absolute",
+          top: "var(--spacing-3)",
+          left: "50%",
+          transform: showTranscriptionLimitPrompt
+            ? "translate(-50%, 0)"
+            : "translate(-50%, -140%)",
+          transition: "transform 0.25s ease, opacity 0.25s ease",
+          opacity: showTranscriptionLimitPrompt ? 1 : 0,
+          pointerEvents: showTranscriptionLimitPrompt ? "auto" : "none",
+          zIndex: 50,
+          width: "min(720px, calc(100% - 32px))",
+        }}
+        aria-hidden={!showTranscriptionLimitPrompt}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--spacing-3)",
+            padding: "12px 16px",
+            borderRadius: "10px",
+            border: "1px solid var(--app-border-color)",
+            backgroundColor: "var(--app-header-bg)",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: "220px" }}>
+            <div style={{ fontWeight: 600 }}>
+              Continue transcribing?
+            </div>
+            <div style={{ fontSize: "0.85rem", color: "var(--app-text-color-secondary)" }}>
+              You've been transcribing for {formattedElapsedTime}. Auto-stop in 1 minute.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              onClick={() => handleTranscriptionSnooze(30)}
+              className="secondary btn-sm"
+            >
+              Snooze 30 min
+            </button>
+            <button
+              onClick={() => handleTranscriptionSnooze(transcriptionTimeLimitMinutes)}
+              className="secondary btn-sm"
+            >
+              Snooze {transcriptionLimitLabel}
+            </button>
+            <button
+              onClick={handleTranscriptionPromptStop}
+              style={{
+                border: "none",
+                borderRadius: "8px",
+                padding: "6px 12px",
+                fontWeight: 600,
+                backgroundColor: "rgb(220, 38, 38)",
+                color: "white",
+                cursor: "pointer",
+              }}
+            >
+              Stop
+            </button>
+          </div>
+        </div>
+      </div>
       {/* LEFT COLUMN - Bible Search Chat */}
       <div style={{
         flex: 1,
@@ -2288,6 +2946,26 @@ const SmartVersesPage: React.FC = () => {
                 <span style={{ color: "var(--warning)", fontWeight: 700 }}>(paused)</span>
               )}
             </label>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "4px 8px",
+                borderRadius: "6px",
+                border: "1px solid var(--app-border-color)",
+                backgroundColor: "var(--app-bg-color)",
+                fontSize: "0.8rem",
+                color:
+                  transcriptionStatus === "recording"
+                    ? "var(--success)"
+                    : "var(--app-text-color-secondary)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+              title="Transcription elapsed time"
+            >
+              {formattedElapsedTime}
+            </div>
             {transcriptionStatus === "idle" ? (
               <button
                 onClick={handleStartTranscription}
@@ -2416,6 +3094,40 @@ const SmartVersesPage: React.FC = () => {
                     </button>
                   )}
                 </div>
+                <div style={{ marginBottom: "10px" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--app-text-color-secondary)" }}>
+                    Display options
+                  </div>
+                  <div style={{ display: "grid", gap: "6px", marginTop: "6px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.85rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={transcriptDisplayOptions.showTranscript}
+                        onChange={() => handleToggleTranscriptOption("showTranscript")}
+                        style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+                      />
+                      Transcript
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.85rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={transcriptDisplayOptions.showScriptureRefs}
+                        onChange={() => handleToggleTranscriptOption("showScriptureRefs")}
+                        style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+                      />
+                      Scripture refs
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.85rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={transcriptDisplayOptions.showKeyPoints}
+                        onChange={() => handleToggleTranscriptOption("showKeyPoints")}
+                        style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+                      />
+                      Key points
+                    </label>
+                  </div>
+                </div>
                 <div style={{ display: "grid", gap: "6px" }}>
                   <button
                     onClick={() => {
@@ -2450,10 +3162,41 @@ const SmartVersesPage: React.FC = () => {
                     <FaDownload size={12} />
                     Download as JSON
                   </button>
+                  <div style={{ height: "1px", backgroundColor: "var(--app-border-color)" }} />
+                  <button
+                    onClick={handleOpenSmartVersesSettings}
+                    className="secondary"
+                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px" }}
+                  >
+                    <FaCog size={12} />
+                    SmartVerses settings
+                  </button>
                 </div>
               </div>
             )}
           </div>
+        </div>
+
+        <div style={{
+          height: "8px",
+          backgroundColor: "var(--app-bg-color)",
+          borderBottom: "1px solid var(--app-border-color)",
+          position: "relative",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            height: "100%",
+            width: `${Math.max(2, Math.round((transcriptionStatus === "recording" ? audioLevel : 0) * 100))}%`,
+            backgroundColor:
+              transcriptionStatus === "recording"
+                ? audioLevel > 0.7
+                  ? "rgb(220, 38, 38)"
+                  : audioLevel > 0.4
+                  ? "rgb(234, 179, 8)"
+                  : "rgb(34, 197, 94)"
+                : "rgba(148, 163, 184, 0.5)",
+            transition: "width 80ms linear, background-color 150ms ease",
+          }} />
         </div>
 
         {/* Transcript Display */}
@@ -2505,6 +3248,20 @@ const SmartVersesPage: React.FC = () => {
                 const segmentRefs = detectedReferences.filter(
                   ref => ref.transcriptText === segment.text
                 );
+                const segmentKeyPoints = transcriptKeyPoints[segment.id] || [];
+                const showTranscriptText = transcriptDisplayOptions.showTranscript;
+                const showRefs = transcriptDisplayOptions.showScriptureRefs;
+                const showKeyPoints = transcriptDisplayOptions.showKeyPoints;
+                const hasRefsToShow = showRefs && segmentRefs.length > 0;
+                const hasKeyPointsToShow = showKeyPoints && segmentKeyPoints.length > 0;
+                const shouldRenderSegment =
+                  (showTranscriptText && segment.text) ||
+                  hasRefsToShow ||
+                  hasKeyPointsToShow;
+
+                if (!shouldRenderSegment) {
+                  return null;
+                }
                 
                 return (
                   <div
@@ -2517,16 +3274,18 @@ const SmartVersesPage: React.FC = () => {
                       border: "1px solid var(--app-border-color)",
                     }}
                   >
-                    <p
-                      style={{
-                        margin: 0,
-                        lineHeight: 1.6,
-                        color: "var(--app-text-color)",
-                      }}
-                    >
-                      {segment.text}
-                    </p>
-                    {segmentRefs.length > 0 && (
+                    {showTranscriptText && (
+                      <p
+                        style={{
+                          margin: 0,
+                          lineHeight: 1.6,
+                          color: "var(--app-text-color)",
+                        }}
+                      >
+                        {segment.text}
+                      </p>
+                    )}
+                    {hasRefsToShow && (
                       <div style={{ marginTop: "var(--spacing-2)" }}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                           {segmentRefs.map((ref) => {
@@ -2646,7 +3405,7 @@ const SmartVersesPage: React.FC = () => {
                                     </div>
 
                                     <p style={{ margin: 0, lineHeight: 1.5 }}>
-                                      {ref.verseText}
+                                      {renderHighlightedVerseText(ref.verseText, ref.highlight)}
                                     </p>
 
                                     {isParaphrase && ref.matchedPhrase && (
@@ -2668,12 +3427,76 @@ const SmartVersesPage: React.FC = () => {
                         )}
                       </div>
                     )}
+                    {hasKeyPointsToShow && (
+                      <div
+                        style={{
+                          marginTop:
+                            showTranscriptText || hasRefsToShow ? "var(--spacing-2)" : 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                            color: "var(--app-text-color-secondary)",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            marginBottom: "6px",
+                          }}
+                        >
+                          Key points
+                        </div>
+                        <div style={{ display: "grid", gap: "6px" }}>
+                          {segmentKeyPoints.map((point, index) => (
+                            <div
+                              key={`${segment.id}-key-point-${index}`}
+                              style={{
+                                border: "1px solid #f59e0b",
+                                borderLeft: "4px solid #f59e0b",
+                                borderRadius: "8px",
+                                padding: "8px 10px",
+                                backgroundColor: "rgba(245, 158, 11, 0.12)",
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: "10px",
+                              }}
+                            >
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
+                                {point.category && (
+                                  <span
+                                    style={{
+                                      fontSize: "0.7rem",
+                                      fontWeight: 700,
+                                      letterSpacing: "0.04em",
+                                      color: "#f59e0b",
+                                      textTransform: "uppercase",
+                                    }}
+                                  >
+                                    {point.category}
+                                  </span>
+                                )}
+                                <span
+                                  style={{
+                                    fontSize: "0.85rem",
+                                    lineHeight: "1.4",
+                                    color: "var(--app-text-color)",
+                                    wordBreak: "break-word",
+                                  }}
+                                >
+                                  {point.text}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
               
               {/* Interim transcript */}
-              {matchesInterimSearch && (
+              {transcriptDisplayOptions.showTranscript && matchesInterimSearch && (
                 <div
                   style={{
                     marginBottom: "var(--spacing-3)",

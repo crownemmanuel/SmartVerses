@@ -130,10 +130,13 @@ const AIAutomationDropdown: React.FC<AIAutomationDropdownProps> = ({
 
     try {
       const slideTexts = slidesToProofread.map((s) => s.text);
-      const defaultModel = provider === "openai" 
-        ? "gpt-4o-mini" 
-        : provider === "groq" 
-        ? "llama-3.3-70b-versatile" 
+    const defaultModel =
+      provider === appSettings.defaultAIProvider && appSettings.defaultAIModel
+        ? appSettings.defaultAIModel
+        : provider === "openai"
+        ? "gpt-4o-mini"
+        : provider === "groq"
+        ? "llama-3.3-70b-versatile"
         : "gemini-1.5-flash-latest";
       const correctedTexts = await proofreadSlideTexts(
         slideTexts,

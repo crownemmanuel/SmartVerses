@@ -12,6 +12,10 @@ import {
   FaImage,
   FaRedo,
   FaCheck,
+  FaGripVertical,
+  FaSave,
+  FaFolderOpen,
+  FaEraser,
 } from "react-icons/fa";
 import {
   ScheduleItem,
@@ -34,6 +38,7 @@ import LoadScheduleModal from "../components/LoadScheduleModal";
 import ImageScheduleUploadModal from "../components/ImageScheduleUploadModal";
 import RemoteAccessLinkModal from "../components/RemoteAccessLinkModal";
 import ScheduleAutomationModal from "../components/ScheduleAutomationModal";
+import TimerTemplatesModal from "../components/TimerTemplatesModal";
 import { findMatchingAutomation } from "../utils/testimoniesStorage";
 import "../App.css";
 
@@ -64,6 +69,8 @@ function normalizeAutomations(item: ScheduleItem): ScheduleItemAutomation[] {
     const normalized =
       (a as any)?.type === "slide" || 
       (a as any)?.type === "stageLayout" ||
+      (a as any)?.type === "midi" ||
+      (a as any)?.type === "http" ||
       RECORDING_AUTOMATION_TYPES.includes((a as any)?.type)
         ? (a as ScheduleItemAutomation)
         : (a as any)?.presentationUuid &&
@@ -178,6 +185,18 @@ const StageAssistPage: React.FC = () => {
   // Schedule Automation Modal state
   const [automationModalItem, setAutomationModalItem] =
     useState<ScheduleItem | null>(null);
+
+  // Timer Templates Modal state
+  const [showTimerTemplatesModal, setShowTimerTemplatesModal] = useState(false);
+  const [timerTemplatesMode, setTimerTemplatesMode] = useState<"save" | "load">("load");
+
+  // Drag and drop state - using pointer events for stability
+  const [draggedItemId, setDraggedItemId] = useState<number | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<number | null>(null);
+  const [hoveredRowId, setHoveredRowId] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef<number>(0);
+  const tableBodyRef = useRef<HTMLTableSectionElement>(null);
 
   // Network sync settings for "Get from Master" feature
   const networkSyncSettings = networkSyncSettingsState;
@@ -457,8 +476,13 @@ const StageAssistPage: React.FC = () => {
       try {
         // Run stage layout first (so the stage is set before slide triggers)
         const ordered = [...sessionAutomations].sort((a, b) => {
-          const order = (x: ScheduleItemAutomation) =>
-            x.type === "stageLayout" ? 0 : 1;
+          const order = (x: ScheduleItemAutomation) => {
+            if (x.type === "stageLayout") return 0;
+            if (x.type === "slide") return 1;
+            if (x.type === "midi") return 2;
+            if (x.type === "http") return 3;
+            return 4; // recording automations last
+          };
           return order(a) - order(b);
         });
 
@@ -499,6 +523,41 @@ const StageAssistPage: React.FC = () => {
                 `Session automation: Slide trigger failed on ${automationResult.failed} instance(s):`,
                 automationResult.errors
               );
+            }
+          } else if (automation.type === "midi") {
+            // MIDI automations - send MIDI note
+            try {
+              const { sendMidiNote } = await import("../services/midiService");
+              await sendMidiNote(
+                automation.deviceId,
+                automation.channel,
+                automation.note,
+                automation.velocity || 127
+              );
+              console.log(
+                `Session automation: Sent MIDI note ${automation.note} on channel ${automation.channel} to device ${automation.deviceId}`
+              );
+            } catch (err) {
+              console.error("Failed to send MIDI note:", err);
+            }
+          } else if (automation.type === "http") {
+            try {
+              const { triggerHttpAutomation } = await import(
+                "../services/httpAutomationService"
+              );
+              const result = await triggerHttpAutomation(automation);
+              if (result.ok) {
+                console.log(
+                  `Session automation: HTTP ${automation.method} ${automation.url} (${result.status ?? "ok"})`
+                );
+              } else {
+                console.warn(
+                  `Session automation: HTTP ${automation.method} ${automation.url} failed`,
+                  result.error || result.status
+                );
+              }
+            } catch (err) {
+              console.error("Failed to execute HTTP automation:", err);
             }
           } else {
             // Recording automations - dispatch events
@@ -751,6 +810,182 @@ const StageAssistPage: React.FC = () => {
     setSchedule((prev) => prev.filter((item) => item.id !== id));
   };
 
+  // Pointer-based drag handlers for stable reordering
+  const handlePointerDown = (e: React.PointerEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Capture pointer for reliable tracking
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    
+    setDraggedItemId(id);
+    setIsDragging(true);
+    dragStartY.current = e.clientY;
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || draggedItemId === null || !tableBodyRef.current) return;
+    
+    e.preventDefault();
+    
+    // Find which row the pointer is over
+    const rows = tableBodyRef.current.querySelectorAll('tr');
+    let targetId: number | null = null;
+    
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const rowId = parseInt(row.getAttribute('data-item-id') || '', 10);
+        if (!isNaN(rowId) && rowId !== draggedItemId) {
+          targetId = rowId;
+        }
+        break;
+      }
+    }
+    
+    setDragOverItemId(targetId);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDragging || draggedItemId === null) {
+      setIsDragging(false);
+      setDraggedItemId(null);
+      setDragOverItemId(null);
+      return;
+    }
+    
+    // Release pointer capture
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    
+    if (dragOverItemId !== null && dragOverItemId !== draggedItemId) {
+      // Perform the reorder
+      setSchedule((prev) => {
+        const newSchedule = [...prev];
+        const draggedIndex = newSchedule.findIndex((item) => item.id === draggedItemId);
+        const targetIndex = newSchedule.findIndex((item) => item.id === dragOverItemId);
+
+        if (draggedIndex === -1 || targetIndex === -1) return prev;
+
+        // Remove dragged item and insert at target position
+        const [draggedItem] = newSchedule.splice(draggedIndex, 1);
+        newSchedule.splice(targetIndex, 0, draggedItem);
+
+        // Recalculate times based on new order (preserve durations, cascade start/end times)
+        let previousEndTime = newSchedule[0]?.startTime || "10:30 AM";
+        
+        for (let i = 0; i < newSchedule.length; i++) {
+          const item = newSchedule[i];
+          const durationMinutes = parseDurationToMinutes(item.duration);
+          
+          if (i === 0) {
+            // First item keeps its start time, recalculate end time
+            const newEndTime = addMinutesToTime(item.startTime, durationMinutes);
+            newSchedule[i] = { ...item, endTime: newEndTime };
+            previousEndTime = newEndTime;
+          } else {
+            // Subsequent items cascade from previous end time
+            const newStartTime = previousEndTime;
+            const newEndTime = addMinutesToTime(newStartTime, durationMinutes);
+            newSchedule[i] = {
+              ...item,
+              startTime: newStartTime,
+              endTime: newEndTime,
+            };
+            previousEndTime = newEndTime;
+          }
+        }
+
+        return newSchedule;
+      });
+    }
+
+    setIsDragging(false);
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  };
+
+  // Global pointer move/up handlers for drag outside of handle
+  useEffect(() => {
+    if (!isDragging) return;
+    
+    const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (!isDragging || draggedItemId === null || !tableBodyRef.current) return;
+      
+      // Find which row the pointer is over
+      const rows = tableBodyRef.current.querySelectorAll('tr');
+      let targetId: number | null = null;
+      
+      for (const row of rows) {
+        const rect = row.getBoundingClientRect();
+        if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          const rowId = parseInt(row.getAttribute('data-item-id') || '', 10);
+          if (!isNaN(rowId) && rowId !== draggedItemId) {
+            targetId = rowId;
+          }
+          break;
+        }
+      }
+      
+      setDragOverItemId(targetId);
+    };
+    
+    const handleGlobalPointerUp = () => {
+      if (dragOverItemId !== null && dragOverItemId !== draggedItemId && draggedItemId !== null) {
+        // Perform the reorder
+        setSchedule((prev) => {
+          const newSchedule = [...prev];
+          const draggedIndex = newSchedule.findIndex((item) => item.id === draggedItemId);
+          const targetIndex = newSchedule.findIndex((item) => item.id === dragOverItemId);
+
+          if (draggedIndex === -1 || targetIndex === -1) return prev;
+
+          // Remove dragged item and insert at target position
+          const [draggedItem] = newSchedule.splice(draggedIndex, 1);
+          newSchedule.splice(targetIndex, 0, draggedItem);
+
+          // Recalculate times based on new order (preserve durations, cascade start/end times)
+          let previousEndTime = newSchedule[0]?.startTime || "10:30 AM";
+          
+          for (let i = 0; i < newSchedule.length; i++) {
+            const item = newSchedule[i];
+            const durationMinutes = parseDurationToMinutes(item.duration);
+            
+            if (i === 0) {
+              // First item keeps its start time, recalculate end time
+              const newEndTime = addMinutesToTime(item.startTime, durationMinutes);
+              newSchedule[i] = { ...item, endTime: newEndTime };
+              previousEndTime = newEndTime;
+            } else {
+              // Subsequent items cascade from previous end time
+              const newStartTime = previousEndTime;
+              const newEndTime = addMinutesToTime(newStartTime, durationMinutes);
+              newSchedule[i] = {
+                ...item,
+                startTime: newStartTime,
+                endTime: newEndTime,
+              };
+              previousEndTime = newEndTime;
+            }
+          }
+
+          return newSchedule;
+        });
+      }
+
+      setIsDragging(false);
+      setDraggedItemId(null);
+      setDragOverItemId(null);
+    };
+    
+    window.addEventListener('pointermove', handleGlobalPointerMove);
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    
+    return () => {
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+    };
+  }, [isDragging, draggedItemId, dragOverItemId]);
+
   // Helper to add minutes to time
   const addMinutesToTime = (time: string, minutes: number): string => {
     const [timeStr, period] = time.split(" ");
@@ -848,6 +1083,40 @@ const StageAssistPage: React.FC = () => {
                   overflow: "hidden",
                 }}
               >
+                {/* Start New Schedule Option */}
+                <button
+                  onClick={() => {
+                    setShowLoadScheduleDropdown(false);
+                    // Clear the schedule and start fresh
+                    setSchedule([]);
+                    setCurrentSessionIndex(null);
+                    resetTriggeredSessions();
+                    showToast("Started new blank schedule", "success");
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    width: "100%",
+                    padding: "10px 14px",
+                    backgroundColor: "transparent",
+                    color: "var(--app-text-color)",
+                    border: "none",
+                    borderBottom: "1px solid var(--app-border-color)",
+                    cursor: "pointer",
+                    fontSize: "0.875rem",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor =
+                      "var(--app-hover-bg-color)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  <FaEraser style={{ opacity: 0.7, color: "#f59e0b" }} /> Start New Schedule
+                </button>
                 <button
                   onClick={() => {
                     setShowLoadScheduleDropdown(false);
@@ -958,6 +1227,52 @@ const StageAssistPage: React.FC = () => {
               </div>
             )}
           </div>
+          {/* Save Template Button */}
+          <button
+            onClick={() => {
+              setTimerTemplatesMode("save");
+              setShowTimerTemplatesModal(true);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 12px",
+              backgroundColor: "var(--app-button-bg-color)",
+              color: "var(--app-button-text-color)",
+              border: "1px solid var(--app-border-color)",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+            }}
+            title="Save current schedule as a template"
+          >
+            <FaSave /> Save Template
+          </button>
+          {/* Load Template Button */}
+          <button
+            onClick={() => {
+              setTimerTemplatesMode("load");
+              setShowTimerTemplatesModal(true);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 12px",
+              backgroundColor: "var(--app-button-bg-color)",
+              color: "var(--app-button-text-color)",
+              border: "1px solid var(--app-border-color)",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+            }}
+            title="Load a saved template"
+          >
+            <FaFolderOpen /> Templates
+          </button>
           <button
             onClick={() => setShowRemoteAccessModal(true)}
             style={{
@@ -1004,7 +1319,7 @@ const StageAssistPage: React.FC = () => {
         {/* Next Session */}
         <div
           style={{
-            backgroundColor: "rgba(255, 162, 0, 0.5)",
+            backgroundColor: "var(--timer-next-bg)",
             borderRadius: "12px",
             padding: "var(--spacing-6)",
             textAlign: "center",
@@ -1549,6 +1864,16 @@ const StageAssistPage: React.FC = () => {
               <th
                 style={{
                   padding: "var(--spacing-3)",
+                  textAlign: "center",
+                  fontWeight: 600,
+                  width: "40px",
+                }}
+              >
+                {/* Drag handle column header - empty */}
+              </th>
+              <th
+                style={{
+                  padding: "var(--spacing-3)",
                   textAlign: "left",
                   fontWeight: 600,
                 }}
@@ -1593,20 +1918,57 @@ const StageAssistPage: React.FC = () => {
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={tableBodyRef}>
             {schedule.map((item, index) => (
               <tr
                 key={item.id}
+                data-item-id={item.id}
+                onMouseEnter={() => setHoveredRowId(item.id)}
+                onMouseLeave={() => setHoveredRowId(null)}
                 style={{
                   backgroundColor:
-                    currentSessionIndex === index
+                    dragOverItemId === item.id
+                      ? "rgba(59, 130, 246, 0.3)"
+                      : currentSessionIndex === index
                       ? "rgba(34, 197, 94, 0.2)"
                       : nextSessionIndex === index
                       ? "rgba(249, 115, 22, 0.15)"
                       : "transparent",
-                  borderBottom: "1px solid var(--app-border-color)",
+                  borderTop: dragOverItemId === item.id && draggedItemId !== null
+                    ? "2px solid rgba(59, 130, 246, 0.8)"
+                    : "none",
+                  borderBottom: dragOverItemId === item.id && draggedItemId !== null
+                    ? "2px solid rgba(59, 130, 246, 0.8)"
+                    : "1px solid var(--app-border-color)",
+                  opacity: draggedItemId === item.id ? 0.5 : 1,
+                  transition: "background-color 0.15s ease, border 0.15s ease, opacity 0.15s ease",
                 }}
               >
+                {/* Drag Handle Column */}
+                <td
+                  onPointerDown={(e) => handlePointerDown(e, item.id)}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  style={{
+                    padding: "var(--spacing-3)",
+                    textAlign: "center",
+                    width: "40px",
+                    cursor: isDragging && draggedItemId === item.id ? "grabbing" : "grab",
+                    userSelect: "none",
+                    touchAction: "none", // Prevent scroll on touch devices during drag
+                  }}
+                >
+                  <FaGripVertical
+                    style={{
+                      opacity: hoveredRowId === item.id || draggedItemId === item.id ? 0.8 : 0.2,
+                      transition: "opacity 0.15s ease",
+                      color: draggedItemId === item.id ? "var(--app-primary-color)" : "var(--app-text-color-secondary)",
+                      fontSize: "0.9rem",
+                      pointerEvents: "none",
+                    }}
+                    title="Drag to reorder"
+                  />
+                </td>
                 <td style={{ padding: "var(--spacing-3)" }}>
                   {editingCell?.id === item.id &&
                   editingCell.field === "session" ? (
@@ -1886,6 +2248,8 @@ const StageAssistPage: React.FC = () => {
                               .map((a) => {
                                 if (a.type === "slide") return "Slide";
                                 if (a.type === "stageLayout") return "Stage Layout";
+                                if (a.type === "midi") return "MIDI";
+                                if (a.type === "http") return "HTTP Call";
                                 if (a.type.startsWith("start")) return "▶ Recording";
                                 if (a.type.startsWith("stop")) return "⏹ Recording";
                                 return a.type;
@@ -2134,6 +2498,27 @@ const StageAssistPage: React.FC = () => {
           sessionName={automationModalItem.session}
         />
       )}
+
+      {/* Timer Templates Modal */}
+      <TimerTemplatesModal
+        isOpen={showTimerTemplatesModal}
+        onClose={() => setShowTimerTemplatesModal(false)}
+        mode={timerTemplatesMode}
+        currentSchedule={schedule}
+        currentSettings={settings}
+        onLoad={(loadedSchedule, loadedSettings) => {
+          setSchedule(loadedSchedule);
+          if (loadedSettings) {
+            setSettings(loadedSettings);
+          }
+          setShowTimerTemplatesModal(false);
+          showToast("Template loaded successfully", "success");
+        }}
+        onSave={() => {
+          setShowTimerTemplatesModal(false);
+          showToast("Template saved successfully", "success");
+        }}
+      />
     </div>
   );
 };

@@ -46,7 +46,7 @@ export function loadLiveTestimoniesSettings(): LiveTestimoniesSettings {
       return {
         firebaseConfig: parsed.firebaseConfig || null,
         liveTestimonyOutputPath:
-          parsed.liveTestimonyOutputPath || "/tmp/proassist/live_testimony/",
+          parsed.liveTestimonyOutputPath || "~/Documents/ProAssist/Templates",
         liveTestimonyFileName:
           parsed.liveTestimonyFileName || "live_testimony.txt",
         nameFormatting: parsed.nameFormatting || {
@@ -61,7 +61,7 @@ export function loadLiveTestimoniesSettings(): LiveTestimoniesSettings {
   // Return defaults
   return {
     firebaseConfig: null,
-    liveTestimonyOutputPath: "/tmp/proassist/live_testimony/",
+    liveTestimonyOutputPath: "~/Documents/ProAssist/Templates",
     liveTestimonyFileName: "live_testimony.txt",
     nameFormatting: {
       type: "default",
@@ -85,6 +85,15 @@ export function loadSmartAutomations(): SmartAutomationRule[] {
       const parsed = JSON.parse(saved) as any[];
       if (!Array.isArray(parsed)) return [];
 
+      const recordingTypes = [
+        "startVideoRecording",
+        "stopVideoRecording",
+        "startAudioRecording",
+        "stopAudioRecording",
+        "startBothRecording",
+        "stopBothRecording",
+      ] as const;
+
       // Migrate legacy rules: `automation` -> `automations[]`, and add missing `type` for slide rules.
       const migrated: SmartAutomationRule[] = parsed
         .map((rule: any) => {
@@ -102,6 +111,26 @@ export function loadSmartAutomations(): SmartAutomationRule[] {
 
             // already discriminated
             if (raw.type === "slide" || raw.type === "stageLayout") {
+              normalizedAutomations.push(raw as ScheduleItemAutomation);
+              continue;
+            }
+
+            if (recordingTypes.includes(raw.type)) {
+              normalizedAutomations.push({ type: raw.type } as ScheduleItemAutomation);
+              continue;
+            }
+
+            if (
+              raw.type === "midi" &&
+              typeof raw.deviceId === "string" &&
+              typeof raw.channel === "number" &&
+              typeof raw.note === "number"
+            ) {
+              normalizedAutomations.push(raw as ScheduleItemAutomation);
+              continue;
+            }
+
+            if (raw.type === "http" && typeof raw.method === "string" && typeof raw.url === "string") {
               normalizedAutomations.push(raw as ScheduleItemAutomation);
               continue;
             }

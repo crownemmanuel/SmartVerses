@@ -20,6 +20,7 @@ import {
   loadRecorderSettings,
   saveRecorderSettings,
   getVideoDevices,
+  getAudioDevices,
   getNativeAudioDevices,
   NativeAudioDevice,
 } from "../services/recorderService";
@@ -27,6 +28,7 @@ import {
   RecorderSettings as RecorderSettingsType,
   MediaDeviceOption,
   VideoFormat,
+  VideoAudioCodec,
   VideoResolution,
   AudioFormat,
   AudioBitrate,
@@ -38,6 +40,7 @@ import "../App.css";
 const RecorderSettings: React.FC = () => {
   const [settings, setSettings] = useState<RecorderSettingsType | null>(null);
   const [videoDevices, setVideoDevices] = useState<MediaDeviceOption[]>([]);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceOption[]>([]);
   const [nativeAudioDevices, setNativeAudioDevices] = useState<NativeAudioDevice[]>([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ text: string; type: "success" | "error" | "" }>({
@@ -57,9 +60,14 @@ const RecorderSettings: React.FC = () => {
   const loadDevices = useCallback(async () => {
     setIsLoadingDevices(true);
     try {
-      const [video, audio] = await Promise.all([getVideoDevices(), getNativeAudioDevices()]);
+      const [video, audio, nativeAudio] = await Promise.all([
+        getVideoDevices(),
+        getAudioDevices(),
+        getNativeAudioDevices(),
+      ]);
       setVideoDevices(video);
-      setNativeAudioDevices(audio);
+      setAudioDevices(audio);
+      setNativeAudioDevices(nativeAudio);
     } catch (err) {
       console.error("Failed to load devices:", err);
     } finally {
@@ -88,6 +96,27 @@ const RecorderSettings: React.FC = () => {
     value: RecorderSettingsType[K]
   ) => {
     setSettings((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
+  const handleVideoFormatChange = (format: VideoFormat) => {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        videoFormat: format,
+        videoAudioCodec: format === "webm" ? "opus" : "aac",
+      };
+    });
+  };
+
+  const handleVideoAudioCodecChange = (_codec: VideoAudioCodec) => {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        videoAudioCodec: prev.videoFormat === "webm" ? "opus" : "aac",
+      };
+    });
   };
 
   if (!settings) {
@@ -204,6 +233,25 @@ const RecorderSettings: React.FC = () => {
         </div>
 
         <div style={fieldStyle}>
+          <label style={labelStyle}>Video Audio Input</label>
+          <select
+            value={settings.selectedVideoAudioDeviceId || ""}
+            onChange={(e) => handleChange("selectedVideoAudioDeviceId", e.target.value || null)}
+            style={inputStyle}
+          >
+            <option value="">Default System Microphone</option>
+            {audioDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))}
+          </select>
+          <p style={helpTextStyle}>
+            Audio device to embed into the video recording (can be different from the audio-only recorder).
+          </p>
+        </div>
+
+        <div style={fieldStyle}>
           <label style={labelStyle}>Microphone</label>
           <select
             value={settings.selectedAudioDeviceId || ""}
@@ -237,7 +285,7 @@ const RecorderSettings: React.FC = () => {
               <span
                 key={format}
                 style={chipStyle(settings.videoFormat === format)}
-                onClick={() => handleChange("videoFormat", format)}
+                onClick={() => handleVideoFormatChange(format)}
               >
                 {format.toUpperCase()}
               </span>
@@ -245,6 +293,46 @@ const RecorderSettings: React.FC = () => {
           </div>
           <p style={helpTextStyle}>
             MP4 is more widely compatible. WebM offers better quality at smaller file sizes.
+          </p>
+        </div>
+
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Video Audio Codec</label>
+          <div style={chipContainerStyle}>
+            {(["aac", "opus"] as VideoAudioCodec[]).map((codec) => {
+              const isDisabled =
+                (settings.videoFormat === "webm" && codec === "aac") ||
+                (settings.videoFormat === "mp4" && codec === "opus");
+              return (
+                <span
+                  key={codec}
+                  style={{
+                    ...chipStyle(settings.videoAudioCodec === codec),
+                    opacity: isDisabled ? 0.5 : 1,
+                    cursor: isDisabled ? "not-allowed" : "pointer",
+                  }}
+                  onClick={() => {
+                    if (isDisabled) return;
+                    handleVideoAudioCodecChange(codec);
+                  }}
+                  title={
+                    isDisabled
+                      ? settings.videoFormat === "webm"
+                        ? "WebM uses Opus audio"
+                        : "MP4 uses AAC audio"
+                      : codec === "aac"
+                      ? "Best for Windows / most players"
+                      : "Higher quality, smaller files"
+                  }
+                >
+                  {codec.toUpperCase()}
+                </span>
+              );
+            })}
+          </div>
+          <p style={helpTextStyle}>
+            AAC is the most compatible option for Windows players. Opus is higher quality but may not play in
+            built-in Windows Media Player.
           </p>
         </div>
 
@@ -263,6 +351,26 @@ const RecorderSettings: React.FC = () => {
           </div>
           <p style={helpTextStyle}>
             Higher resolutions provide better quality but require more storage space.
+          </p>
+        </div>
+
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Video Audio Delay (ms)</label>
+          <input
+            type="number"
+            min={0}
+            max={2000}
+            value={settings.videoAudioDelayMs}
+            onChange={(e) =>
+              handleChange(
+                "videoAudioDelayMs",
+                Math.max(0, Math.min(2000, Number(e.target.value || 0)))
+              )
+            }
+            style={inputStyle}
+          />
+          <p style={helpTextStyle}>
+            Use this when audio plays ahead of video. Positive values delay audio to sync with video.
           </p>
         </div>
       </div>

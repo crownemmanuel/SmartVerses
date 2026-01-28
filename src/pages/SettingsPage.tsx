@@ -10,7 +10,21 @@ import VersionSettings from "../components/VersionSettings";
 import SmartVersesSettings from "../components/SmartVersesSettings";
 import RecorderSettings from "../components/RecorderSettings";
 import FeaturesSettings from "../components/FeaturesSettings";
-import { FaList, FaRobot, FaStickyNote, FaNetworkWired, FaClock, FaInfoCircle, FaBible, FaGlobe, FaCircle, FaToggleOn } from "react-icons/fa";
+import MidiSettings from "../components/MidiSettings";
+import DisplaySettings from "../components/DisplaySettings";
+import {
+  FaList,
+  FaRobot,
+  FaNetworkWired,
+  FaClock,
+  FaInfoCircle,
+  FaBible,
+  FaGlobe,
+  FaCircle,
+  FaToggleOn,
+  FaUser,
+  FaDesktop,
+} from "react-icons/fa";
 import "../App.css"; // Ensure global styles are applied
 import {
   exportAllTemplatesToFile,
@@ -19,10 +33,30 @@ import {
 } from "../utils/templateIO";
 import TemplateListView from "../components/TemplateListView";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { loadEnabledFeatures } from "../services/recorderService";
+import type { EnabledFeatures } from "../types/recorder";
 
-type SettingsView = "templates" | "aiConfiguration" | "liveTestimonies" | "liveSlides" | "smartVerses" | "recorder" | "network" | "proPresenter" | "features" | "version";
+type SettingsView = "templates" | "aiConfiguration" | "liveTestimonies" | "liveSlides" | "smartVerses" | "display" | "recorder" | "network" | "proPresenter" | "features" | "midi" | "version";
+
+const SETTINGS_VIEWS: SettingsView[] = [
+  "templates",
+  "aiConfiguration",
+  "liveTestimonies",
+  "liveSlides",
+  "smartVerses",
+  "display",
+  "recorder",
+  "network",
+  "proPresenter",
+  "features",
+  "midi",
+  "version",
+];
 
 const SettingsPage: React.FC = () => {
+  const [enabledFeatures, setEnabledFeatures] = useState<EnabledFeatures>(() =>
+    loadEnabledFeatures()
+  );
   const [templates, setTemplates] = useState<Template[]>(() => {
     try {
       const savedTemplates = localStorage.getItem("proassist-templates");
@@ -42,7 +76,7 @@ const SettingsPage: React.FC = () => {
   const [currentView, setCurrentView] = useState<SettingsView>(() => {
     try {
       const saved = localStorage.getItem("proassist-settings-current-view");
-      if (saved && ["templates", "aiConfiguration", "liveTestimonies", "liveSlides", "smartVerses", "recorder", "network", "proPresenter", "features", "version"].includes(saved)) {
+      if (saved && SETTINGS_VIEWS.includes(saved as SettingsView)) {
         return saved as SettingsView;
       }
     } catch {
@@ -54,13 +88,25 @@ const SettingsPage: React.FC = () => {
   // Listen for navigation to recorder settings
   useEffect(() => {
     const handleNavigateToSettings = (event: CustomEvent<string>) => {
-      if (event.detail === "recorder") {
-        setCurrentView("recorder");
+      const targetView = event.detail as SettingsView;
+      if (SETTINGS_VIEWS.includes(targetView)) {
+        setCurrentView(targetView);
       }
     };
     window.addEventListener("navigate-to-settings", handleNavigateToSettings as EventListener);
     return () => {
       window.removeEventListener("navigate-to-settings", handleNavigateToSettings as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleFeaturesUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<EnabledFeatures>).detail;
+      setEnabledFeatures(detail || loadEnabledFeatures());
+    };
+    window.addEventListener("features-updated", handleFeaturesUpdated);
+    return () => {
+      window.removeEventListener("features-updated", handleFeaturesUpdated);
     };
   }, []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -116,7 +162,7 @@ const SettingsPage: React.FC = () => {
       aiPrompt: "",
       aiProvider: undefined,
       aiModel: undefined,
-      outputPath: "/tmp/proassist/output/new_template/",
+      outputPath: "~/Documents/ProAssist/Templates",
       outputFileNamePrefix: "new_template_slide_",
     };
     setTemplates((prev) => [...prev, newTemplate]);
@@ -217,7 +263,7 @@ const SettingsPage: React.FC = () => {
     borderRight: "1px solid var(--app-border-color)",
     overflowY: "auto",
     padding: 0,
-    backgroundColor: "#1e1e1e",
+    backgroundColor: "var(--surface-2)",
     display: "flex",
     flexDirection: "column",
   };
@@ -251,34 +297,49 @@ const SettingsPage: React.FC = () => {
             <FaRobot />
             AI Configuration
           </button>
+          {enabledFeatures.liveTestimonies && (
+            <button
+              onClick={() => setCurrentView("liveTestimonies")}
+              className={currentView === "liveTestimonies" ? "active" : ""}
+            >
+              <FaUser />
+              Live Testimonies
+            </button>
+          )}
+          {enabledFeatures.slides && (
+            <button
+              onClick={() => setCurrentView("liveSlides")}
+              className={currentView === "liveSlides" ? "active" : ""}
+            >
+              <FaGlobe />
+              Live Slides
+            </button>
+          )}
+          {enabledFeatures.smartVerses && (
+            <button
+              onClick={() => setCurrentView("smartVerses")}
+              className={currentView === "smartVerses" ? "active" : ""}
+            >
+              <FaBible />
+              SmartVerses
+            </button>
+          )}
           <button
-            onClick={() => setCurrentView("liveTestimonies")}
-            className={currentView === "liveTestimonies" ? "active" : ""}
+            onClick={() => setCurrentView("display")}
+            className={currentView === "display" ? "active" : ""}
           >
-            <FaStickyNote />
-            Live Testimonies
+            <FaDesktop />
+            Audience Display
           </button>
-          <button
-            onClick={() => setCurrentView("liveSlides")}
-            className={currentView === "liveSlides" ? "active" : ""}
-          >
-            <FaGlobe />
-            Live Slides
-          </button>
-          <button
-            onClick={() => setCurrentView("smartVerses")}
-            className={currentView === "smartVerses" ? "active" : ""}
-          >
-            <FaBible />
-            SmartVerses
-          </button>
-          <button
-            onClick={() => setCurrentView("recorder")}
-            className={currentView === "recorder" ? "active" : ""}
-          >
-            <FaCircle />
-            Recorder
-          </button>
+          {enabledFeatures.recorder && (
+            <button
+              onClick={() => setCurrentView("recorder")}
+              className={currentView === "recorder" ? "active" : ""}
+            >
+              <FaCircle />
+              Recorder
+            </button>
+          )}
           <button
             onClick={() => setCurrentView("network")}
             className={currentView === "network" ? "active" : ""}
@@ -368,10 +429,12 @@ const SettingsPage: React.FC = () => {
         {currentView === "liveTestimonies" && <LiveTestimoniesSettings />}
         {currentView === "liveSlides" && <LiveSlidesSettings />}
         {currentView === "smartVerses" && <SmartVersesSettings />}
+        {currentView === "display" && <DisplaySettings />}
         {currentView === "recorder" && <RecorderSettings />}
         {currentView === "network" && <NetworkSettings />}
         {currentView === "proPresenter" && <ProPresenterSettings />}
         {currentView === "features" && <FeaturesSettings />}
+        {currentView === "midi" && <MidiSettings />}
         {currentView === "version" && <VersionSettings />}
       </div>
       {deletingTemplateId && (

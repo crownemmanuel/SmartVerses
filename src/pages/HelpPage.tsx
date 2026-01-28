@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from "react";
-import { FaSearch, FaBook, FaRocket, FaCog, FaDesktop, FaExclamationTriangle, FaGlobe, FaClock, FaBible, FaStickyNote, FaNetworkWired, FaRobot, FaMagic, FaFileImport, FaEdit, FaBug, FaCheckCircle, FaInfoCircle } from "react-icons/fa";
+import { FaSearch, FaBook, FaRocket, FaCog, FaDesktop, FaExclamationTriangle, FaGlobe, FaClock, FaBible, FaStickyNote, FaNetworkWired, FaRobot, FaMagic, FaFileImport, FaEdit, FaBug, FaCheckCircle, FaInfoCircle, FaVideo, FaMicrophone, FaShieldAlt } from "react-icons/fa";
+import { resetOnboardingState } from "../types/onboarding";
 import "../App.css";
 
 interface SectionData {
@@ -73,6 +74,7 @@ const HelpPage: React.FC = () => {
     { id: "troubleshooting", title: "Troubleshooting", icon: <FaExclamationTriangle />, keywords: ["troubleshoot", "problem", "error", "fix", "issue", "help"] },
     { id: "liveslides", title: "Live Slides", icon: <FaGlobe />, keywords: ["live", "slides", "websocket", "collaboration", "notepad", "real-time", "browser"] },
     { id: "timer", title: "Stage Assist - Timer", icon: <FaClock />, keywords: ["timer", "schedule", "countdown", "stage", "assist", "automation"] },
+    { id: "recording", title: "Video & Audio Recording", icon: <FaVideo />, keywords: ["recording", "video", "audio", "record", "crash", "recovery", "corrupt", "power", "loss", "mp3", "wav", "webm"] },
     { id: "smartverses", title: "SmartVerses", icon: <FaBible />, keywords: ["smartverses", "bible", "search", "transcription", "verse", "assemblyai"] },
     { id: "testimonies", title: "Live Testimonies", icon: <FaStickyNote />, keywords: ["testimonies", "firebase", "live", "testimony"] },
     { id: "network", title: "Network Sync", icon: <FaNetworkWired />, keywords: ["network", "sync", "master", "slave", "peer", "synchronize"] },
@@ -289,6 +291,40 @@ const HelpPage: React.FC = () => {
             <li>Pick a template and click <strong>Process</strong>, then select an item.</li>
             <li>When ready, click <strong>Go Live</strong> on a slide.</li>
           </ol>
+          <div style={{ marginTop: "20px" }}>
+            <button
+              onClick={() => {
+                resetOnboardingState();
+                window.location.reload();
+              }}
+              style={{
+                padding: "10px 20px",
+                borderRadius: "6px",
+                border: "none",
+                backgroundColor: "var(--app-primary-color)",
+                color: "#ffffff",
+                fontSize: "14px",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "all 0.2s",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.opacity = "0.9";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = "1";
+              }}
+            >
+              <FaRocket />
+              Open Onboarding Screen
+            </button>
+            <p style={{ marginTop: "12px", color: "var(--text-secondary-color)", fontSize: "0.9rem" }}>
+              Need to set up features like SmartVerses, transcription, or other ProAssist capabilities? Click above to restart the setup wizard.
+            </p>
+          </div>
         </Section>
 
         <Section id="templates" title="Templates 101" icon={<FaCog />} searchQuery={searchQuery} ref={(el) => (sectionRefs.current["templates"] = el)}>
@@ -438,6 +474,182 @@ const HelpPage: React.FC = () => {
           </ol>
           <InfoBox type="info">
             <strong>Keyboard Shortcuts:</strong> Use <kbd style={{ padding: "2px 6px", backgroundColor: "var(--app-header-bg)", borderRadius: "4px", border: "1px solid var(--app-border-color)", fontFamily: "monospace" }}>↑</kbd> and <kbd style={{ padding: "2px 6px", backgroundColor: "var(--app-header-bg)", borderRadius: "4px", border: "1px solid var(--app-border-color)", fontFamily: "monospace" }}>↓</kbd> arrow keys in the navigation bar to navigate to next/previous sessions when timer is running.
+          </InfoBox>
+        </Section>
+
+        <Section id="recording" title="Video & Audio Recording" icon={<FaVideo />} searchQuery={searchQuery} ref={(el) => (sectionRefs.current["recording"] = el)}>
+          <p>
+            ProAssist features professional-grade video and audio recording with <strong>crash-safe streaming technology</strong>. Record for hours without memory issues, and recover recordings even if the app crashes or power is lost.
+          </p>
+          
+          <h3 style={{ marginTop: "24px", marginBottom: "12px", fontSize: "1.25rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+            <FaVideo style={{ color: "var(--app-primary-color)" }} />
+            Video Recording
+          </h3>
+          <ol style={{ paddingLeft: "24px" }}>
+            <li>
+              Navigate to <strong>Recorder</strong> in the main navigation
+            </li>
+            <li>
+              <strong>Configure Settings:</strong> Go to <strong>Settings</strong> → <strong>Recorder</strong> to set:
+              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
+                <li><strong>Camera</strong>: Select video input device</li>
+                <li><strong>Video Audio Input</strong>: Microphone to embed in video</li>
+                <li><strong>Video Format</strong>: MP4 (widely compatible) or WebM (better quality)</li>
+                <li><strong>Resolution</strong>: 720p, 1080p, 1440p, or 4K</li>
+                <li><strong>Video Audio Codec</strong>: AAC (MP4) or Opus (WebM)</li>
+                <li><strong>Video Audio Delay</strong>: Adjust sync if audio is ahead of video</li>
+                <li><strong>Output Folder</strong>: Where recordings are saved</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Start Recording:</strong>
+              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
+                <li>Select your camera and audio device</li>
+                <li>Click the red <strong>Record</strong> button to start</li>
+                <li>Use <strong>Pause</strong> to temporarily pause recording</li>
+                <li>Click <strong>Stop</strong> to finalize and save the recording</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Production Features:</strong>
+              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
+                <li><strong>Streaming Technology</strong>: Video chunks are written to disk in real-time (no memory accumulation)</li>
+                <li><strong>Long Recordings</strong>: Record for 10+ hours without running out of memory</li>
+                <li><strong>Crash-Safe</strong>: If app crashes, your video is preserved on disk</li>
+                <li><strong>Live Preview</strong>: See camera feed while recording</li>
+                <li><strong>Timer Display</strong>: Track recording duration in real-time</li>
+              </ul>
+            </li>
+          </ol>
+
+          <h3 style={{ marginTop: "32px", marginBottom: "12px", fontSize: "1.25rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+            <FaMicrophone style={{ color: "var(--app-primary-color)" }} />
+            Audio Recording
+          </h3>
+          <ol style={{ paddingLeft: "24px" }}>
+            <li>
+              <strong>Format Options:</strong>
+              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
+                <li><strong>WAV</strong>: High-quality uncompressed audio (48kHz, 16-bit mono)</li>
+                <li><strong>MP3</strong>: Compressed audio with bitrate options (128k, 192k, 320k)</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Configure Settings:</strong> In <strong>Settings</strong> → <strong>Recorder</strong>:
+              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
+                <li><strong>Microphone</strong>: Select audio input device</li>
+                <li><strong>Audio Format</strong>: Choose WAV or MP3</li>
+                <li><strong>MP3 Bitrate</strong>: Quality setting (higher = better quality, larger files)</li>
+                <li><strong>Output Folder</strong>: Where recordings are saved</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Start Recording:</strong>
+              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
+                <li>Select your microphone</li>
+                <li>Click the red <strong>Record</strong> button</li>
+                <li>View real-time audio levels in the visualizer</li>
+                <li>Click <strong>Stop</strong> to finalize and save</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Production Features:</strong>
+              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
+                <li><strong>WAV Streaming</strong>: Native Rust recording with periodic disk flushing (max 1 second loss if crash)</li>
+                <li><strong>MP3 Streaming</strong>: WebM chunks streamed to disk, converted to MP3 after recording</li>
+                <li><strong>Crash-Safe</strong>: All audio data preserved even if app crashes</li>
+                <li><strong>Audio Visualizer</strong>: Real-time level monitoring</li>
+              </ul>
+            </li>
+          </ol>
+
+          <h3 style={{ marginTop: "32px", marginBottom: "12px", fontSize: "1.25rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+            <FaShieldAlt style={{ color: "var(--app-primary-color)" }} />
+            Crash Recovery & File Recovery
+          </h3>
+          <p>
+            ProAssist uses <strong>streaming recording technology</strong> that writes data directly to disk as it's captured. This means your recordings are safe even if:
+          </p>
+          <ul style={{ paddingLeft: "24px", marginTop: "8px" }}>
+            <li>The app crashes unexpectedly</li>
+            <li>Power is lost during recording</li>
+            <li>The computer shuts down</li>
+            <li>The recording wasn't properly stopped</li>
+          </ul>
+          
+          <InfoBox type="tip">
+            <strong>How It Works:</strong> Unlike traditional recording apps that accumulate data in memory, ProAssist streams each chunk directly to disk. This means:
+            <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
+              <li>Video: Each 1-second chunk is written immediately</li>
+              <li>MP3 Audio: WebM chunks streamed to temp file, converted after stop</li>
+              <li>WAV Audio: Flushed to disk every second</li>
+            </ul>
+            If a crash occurs, you'll find your recording files on disk with all data up to the crash point.
+          </InfoBox>
+
+          <h4 style={{ marginTop: "24px", marginBottom: "12px", fontSize: "1.1rem", fontWeight: 600 }}>
+            Recovering Corrupted or Incomplete Recordings
+          </h4>
+          <p>
+            If you find a recording file that won't play (due to crash, power loss, or incomplete stop), you can recover it using FFmpeg:
+          </p>
+          
+          <div style={{
+            marginTop: "16px",
+            padding: "16px",
+            backgroundColor: "var(--app-bg-color)",
+            borderRadius: "8px",
+            border: "1px solid var(--app-border-color)",
+            fontFamily: "monospace",
+            fontSize: "0.9rem",
+            overflowX: "auto"
+          }}>
+            <div style={{ marginBottom: "12px", color: "var(--app-text-color-secondary)", fontSize: "0.85rem" }}>
+              # Fix video headers (makes corrupted video playable)
+            </div>
+            <div style={{ color: "var(--app-text-color)" }}>
+              ffmpeg -i partial_video.webm -c copy fixed_video.webm
+            </div>
+            <div style={{ marginTop: "16px", marginBottom: "12px", color: "var(--app-text-color-secondary)", fontSize: "0.85rem" }}>
+              # For MP4 videos:
+            </div>
+            <div style={{ color: "var(--app-text-color)" }}>
+              ffmpeg -i partial_video.mp4 -c copy fixed_video.mp4
+            </div>
+            <div style={{ marginTop: "16px", marginBottom: "12px", color: "var(--app-text-color-secondary)", fontSize: "0.85rem" }}>
+              # Convert WebM audio to MP3 (if MP3 conversion failed)
+            </div>
+            <div style={{ color: "var(--app-text-color)" }}>
+              ffmpeg -i partial_audio.webm -codec:a libmp3lame -qscale:a 2 recovered.mp3
+            </div>
+            <div style={{ marginTop: "16px", marginBottom: "12px", color: "var(--app-text-color-secondary)", fontSize: "0.85rem" }}>
+              # Fix WAV file headers (if WAV appears corrupted)
+            </div>
+            <div style={{ color: "var(--app-text-color)" }}>
+              ffmpeg -i corrupted.wav -c copy fixed.wav
+            </div>
+          </div>
+
+          <InfoBox type="info">
+            <strong>Where to Find Recoverable Files:</strong>
+            <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
+              <li><strong>Video:</strong> Check your configured output folder → <CodeBlock>video/</CodeBlock> subfolder</li>
+              <li><strong>MP3 (temp):</strong> If MP3 conversion failed, check <CodeBlock>audio/.temp/</CodeBlock> for WebM files</li>
+              <li><strong>WAV:</strong> Check your configured output folder → <CodeBlock>audio/</CodeBlock> subfolder</li>
+            </ul>
+            All files are saved with timestamps in the filename, making it easy to identify recordings.
+          </InfoBox>
+
+          <InfoBox type="tip">
+            <strong>Production-Grade Reliability:</strong> This crash-safe streaming technology is the same approach used by professional broadcast software like OBS. Your recordings are protected against:
+            <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
+              <li>Memory exhaustion (no accumulation in RAM)</li>
+              <li>Unexpected crashes</li>
+              <li>Power failures</li>
+              <li>System shutdowns</li>
+            </ul>
+            Record with confidence for live production environments!
           </InfoBox>
         </Section>
 

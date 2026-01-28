@@ -12,6 +12,44 @@ export interface UpdateResult {
   update?: UpdateInfo;
 }
 
+const STORAGE_KEY_SKIPPED_VERSION = 'proassist-skipped-version';
+
+/**
+ * Save a version number to skip future update notifications
+ */
+export function saveSkippedVersion(version: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_SKIPPED_VERSION, version);
+    console.log(`[Updater] Saved skipped version: ${version}`);
+  } catch (error) {
+    console.error('[Updater] Failed to save skipped version:', error);
+  }
+}
+
+/**
+ * Get the currently skipped version number
+ */
+export function getSkippedVersion(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY_SKIPPED_VERSION);
+  } catch (error) {
+    console.error('[Updater] Failed to load skipped version:', error);
+    return null;
+  }
+}
+
+/**
+ * Clear the skipped version (useful if user manually checks for updates)
+ */
+export function clearSkippedVersion(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY_SKIPPED_VERSION);
+    console.log('[Updater] Cleared skipped version');
+  } catch (error) {
+    console.error('[Updater] Failed to clear skipped version:', error);
+  }
+}
+
 /**
  * Check if an update is available
  */
@@ -105,11 +143,24 @@ export async function downloadAndInstallUpdate(
 
 /**
  * Check for updates on app startup (silent check)
+ * This will skip showing the notification if the version was previously skipped
  */
 export async function checkForUpdatesOnStartup(): Promise<UpdateResult> {
   // Add a small delay to avoid blocking app startup
   console.log('[Updater] Scheduling startup update check in 2 seconds...');
   await new Promise(resolve => setTimeout(resolve, 2000));
   console.log('[Updater] Performing startup update check...');
-  return checkForUpdates();
+  
+  const result = await checkForUpdates();
+  
+  // If an update is available, check if it was skipped
+  if (result.available && result.update) {
+    const skippedVersion = getSkippedVersion();
+    if (skippedVersion === result.update.version) {
+      console.log(`[Updater] Update ${result.update.version} was skipped, not showing notification`);
+      return { available: false };
+    }
+  }
+  
+  return result;
 }

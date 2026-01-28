@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ProAssist API Docs</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"
+    />
+    <style>
+      body {
+        margin: 0;
+        background: #0f172a;
+      }
+      #swagger-ui {
+        background: #0f172a;
+        padding: 12px;
+      }
+      /* Fix low contrast grey text - make it white/light */
+      .swagger-ui .opblock-summary-path,
+      .swagger-ui .opblock-summary-description,
+      .swagger-ui .parameter__name,
+      .swagger-ui .parameter__type,
+      .swagger-ui .response-col_status,
+      .swagger-ui .response-col_links,
+      .swagger-ui .model-title,
+      .swagger-ui .prop-name,
+      .swagger-ui .prop-type,
+      .swagger-ui .prop-format,
+      .swagger-ui .renderedMarkdown p,
+      .swagger-ui .renderedMarkdown code,
+      .swagger-ui .opblock-description-wrapper p,
+      .swagger-ui .opblock-description-wrapper code,
+      .swagger-ui .opblock-title,
+      .swagger-ui .opblock-summary-method,
+      .swagger-ui .opblock-summary-path,
+      .swagger-ui .opblock-summary-description,
+      .swagger-ui .opblock-description-wrapper,
+      .swagger-ui .opblock-description-wrapper p,
+      .swagger-ui .opblock-description-wrapper code,
+      .swagger-ui .response-col_description,
+      .swagger-ui .response-col_links,
+      .swagger-ui .tab li,
+      .swagger-ui .tab li button,
+      .swagger-ui .info .title,
+      .swagger-ui .info p,
+      .swagger-ui .info .base-url,
+      .swagger-ui .scheme-container,
+      .swagger-ui .scheme-container label,
+      .swagger-ui .btn,
+      .swagger-ui .btn.cancel,
+      .swagger-ui .btn.authorize,
+      .swagger-ui .btn.execute,
+      .swagger-ui .btn.clear,
+      .swagger-ui .btn.download-url,
+      .swagger-ui .opblock.opblock-post .opblock-summary-method,
+      .swagger-ui .opblock.opblock-get .opblock-summary-method,
+      .swagger-ui .opblock.opblock-put .opblock-summary-method,
+      .swagger-ui .opblock.opblock-delete .opblock-summary-method,
+      .swagger-ui .opblock.opblock-patch .opblock-summary-method {
+        color: #ffffff !important;
+      }
+      .swagger-ui .scheme-container {
+        background-color: #1e293b !important;
+        border-color: #475569 !important;
+      }
+      .swagger-ui .scheme-container .schemes {
+        background-color: transparent !important;
+      }
+      /* Make section headers more visible */
+      .swagger-ui .opblock-section-header h4,
+      .swagger-ui .opblock-section-header label,
+      .swagger-ui .opblock-section-header .tab-header,
+      .swagger-ui .opblock-section-header .tab-item {
+        color: #e2e8f0 !important;
+      }
+      /* Fix code blocks and examples */
+      .swagger-ui .highlight-code,
+      .swagger-ui .microlight,
+      .swagger-ui .microlight code,
+      .swagger-ui .model-box,
+      .swagger-ui .model-box-control,
+      .swagger-ui .model-toggle {
+        color: #f1f5f9 !important;
+      }
+      /* Fix table text */
+      .swagger-ui table thead tr th,
+      .swagger-ui table tbody tr td {
+        color: #ffffff !important;
+      }
+      /* Fix parameter descriptions */
+      .swagger-ui .parameter__description,
+      .swagger-ui .parameter__extension,
+      .swagger-ui .parameter__in {
+        color: #cbd5e1 !important;
+      }
+      /* Fix response descriptions */
+      .swagger-ui .response-col_description p,
+      .swagger-ui .response-col_description code {
+        color: #e2e8f0 !important;
+      }
+      /* Make links visible */
+      .swagger-ui a {
+        color: #60a5fa !important;
+      }
+      .swagger-ui a:hover {
+        color: #93c5fd !important;
+      }
+      /* Fix white buttons with white text - make buttons dark with white text */
+      .swagger-ui .btn,
+      .swagger-ui button,
+      .swagger-ui .btn.try-out__btn,
+      .swagger-ui .btn.cancel,
+      .swagger-ui .btn.execute,
+      .swagger-ui .btn.clear {
+        background-color: #1e293b !important;
+        border-color: #475569 !important;
+        color: #ffffff !important;
+      }
+      .swagger-ui .btn:hover,
+      .swagger-ui button:hover {
+        background-color: #334155 !important;
+        color: #ffffff !important;
+      }
+      /* Fix dropdowns/selects - white text on dark background */
+      .swagger-ui select,
+      .swagger-ui .response-content-type,
+      .swagger-ui .content-type,
+      .swagger-ui .parameter-content-type select,
+      .swagger-ui .response-content-type select {
+        background-color: #1e293b !important;
+        border-color: #475569 !important;
+        color: #ffffff !important;
+      }
+      .swagger-ui select option {
+        background-color: #1e293b !important;
+        color: #ffffff !important;
+      }
+      /* Fix input fields */
+      .swagger-ui input[type="text"],
+      .swagger-ui input[type="number"],
+      .swagger-ui input[type="email"],
+      .swagger-ui input[type="password"],
+      .swagger-ui textarea {
+        background-color: #1e293b !important;
+        border-color: #475569 !important;
+        color: #ffffff !important;
+      }
+      /* Fix section backgrounds that are too light */
+      .swagger-ui .opblock-section,
+      .swagger-ui .opblock-section-header,
+      .swagger-ui .opblock-body,
+      .swagger-ui .opblock-description-wrapper,
+      .swagger-ui .parameters-container,
+      .swagger-ui .responses-wrapper,
+      .swagger-ui .response,
+      .swagger-ui .response-col_description,
+      .swagger-ui .response-col_links {
+        background-color: #1e293b !important;
+      }
+      /* Fix "required" tags and badges */
+      .swagger-ui .parameter__required,
+      .swagger-ui .parameter__required.required,
+      .swagger-ui .required {
+        color: #fca5a5 !important;
+        background-color: #7f1d1d !important;
+        border-color: #991b1b !important;
+      }
+      /* Fix hint text like "Controls Accept header." */
+      .swagger-ui .response-col_description small,
+      .swagger-ui .parameter__description small,
+      .swagger-ui small,
+      .swagger-ui .renderedMarkdown small {
+        color: #cbd5e1 !important;
+      }
+      /* Fix "No parameters" and similar empty state text */
+      .swagger-ui .no-params,
+      .swagger-ui .no-content,
+      .swagger-ui .empty {
+        color: #94a3b8 !important;
+      }
+      /* Fix table row backgrounds for better contrast */
+      .swagger-ui table tbody tr {
+        background-color: #1e293b !important;
+      }
+      .swagger-ui table tbody tr:nth-child(even) {
+        background-color: #0f172a !important;
+      }
+      /* Fix media type labels */
+      .swagger-ui .response-col_links,
+      .swagger-ui .response-col_description,
+      .swagger-ui .parameter__name.required,
+      .swagger-ui .parameter__name.required::after {
+        color: #ffffff !important;
+      }
+      /* Fix all section headers */
+      .swagger-ui h4,
+      .swagger-ui h5,
+      .swagger-ui .opblock-section-header h4,
+      .swagger-ui .opblock-section-header label {
+        color: #e2e8f0 !important;
+      }
+      /* Fix all paragraph and description text */
+      .swagger-ui p,
+      .swagger-ui .opblock-description-wrapper p,
+      .swagger-ui .response-col_description p,
+      .swagger-ui .parameter__description p {
+        color: #e2e8f0 !important;
+      }
+      /* Fix code snippets */
+      .swagger-ui code,
+      .swagger-ui pre,
+      .swagger-ui .microlight code,
+      .swagger-ui .highlight-code {
+        background-color: #0f172a !important;
+        color: #10b981 !important;
+        border-color: #475569 !important;
+      }
+      /* Fix JSON examples */
+      .swagger-ui .model-example,
+      .swagger-ui .model-box {
+        background-color: #0f172a !important;
+        border-color: #475569 !important;
+      }
+      /* Fix tab buttons */
+      .swagger-ui .tab li button {
+        background-color: #1e293b !important;
+        color: #ffffff !important;
+        border-color: #475569 !important;
+      }
+      .swagger-ui .tab li.active button {
+        background-color: #334155 !important;
+        color: #ffffff !important;
+      }
+      /* Fix all labels */
+      .swagger-ui label {
+        color: #e2e8f0 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.onload = () => {
+        SwaggerUIBundle({
+          url: "/api/openapi.json",
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis],
+          layout: "BaseLayout",
+        });
+      };
+    </script>
+  </body>
+</html>

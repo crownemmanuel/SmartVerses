@@ -13,6 +13,7 @@ import IconPickerModal from "./IconPickerModal";
 import GenerateAIPromptModal from "./GenerateAIPromptModal";
 import ActivatePresentationModal from "./ActivatePresentationModal";
 import { fetchGeminiModels, fetchOpenAIModels, fetchGroqModels } from "../services/aiService";
+import { formatGroqModelLabel } from "../utils/groqModelLimits";
 import { getAppSettings } from "../utils/aiConfig";
 import {
   DEFAULT_JAVASCRIPT_CODE,
@@ -592,7 +593,7 @@ const SettingsDetail: React.FC<SettingsDetailProps> = ({
                     </option>
                     {models.map((m) => (
                       <option key={m} value={m}>
-                        {m}
+                        {aiProvider === "groq" ? formatGroqModelLabel(m) : m}
                       </option>
                     ))}
                   </select>

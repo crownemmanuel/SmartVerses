@@ -9,12 +9,15 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FaVideo, FaVideoSlash, FaMicrophone, FaMicrophoneSlash, FaPause, FaStop, FaPlay, FaCircle } from "react-icons/fa";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Mp3Encoder } from "lamejs";
+// Using @breezystack/lamejs fork which is compatible with ES module bundlers
+// The original lamejs has issues with missing MPEGMode variable when tree-shaken
+import { Mp3Encoder } from "@breezystack/lamejs";
 import { useStageAssist } from "../contexts/StageAssistContext";
 import {
   loadRecorderSettings,
   saveRecorderSettings,
   getVideoDevices,
+  getAudioDevices,
   getVideoStream,
   getAudioOnlyStream,
   createVideoRecorder,
@@ -28,6 +31,24 @@ import {
   getNativeAudioRecordingDuration,
   generateNativeAudioFilePath,
   NativeAudioDevice,
+  VideoRecorderConfig,
+  // Streaming video recording functions (production-grade - no memory accumulation)
+  startStreamingVideoRecording,
+  appendVideoChunk,
+  finalizeStreamingVideoRecording,
+  abortStreamingVideoRecording,
+  generateStreamingVideoFilePath,
+  blobToBase64,
+  // Streaming web audio recording functions (crash-safe MP3)
+  startStreamingWebAudioRecording,
+  appendWebAudioChunk,
+  finalizeStreamingWebAudioRecording,
+  abortStreamingWebAudioRecording,
+  readFileAsBase64,
+  deleteFile,
+  generateStreamingWebAudioTempPath,
+  generateFinalMp3Path,
+  base64ToBlob,
 } from "../services/recorderService";
 import {
   RecorderSettings,
@@ -285,10 +306,11 @@ const RecorderPage: React.FC = () => {
   const [videoStatus, setVideoStatus] = useState<RecordingStatus>("idle");
   const [isVideoStarting, setIsVideoStarting] = useState(false);
   const [videoElapsedTime, setVideoElapsedTime] = useState(0);
-  const [videoRecordedUrl, setVideoRecordedUrl] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [videoPreviewStream, setVideoPreviewStream] = useState<MediaStream | null>(null);
   const [videoDevices, setVideoDevices] = useState<MediaDeviceOption[]>([]);
+  const [videoAudioDevices, setVideoAudioDevices] = useState<MediaDeviceOption[]>([]);
+  const [videoSavedMessage, setVideoSavedMessage] = useState<string | null>(null);
 
   // Audio recording state
   const [audioStatus, setAudioStatus] = useState<RecordingStatus>("idle");
@@ -303,15 +325,25 @@ const RecorderPage: React.FC = () => {
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isMicEnabled, setIsMicEnabled] = useState(true);
 
+  const [isStopConfirmOpen, setIsStopConfirmOpen] = useState(false);
+  const [stopConfirmTarget, setStopConfirmTarget] = useState<"video" | "audio" | "both" | null>(null);
+
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
-  const recordedVideoRef = useRef<HTMLVideoElement>(null);
   const videoRecorderRef = useRef<MediaRecorder | null>(null);
-  const videoChunksRef = useRef<Blob[]>([]);
+  // NOTE: We no longer accumulate chunks in memory (was causing OOM after 1+ hour recordings)
+  // Chunks are now streamed directly to disk via Rust backend
   const videoStreamRef = useRef<MediaStream | null>(null);
+  const videoRecordingAudioCleanupRef = useRef<(() => void) | null>(null);
+  const videoStreamingFilePathRef = useRef<string | null>(null); // Path for streaming recording
+  const videoChunkPromisesRef = useRef<Promise<void>[]>([]); // Track pending chunk writes to avoid race condition
   const audioRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  // NOTE: We no longer accumulate audio chunks in memory for web recording
+  // Chunks are streamed to disk for crash safety
   const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioStreamingTempPathRef = useRef<string | null>(null); // Temp WebM path for streaming
+  const audioFinalMp3PathRef = useRef<string | null>(null); // Final MP3 path
+  const audioChunkPromisesRef = useRef<Promise<void>[]>([]); // Track pending chunk writes to avoid race condition
   const audioAnalyzerRef = useRef<ReturnType<typeof createAudioAnalyzer> | null>(null);
   const audioMeterStreamRef = useRef<MediaStream | null>(null);
   const audioMeterFrameRef = useRef<number | null>(null);
@@ -319,6 +351,8 @@ const RecorderPage: React.FC = () => {
   const audioRecordingModeRef = useRef<"native" | "web">("native");
   const audioPreviewObjectUrlRef = useRef<string | null>(null);
   const videoPreviewRequestSeqRef = useRef(0);
+  const videoStopResolverRef = useRef<(() => void) | null>(null);
+  const audioStopResolverRef = useRef<(() => void) | null>(null);
 
   const videoTimerRef = useRef<number | null>(null);
   const audioTimerRef = useRef<number | null>(null);
@@ -329,9 +363,14 @@ const RecorderPage: React.FC = () => {
 
   const loadDevices = useCallback(async () => {
     try {
-      const [video, audio] = await Promise.all([getVideoDevices(), getNativeAudioDevices()]);
+      const [video, audio, nativeAudio] = await Promise.all([
+        getVideoDevices(),
+        getAudioDevices(),
+        getNativeAudioDevices(),
+      ]);
       setVideoDevices(video);
-      setNativeAudioDevices(audio);
+      setVideoAudioDevices(audio);
+      setNativeAudioDevices(nativeAudio);
     } catch (err) {
       console.error("Failed to load recording devices:", err);
     }
@@ -367,6 +406,13 @@ const RecorderPage: React.FC = () => {
     return () => window.removeEventListener("recorder-settings-updated", handler as EventListener);
   }, []);
 
+  const revokeAudioPreviewObjectUrl = useCallback(() => {
+    if (audioPreviewObjectUrlRef.current) {
+      URL.revokeObjectURL(audioPreviewObjectUrlRef.current);
+      audioPreviewObjectUrlRef.current = null;
+    }
+  }, []);
+
   // Attach preview stream to video element
   useEffect(() => {
     if (!videoRef.current || !videoPreviewStream) return;
@@ -379,21 +425,59 @@ const RecorderPage: React.FC = () => {
     }
   }, [videoPreviewStream]);
 
-  const revokeAudioPreviewObjectUrl = useCallback(() => {
-    if (audioPreviewObjectUrlRef.current) {
-      URL.revokeObjectURL(audioPreviewObjectUrlRef.current);
-      audioPreviewObjectUrlRef.current = null;
+  const closeStopConfirm = useCallback(() => {
+    setIsStopConfirmOpen(false);
+    setStopConfirmTarget(null);
+  }, []);
+
+  const resolveVideoStop = useCallback(() => {
+    if (videoStopResolverRef.current) {
+      const resolver = videoStopResolverRef.current;
+      videoStopResolverRef.current = null;
+      resolver();
+    }
+  }, []);
+
+  const resolveAudioStop = useCallback(() => {
+    if (audioStopResolverRef.current) {
+      const resolver = audioStopResolverRef.current;
+      audioStopResolverRef.current = null;
+      resolver();
     }
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Stop video recording if active (finalize streaming to disk)
+      if (videoRecorderRef.current && videoRecorderRef.current.state !== "inactive") {
+        videoRecorderRef.current.stop();
+      }
+      // If video streaming was active, finalize it
+      if (videoStreamingFilePathRef.current) {
+        finalizeStreamingVideoRecording().catch((e) =>
+          console.error("[Cleanup] Failed to finalize video recording:", e)
+        );
+        videoStreamingFilePathRef.current = null;
+      }
       if (videoStreamRef.current) {
         videoStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      if (videoRecordingAudioCleanupRef.current) {
+        videoRecordingAudioCleanupRef.current();
+        videoRecordingAudioCleanupRef.current = null;
+      }
+      // Stop audio recording if active
       if (audioRecorderRef.current && audioRecorderRef.current.state !== "inactive") {
         audioRecorderRef.current.stop();
+      }
+      // If web audio streaming was active, finalize it
+      if (audioStreamingTempPathRef.current) {
+        finalizeStreamingWebAudioRecording().catch((e) =>
+          console.error("[Cleanup] Failed to finalize audio recording:", e)
+        );
+        audioStreamingTempPathRef.current = null;
+        audioFinalMp3PathRef.current = null;
       }
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -425,7 +509,9 @@ const RecorderPage: React.FC = () => {
       }
       const stream = await getVideoStream(
         settings.selectedVideoDeviceId,
-        settings.videoResolution
+        settings.videoResolution,
+        settings.selectedVideoAudioDeviceId ?? settings.selectedAudioDeviceId,
+        false
       );
 
       // If user disabled video while we were requesting permission, immediately stop.
@@ -439,7 +525,6 @@ const RecorderPage: React.FC = () => {
     } catch (err) {
       console.error("Failed to start video preview:", err);
       setCameraError(err instanceof Error ? err.message : "Failed to access camera");
-      setVideoPreviewStream(null);
     }
   }, [settings, isVideoEnabled]);
 
@@ -490,13 +575,16 @@ const RecorderPage: React.FC = () => {
 
   // Start camera preview when settings load or device changes
   useEffect(() => {
-    if (settings && videoStatus === "idle" && !videoRecordedUrl && isVideoEnabled) {
+    if (settings && videoStatus === "idle" && isVideoEnabled) {
       startVideoPreview();
     }
-  }, [settings, videoStatus, videoRecordedUrl, startVideoPreview, isVideoEnabled]);
+  }, [settings, videoStatus, startVideoPreview, isVideoEnabled]);
 
   const startVideoRecording = useCallback(async () => {
     if (!settings) return;
+
+    // Clear any saved message from previous recording
+    setVideoSavedMessage(null);
 
     // Warn if video is disabled
     if (!isVideoEnabled) {
@@ -506,6 +594,7 @@ const RecorderPage: React.FC = () => {
     }
 
     setIsVideoStarting(true);
+    setVideoElapsedTime(0);
 
     // Ensure we have a stream
     if (!videoStreamRef.current) {
@@ -516,53 +605,167 @@ const RecorderPage: React.FC = () => {
       }
     }
 
-    // Clear any previous recording
-    if (videoRecordedUrl) {
-      URL.revokeObjectURL(videoRecordedUrl);
-      setVideoRecordedUrl(null);
+    const stream = videoStreamRef.current;
+    let recordingStream = stream;
+
+    if (videoRecordingAudioCleanupRef.current) {
+      videoRecordingAudioCleanupRef.current();
+      videoRecordingAudioCleanupRef.current = null;
     }
 
-    const stream = videoStreamRef.current;
+    try {
+      const audioDeviceId =
+        settings.selectedVideoAudioDeviceId ?? settings.selectedAudioDeviceId ?? null;
+      const audioStream = await getAudioOnlyStream(audioDeviceId);
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(audioStream);
+      const splitter = audioContext.createChannelSplitter(2);
+      const merger = audioContext.createChannelMerger(1);
+      const gainLeft = audioContext.createGain();
+      const gainRight = audioContext.createGain();
+      gainLeft.gain.value = 0.5;
+      gainRight.gain.value = 0.5;
+
+      source.connect(splitter);
+      splitter.connect(gainLeft, 0);
+      gainLeft.connect(merger, 0, 0);
+
+      try {
+        splitter.connect(gainRight, 1);
+        gainRight.connect(merger, 0, 0);
+      } catch {
+        // Some inputs are mono; ignore missing right channel.
+      }
+
+      const destination = audioContext.createMediaStreamDestination();
+      const delaySeconds = Math.min(
+        Math.max(0, (settings.videoAudioDelayMs || 0) / 1000),
+        2
+      );
+      const delayNode = audioContext.createDelay(2);
+      delayNode.delayTime.value = delaySeconds;
+      merger.connect(delayNode);
+      delayNode.connect(destination);
+
+      const monoAudioTrack = destination.stream.getAudioTracks()[0];
+      if (monoAudioTrack) {
+        recordingStream = new MediaStream([...stream.getVideoTracks(), monoAudioTrack]);
+      }
+
+      videoRecordingAudioCleanupRef.current = () => {
+        source.disconnect();
+        splitter.disconnect();
+        merger.disconnect();
+        delayNode.disconnect();
+        gainLeft.disconnect();
+        gainRight.disconnect();
+        audioStream.getTracks().forEach((track) => track.stop());
+        audioContext.close();
+      };
+    } catch (err) {
+      console.warn("Failed to capture mono audio for video recording:", err);
+    }
     
     // Create recorder with high quality settings
-    const recorder = createVideoRecorder(stream, settings.videoFormat);
-    videoChunksRef.current = [];
+    const videoRecorderConfig: VideoRecorderConfig = createVideoRecorder(
+      recordingStream,
+      settings.videoFormat,
+      settings.videoAudioCodec
+    );
+    const { recorder } = videoRecorderConfig;
 
-    recorder.ondataavailable = (e) => {
+    // =========================================================================
+    // PRODUCTION-GRADE STREAMING RECORDING
+    // =========================================================================
+    // Instead of accumulating chunks in memory (which causes OOM after 1+ hour),
+    // we stream each chunk directly to disk via the Rust backend.
+    // Memory usage: O(1) constant, regardless of recording length.
+    // =========================================================================
+    
+    // Generate the file path and start streaming recording on Rust side
+    const streamingFilePath = generateStreamingVideoFilePath(settings, currentSession?.session);
+    try {
+      await startStreamingVideoRecording(streamingFilePath);
+      videoStreamingFilePathRef.current = streamingFilePath;
+      console.log("[VideoRecording] Started streaming to:", streamingFilePath);
+    } catch (err) {
+      console.error("[VideoRecording] Failed to start streaming recording:", err);
+      setIsVideoStarting(false);
+      return;
+    }
+
+    // Stream each chunk directly to disk - NO memory accumulation
+    // Track pending promises to avoid race condition with onstop
+    videoChunkPromisesRef.current = [];
+    recorder.ondataavailable = (e: BlobEvent) => {
       if (e.data.size > 0) {
-        videoChunksRef.current.push(e.data);
+        // Track the async operation to ensure it completes before finalize
+        const chunkPromise = (async () => {
+          try {
+            // Convert blob to base64 and stream to Rust backend
+            const base64Chunk = await blobToBase64(e.data);
+            await appendVideoChunk(base64Chunk);
+            // Chunk is now on disk - memory is freed
+          } catch (err) {
+            console.error("[VideoRecording] Failed to stream chunk:", err);
+            // Continue recording even if one chunk fails
+          }
+        })();
+        videoChunkPromisesRef.current.push(chunkPromise);
       }
     };
 
     recorder.onstop = async () => {
-      const mimeType = recorder.mimeType || "video/webm";
-      const blob = new Blob(videoChunksRef.current, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      
-      setVideoRecordedUrl(url);
+      // Wait for all pending chunk writes to complete before finalizing
+      // This prevents a race condition where finalize closes the file before chunks are written
+      if (videoChunkPromisesRef.current.length > 0) {
+        console.log(`[VideoRecording] Waiting for ${videoChunkPromisesRef.current.length} pending chunks...`);
+        await Promise.all(videoChunkPromisesRef.current);
+        videoChunkPromisesRef.current = [];
+      }
+
+      // Clean up the recording audio stream (mono mixer) but keep the camera live
+      if (videoRecordingAudioCleanupRef.current) {
+        videoRecordingAudioCleanupRef.current();
+        videoRecordingAudioCleanupRef.current = null;
+      }
+      // NOTE: We intentionally keep videoStreamRef and videoPreviewStream active
+      // so the live feed stays on for automation to start new recordings
+
+      // Finalize the streaming recording - this closes the file properly
+      try {
+        const result = await finalizeStreamingVideoRecording();
+        console.log(
+          "[VideoRecording] Finalized:",
+          result.file_path,
+          `(${result.duration_seconds.toFixed(1)}s, ${(result.bytes_written / 1024 / 1024).toFixed(1)} MB)`
+        );
+        setVideoSavedMessage("Recording saved!");
+      } catch (err) {
+        console.error("[VideoRecording] Failed to finalize recording:", err);
+        setVideoSavedMessage("Recording may be incomplete");
+      }
+
+      videoStreamingFilePathRef.current = null;
       setVideoStatus("stopped");
+      // Clear the saved message after 3 seconds
+      setTimeout(() => setVideoSavedMessage(null), 3000);
+      resolveVideoStop();
+    };
 
-      // Stop the camera stream
-      if (videoStreamRef.current) {
-        videoStreamRef.current.getTracks().forEach((t) => t.stop());
-        videoStreamRef.current = null;
+    recorder.onerror = async (event) => {
+      console.error("[VideoRecording] MediaRecorder error:", event);
+      // Abort the streaming recording if there's an error
+      try {
+        await abortStreamingVideoRecording();
+      } catch (e) {
+        console.error("[VideoRecording] Failed to abort:", e);
       }
-      setVideoPreviewStream(null);
-
-      // Save to file
-      const result = await saveRecordingToFile(
-        blob,
-        "video",
-        settings,
-        currentSession?.session
-      );
-      if (!result.success) {
-        console.error("Failed to save video:", result.error);
-      }
+      videoStreamingFilePathRef.current = null;
     };
 
     videoRecorderRef.current = recorder;
-    recorder.start(1000);
+    recorder.start(1000); // Request data every second
 
     setVideoStatus("recording");
     setIsVideoStarting(false);
@@ -573,7 +776,7 @@ const RecorderPage: React.FC = () => {
     videoTimerRef.current = window.setInterval(() => {
       setVideoElapsedTime(Math.floor((Date.now() - startTime) / 1000));
     }, 100);
-  }, [settings, startVideoPreview, currentSession, videoRecordedUrl, isVideoEnabled]);
+  }, [settings, startVideoPreview, currentSession, isVideoEnabled, resolveVideoStop]);
 
   const pauseVideoRecording = useCallback(() => {
     if (videoRecorderRef.current && videoStatus === "recording") {
@@ -590,28 +793,31 @@ const RecorderPage: React.FC = () => {
     }
   }, [videoStatus, videoElapsedTime]);
 
-  const stopVideoRecording = useCallback(() => {
+  const stopVideoRecordingCore = useCallback(() => {
     if (videoRecorderRef.current && (videoStatus === "recording" || videoStatus === "paused")) {
       videoRecorderRef.current.stop();
       if (videoTimerRef.current) {
         clearInterval(videoTimerRef.current);
         videoTimerRef.current = null;
       }
+    } else if (videoStatus === "recording" || videoStatus === "paused") {
+      resolveVideoStop();
     }
-  }, [videoStatus]);
+  }, [videoStatus, resolveVideoStop]);
 
-  const startNewVideoRecording = useCallback(async () => {
-    // Clear previous recording
-    if (videoRecordedUrl) {
-      URL.revokeObjectURL(videoRecordedUrl);
-      setVideoRecordedUrl(null);
-    }
-    setVideoStatus("idle");
-    setVideoElapsedTime(0);
-    
-    // Restart camera preview
-    await startVideoPreview();
-  }, [videoRecordedUrl, startVideoPreview]);
+  const stopVideoRecording = useCallback(
+    (reason: "manual" | "automation" = "manual") => {
+      if (videoStatus !== "recording" && videoStatus !== "paused") return;
+      if (reason === "manual") {
+        setStopConfirmTarget("video");
+        setIsStopConfirmOpen(true);
+        return;
+      }
+      closeStopConfirm();
+      stopVideoRecordingCore();
+    },
+    [videoStatus, stopVideoRecordingCore, closeStopConfirm]
+  );
 
   // ============================================================================
   // Audio Recording Functions
@@ -639,8 +845,21 @@ const RecorderPage: React.FC = () => {
       stopAudioMeter();
 
       try {
-        const meterStream =
-          stream || (await getAudioOnlyStream(settings.selectedAudioDeviceId));
+        let meterStream: MediaStream;
+        if (stream) {
+          meterStream = stream;
+        } else {
+          // For native audio recording, the selectedAudioDeviceId is a native device ID
+          // which doesn't work with browser getUserMedia. Try with the ID first,
+          // then fall back to default device if it fails.
+          try {
+            meterStream = await getAudioOnlyStream(settings.selectedAudioDeviceId);
+          } catch {
+            // Fall back to default audio device for meter visualization
+            console.log("Falling back to default audio device for meter");
+            meterStream = await getAudioOnlyStream(null);
+          }
+        }
         audioMeterStreamRef.current = meterStream;
         audioMeterUsesRecordingStreamRef.current = Boolean(stream);
 
@@ -741,12 +960,16 @@ const RecorderPage: React.FC = () => {
       setAudioRecordedPath(null);
 
       const filePath = generateNativeAudioFilePath(settings, currentSession?.session);
+      console.log("[NativeAudioRecording] Starting native recording...");
+      console.log("[NativeAudioRecording] File path:", filePath);
+      console.log("[NativeAudioRecording] Device ID:", settings.selectedAudioDeviceId);
       await startNativeAudioRecordingService(
         settings.selectedAudioDeviceId,
         filePath,
         48000,
         800
       );
+      console.log("[NativeAudioRecording] Native recording started successfully");
 
       setAudioStatus("recording");
       setAudioElapsedTime(0);
@@ -782,51 +1005,210 @@ const RecorderPage: React.FC = () => {
       audioRecordingModeRef.current = "web";
       setAudioRecordedPath(null);
 
-      const stream = await getAudioOnlyStream(settings.selectedAudioDeviceId);
-      audioStreamRef.current = stream;
+      // For web audio recording, the selectedAudioDeviceId might be a native device ID
+      // which doesn't work with browser getUserMedia. Try with the ID first,
+      // then fall back to default device if it fails.
+      let rawStream: MediaStream;
+      try {
+        rawStream = await getAudioOnlyStream(settings.selectedAudioDeviceId);
+      } catch {
+        console.log("Falling back to default audio device for web recording");
+        rawStream = await getAudioOnlyStream(null);
+      }
 
-      const recorder = createAudioRecorder(stream, "mp3", settings.audioBitrate);
-      audioChunksRef.current = [];
+      // Force mono output using Web Audio API (browser channelCount constraint is unreliable)
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(rawStream);
+      const splitter = audioContext.createChannelSplitter(2);
+      const merger = audioContext.createChannelMerger(1);
+      const gainLeft = audioContext.createGain();
+      const gainRight = audioContext.createGain();
+      gainLeft.gain.value = 0.5;
+      gainRight.gain.value = 0.5;
 
-      recorder.onerror = (e) => {
-        console.error("MediaRecorder audio error:", e);
+      source.connect(splitter);
+      splitter.connect(gainLeft, 0);
+      gainLeft.connect(merger, 0, 0);
+
+      try {
+        splitter.connect(gainRight, 1);
+        gainRight.connect(merger, 0, 0);
+      } catch {
+        // Some inputs are mono; ignore missing right channel.
+      }
+
+      const destination = audioContext.createMediaStreamDestination();
+      merger.connect(destination);
+
+      const monoStream = destination.stream;
+      audioStreamRef.current = rawStream; // Keep raw stream for cleanup
+
+      // Store cleanup function for audio context
+      const cleanupAudioContext = () => {
+        source.disconnect();
+        splitter.disconnect();
+        merger.disconnect();
+        gainLeft.disconnect();
+        gainRight.disconnect();
+        audioContext.close();
       };
 
+      const recorder = createAudioRecorder(monoStream, "mp3", settings.audioBitrate);
+
+      // =========================================================================
+      // PRODUCTION-GRADE STREAMING AUDIO RECORDING
+      // =========================================================================
+      // Stream raw WebM/Opus chunks to disk as they arrive (crash-safe).
+      // After recording stops, convert to MP3.
+      // If app crashes, the WebM file preserves all audio up to that point.
+      // =========================================================================
+
+      // Generate paths
+      const tempWebmPath = generateStreamingWebAudioTempPath(settings, currentSession?.session);
+      const finalMp3Path = generateFinalMp3Path(settings, currentSession?.session);
+      audioStreamingTempPathRef.current = tempWebmPath;
+      audioFinalMp3PathRef.current = finalMp3Path;
+
+      // Start streaming recording on Rust side
+      try {
+        await startStreamingWebAudioRecording(tempWebmPath);
+        console.log("[AudioRecording] Started streaming to:", tempWebmPath);
+      } catch (err) {
+        console.error("[AudioRecording] Failed to start streaming:", err);
+        cleanupAudioContext();
+        setIsAudioStarting(false);
+        return;
+      }
+
+      recorder.onerror = async (e) => {
+        console.error("[AudioRecording] MediaRecorder error:", e);
+        try {
+          await abortStreamingWebAudioRecording();
+        } catch (abortErr) {
+          console.error("[AudioRecording] Failed to abort:", abortErr);
+        }
+        audioStreamingTempPathRef.current = null;
+        audioFinalMp3PathRef.current = null;
+      };
+
+      // Stream each chunk directly to disk - NO memory accumulation
+      // Track pending promises to avoid race condition with onstop
+      audioChunkPromisesRef.current = [];
+      let audioChunkCount = 0;
       recorder.ondataavailable = (e) => {
+        console.log(`[AudioRecording] ondataavailable fired, data size: ${e.data.size} bytes`);
         if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
+          audioChunkCount++;
+          const chunkNum = audioChunkCount;
+          // Track the async operation to ensure it completes before finalize
+          const chunkPromise = (async () => {
+            try {
+              const base64Chunk = await blobToBase64(e.data);
+              const bytesWritten = await appendWebAudioChunk(base64Chunk);
+              console.log(`[AudioRecording] Chunk ${chunkNum} written, total: ${bytesWritten} bytes`);
+            } catch (err) {
+              console.error(`[AudioRecording] Failed to stream chunk ${chunkNum}:`, err);
+            }
+          })();
+          audioChunkPromisesRef.current.push(chunkPromise);
         }
       };
 
       recorder.onstop = async () => {
-        const mimeType = recorder.mimeType || "audio/webm";
-        const rawBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        let outputBlob = rawBlob;
+        // Wait for all pending chunk writes to complete before finalizing
+        // This prevents a race condition where finalize closes the file before chunks are written
+        if (audioChunkPromisesRef.current.length > 0) {
+          console.log(`[AudioRecording] Waiting for ${audioChunkPromisesRef.current.length} pending chunks...`);
+          await Promise.all(audioChunkPromisesRef.current);
+          audioChunkPromisesRef.current = [];
+        }
 
-        if (settings.audioFormat === "mp3") {
+        // Clean up audio context used for mono conversion
+        cleanupAudioContext();
+
+        // Finalize streaming - close the WebM file
+        let webmResult;
+        try {
+          webmResult = await finalizeStreamingWebAudioRecording();
+          console.log(
+            "[AudioRecording] Finalized WebM:",
+            webmResult.file_path,
+            `(${webmResult.duration_seconds.toFixed(1)}s, ${(webmResult.bytes_written / 1024).toFixed(1)} KB)`
+          );
+        } catch (err) {
+          console.error("[AudioRecording] Failed to finalize streaming:", err);
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach((t) => t.stop());
+            audioStreamRef.current = null;
+          }
+          audioRecorderRef.current = null;
+          setAudioStatus("stopped");
+          resolveAudioStop();
+          return;
+        }
+
+        // Now convert WebM to MP3
+        if (settings.audioFormat === "mp3" && webmResult) {
           try {
-            outputBlob = await encodeMp3FromBlob(rawBlob);
+            console.log("[AudioRecording] Converting WebM to MP3...");
+            console.log("[AudioRecording] WebM source path:", webmResult.file_path);
+            console.log("[AudioRecording] WebM bytes written:", webmResult.bytes_written);
+            
+            // Check if WebM has data
+            if (webmResult.bytes_written === 0) {
+              console.error("[AudioRecording] ERROR: WebM file has 0 bytes! No audio data was captured.");
+              console.error("[AudioRecording] This usually means ondataavailable events were not firing or chunks failed to write.");
+            }
+            
+            // Read the WebM file
+            const webmBase64 = await readFileAsBase64(webmResult.file_path);
+            const webmBlob = base64ToBlob(webmBase64, "audio/webm");
+            
+            // Encode to MP3
+            const mp3Blob = await encodeMp3FromBlob(webmBlob);
+            
+            // Save the MP3 file
+            console.log("[AudioRecording] MP3 blob size:", mp3Blob.size, "bytes");
+            console.log("[AudioRecording] Settings outputBasePath:", settings.outputBasePath);
+            const result = await saveRecordingToFile(
+              mp3Blob,
+              "audio",
+              settings,
+              currentSession?.session
+            );
+
+            console.log("[AudioRecording] saveRecordingToFile result:", result);
+            if (result.success) {
+              console.log("[AudioRecording] MP3 saved successfully to:", result.filePath);
+              setAudioRecordedPath(result.filePath || null);
+              
+              // Create preview from MP3
+              revokeAudioPreviewObjectUrl();
+              audioPreviewObjectUrlRef.current = URL.createObjectURL(mp3Blob);
+              setAudioRecordedUrl(audioPreviewObjectUrlRef.current);
+
+              // Clean up the temp WebM file
+              try {
+                await deleteFile(webmResult.file_path);
+                console.log("[AudioRecording] Deleted temp WebM file");
+              } catch (delErr) {
+                console.warn("[AudioRecording] Failed to delete temp file:", delErr);
+              }
+            } else {
+              console.error("[AudioRecording] Failed to save MP3:", result.error);
+              // Keep the WebM file as fallback
+              setAudioRecordedPath(webmResult.file_path);
+            }
           } catch (err) {
-            console.error("MP3 encoding failed, saving raw audio instead:", err);
+            console.error("[AudioRecording] MP3 conversion failed:", err);
+            // Keep the WebM file as fallback - user can convert manually
+            setAudioRecordedPath(webmResult.file_path);
+            console.log("[AudioRecording] WebM file preserved at:", webmResult.file_path);
           }
         }
 
-        // Always set preview from the in-memory blob (never a raw filesystem path)
-        revokeAudioPreviewObjectUrl();
-        audioPreviewObjectUrlRef.current = URL.createObjectURL(outputBlob);
-        setAudioRecordedUrl(audioPreviewObjectUrlRef.current);
-
-        const result = await saveRecordingToFile(
-          outputBlob,
-          "audio",
-          settings,
-          currentSession?.session
-        );
-        if (result.success) {
-          setAudioRecordedPath(result.filePath || null);
-        } else {
-          console.error("Failed to save audio:", result.error);
-        }
+        audioStreamingTempPathRef.current = null;
+        audioFinalMp3PathRef.current = null;
 
         if (audioStreamRef.current) {
           audioStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -834,12 +1216,13 @@ const RecorderPage: React.FC = () => {
         }
         audioRecorderRef.current = null;
         setAudioStatus("stopped");
+        resolveAudioStop();
       };
 
       audioRecorderRef.current = recorder;
       // Pre-roll: let the mic settle before starting MediaRecorder.
       await new Promise((r) => setTimeout(r, 800));
-      recorder.start(1000);
+      recorder.start(1000); // Request data every second
 
       setAudioStatus("recording");
       setIsAudioStarting(false);
@@ -850,16 +1233,33 @@ const RecorderPage: React.FC = () => {
         setAudioElapsedTime(Math.floor((Date.now() - startTime) / 1000));
       }, 100);
 
-      await startAudioMeter(stream);
+      await startAudioMeter(monoStream);
     } catch (err) {
       console.error("Failed to start web audio recording:", err);
       stopAudioMeter();
       setIsAudioStarting(false);
     }
-  }, [settings, currentSession, startAudioMeter, stopAudioMeter, encodeMp3FromBlob]);
+  }, [
+    settings,
+    currentSession,
+    startAudioMeter,
+    stopAudioMeter,
+    encodeMp3FromBlob,
+    revokeAudioPreviewObjectUrl,
+    resolveAudioStop,
+  ]);
 
   const startAudioRecording = useCallback(async () => {
     if (!settings) return;
+
+    // If there's a previous recording, clean it up first
+    if (audioStatus === "stopped") {
+      revokeAudioPreviewObjectUrl();
+      setAudioRecordedPath(null);
+      setAudioRecordedUrl(null);
+      setAudioElapsedTime(0);
+      setAudioLevels(new Array(60).fill(0.1));
+    }
 
     // Warn if mic is disabled
     if (!isMicEnabled) {
@@ -868,14 +1268,18 @@ const RecorderPage: React.FC = () => {
       setIsMicEnabled(true);
     }
 
+    console.log("[AudioRecording] Audio format:", settings.audioFormat);
+    console.log("[AudioRecording] Output base path:", settings.outputBasePath);
     if (settings.audioFormat === "mp3") {
+      console.log("[AudioRecording] Using WEB audio recording (MP3)");
       await startWebAudioRecording();
     } else {
+      console.log("[AudioRecording] Using NATIVE audio recording (WAV)");
       await startNativeAudioRecording();
     }
-  }, [settings, startWebAudioRecording, startNativeAudioRecording, isMicEnabled]);
+  }, [settings, startWebAudioRecording, startNativeAudioRecording, isMicEnabled, audioStatus, revokeAudioPreviewObjectUrl]);
 
-  const stopAudioRecording = useCallback(async () => {
+  const stopAudioRecordingCore = useCallback(async () => {
     if (audioStatus !== "recording") return;
 
     if (audioTimerRef.current) {
@@ -887,41 +1291,57 @@ const RecorderPage: React.FC = () => {
     setAudioLevels(new Array(60).fill(0.1));
 
     if (audioRecordingModeRef.current === "native") {
+      console.log("[NativeAudioRecording] Stopping native recording...");
       try {
         const result = await stopNativeAudioRecordingService();
+        console.log("[NativeAudioRecording] Stop result:", result);
+        console.log("[NativeAudioRecording] File saved to:", result.file_path);
+        console.log("[NativeAudioRecording] Duration:", result.duration_seconds, "seconds");
         setAudioRecordedPath(result.file_path);
         // Prefer blob URL preview for WAV (more reliable than passing file paths / asset URLs)
         revokeAudioPreviewObjectUrl();
         try {
           const fs = await import("@tauri-apps/plugin-fs");
           const bytes = await (fs as any).readFile(result.file_path as any);
+          console.log("[NativeAudioRecording] WAV file size:", bytes.length, "bytes");
           const wavBlob = new Blob([bytes], { type: "audio/wav" });
           audioPreviewObjectUrlRef.current = URL.createObjectURL(wavBlob);
           setAudioRecordedUrl(audioPreviewObjectUrlRef.current);
         } catch (e) {
+          console.warn("[NativeAudioRecording] Failed to read file for preview:", e);
           // Fallback: try asset protocol
           setAudioRecordedUrl(convertFileSrc(result.file_path, "asset"));
         }
         setAudioStatus("stopped");
       } catch (err) {
-        console.error("Failed to stop audio recording:", err);
+        console.error("[NativeAudioRecording] Failed to stop audio recording:", err);
+      } finally {
+        resolveAudioStop();
       }
       return;
     }
 
     if (audioRecorderRef.current && audioRecorderRef.current.state !== "inactive") {
       audioRecorderRef.current.stop();
+    } else {
+      resolveAudioStop();
     }
-  }, [audioStatus, stopAudioMeter]);
+  }, [audioStatus, stopAudioMeter, resolveAudioStop, revokeAudioPreviewObjectUrl]);
 
-  const startNewAudioRecording = useCallback(() => {
-    revokeAudioPreviewObjectUrl();
-    setAudioRecordedPath(null);
-    setAudioRecordedUrl(null);
-    setAudioStatus("idle");
-    setAudioElapsedTime(0);
-    setAudioLevels(new Array(60).fill(0.1));
-  }, [revokeAudioPreviewObjectUrl]);
+  const stopAudioRecording = useCallback(
+    async (reason: "manual" | "automation" = "manual") => {
+      if (audioStatus !== "recording") return;
+      if (reason === "manual") {
+        setStopConfirmTarget("audio");
+        setIsStopConfirmOpen(true);
+        return;
+      }
+      closeStopConfirm();
+      await stopAudioRecordingCore();
+    },
+    [audioStatus, stopAudioRecordingCore, closeStopConfirm]
+  );
+
 
   // ============================================================================
   // Automation Event Handlers (for Follow Master Timer feature)
@@ -929,9 +1349,9 @@ const RecorderPage: React.FC = () => {
 
   // Refs for automation handlers (to avoid stale closures)
   const startVideoRecordingRef = useRef(startVideoRecording);
-  const stopVideoRecordingRef = useRef(stopVideoRecording);
+  const stopVideoRecordingRef = useRef<(reason?: "manual" | "automation") => void>(stopVideoRecording);
   const startAudioRecordingRef = useRef(startAudioRecording);
-  const stopAudioRecordingRef = useRef(stopAudioRecording);
+  const stopAudioRecordingRef = useRef<(reason?: "manual" | "automation") => void>(stopAudioRecording);
   const videoStatusRef = useRef(videoStatus);
   const audioStatusRef = useRef(audioStatus);
 
@@ -949,17 +1369,30 @@ const RecorderPage: React.FC = () => {
   useEffect(() => {
     const handleStartVideo = () => {
       console.log("[Automation] Received start video recording event");
-      if (videoStatusRef.current === "idle") {
-        startVideoRecordingRef.current();
-      } else {
-        console.log("[Automation] Video already recording or stopped, skipping start");
-      }
+      const run = async () => {
+        if (videoStatusRef.current === "recording" || videoStatusRef.current === "paused") {
+          await new Promise<void>((resolve) => {
+            if (videoStopResolverRef.current) {
+              const prev = videoStopResolverRef.current;
+              videoStopResolverRef.current = () => {
+                prev();
+                resolve();
+              };
+            } else {
+              videoStopResolverRef.current = resolve;
+              stopVideoRecordingRef.current("automation");
+            }
+          });
+        }
+        await startVideoRecordingRef.current();
+      };
+      void run();
     };
 
     const handleStopVideo = () => {
       console.log("[Automation] Received stop video recording event");
       if (videoStatusRef.current === "recording" || videoStatusRef.current === "paused") {
-        stopVideoRecordingRef.current();
+        stopVideoRecordingRef.current("automation");
       } else {
         console.log("[Automation] Video not recording, skipping stop");
       }
@@ -967,17 +1400,30 @@ const RecorderPage: React.FC = () => {
 
     const handleStartAudio = () => {
       console.log("[Automation] Received start audio recording event");
-      if (audioStatusRef.current === "idle") {
-        startAudioRecordingRef.current();
-      } else {
-        console.log("[Automation] Audio already recording or stopped, skipping start");
-      }
+      const run = async () => {
+        if (audioStatusRef.current === "recording") {
+          await new Promise<void>((resolve) => {
+            if (audioStopResolverRef.current) {
+              const prev = audioStopResolverRef.current;
+              audioStopResolverRef.current = () => {
+                prev();
+                resolve();
+              };
+            } else {
+              audioStopResolverRef.current = resolve;
+              stopAudioRecordingRef.current("automation");
+            }
+          });
+        }
+        await startAudioRecordingRef.current();
+      };
+      void run();
     };
 
     const handleStopAudio = () => {
       console.log("[Automation] Received stop audio recording event");
       if (audioStatusRef.current === "recording") {
-        stopAudioRecordingRef.current();
+        stopAudioRecordingRef.current("automation");
       } else {
         console.log("[Automation] Audio not recording, skipping stop");
       }
@@ -985,21 +1431,55 @@ const RecorderPage: React.FC = () => {
 
     const handleStartBoth = () => {
       console.log("[Automation] Received start both recording event");
-      if (videoStatusRef.current === "idle") {
-        startVideoRecordingRef.current();
-      }
-      if (audioStatusRef.current === "idle") {
-        startAudioRecordingRef.current();
-      }
+      const run = async () => {
+        const stops: Promise<void>[] = [];
+        if (videoStatusRef.current === "recording" || videoStatusRef.current === "paused") {
+          stops.push(
+            new Promise<void>((resolve) => {
+              if (videoStopResolverRef.current) {
+                const prev = videoStopResolverRef.current;
+                videoStopResolverRef.current = () => {
+                  prev();
+                  resolve();
+                };
+              } else {
+                videoStopResolverRef.current = resolve;
+                stopVideoRecordingRef.current("automation");
+              }
+            })
+          );
+        }
+        if (audioStatusRef.current === "recording") {
+          stops.push(
+            new Promise<void>((resolve) => {
+              if (audioStopResolverRef.current) {
+                const prev = audioStopResolverRef.current;
+                audioStopResolverRef.current = () => {
+                  prev();
+                  resolve();
+                };
+              } else {
+                audioStopResolverRef.current = resolve;
+                stopAudioRecordingRef.current("automation");
+              }
+            })
+          );
+        }
+        if (stops.length > 0) {
+          await Promise.all(stops);
+        }
+        await Promise.all([startVideoRecordingRef.current(), startAudioRecordingRef.current()]);
+      };
+      void run();
     };
 
     const handleStopBoth = () => {
       console.log("[Automation] Received stop both recording event");
       if (videoStatusRef.current === "recording" || videoStatusRef.current === "paused") {
-        stopVideoRecordingRef.current();
+        stopVideoRecordingRef.current("automation");
       }
       if (audioStatusRef.current === "recording") {
-        stopAudioRecordingRef.current();
+        stopAudioRecordingRef.current("automation");
       }
     };
 
@@ -1060,6 +1540,30 @@ const RecorderPage: React.FC = () => {
     return getStatusText(audioStatus);
   };
 
+  const handleConfirmStop = async () => {
+    const target = stopConfirmTarget;
+    closeStopConfirm();
+    if (target === "video") {
+      stopVideoRecordingCore();
+      return;
+    }
+    if (target === "audio") {
+      await stopAudioRecordingCore();
+      return;
+    }
+    if (target === "both") {
+      stopVideoRecordingCore();
+      await stopAudioRecordingCore();
+    }
+  };
+
+  const stopConfirmTitle =
+    stopConfirmTarget === "both"
+      ? "Stop video and audio recording?"
+      : stopConfirmTarget === "video"
+      ? "Stop video recording?"
+      : "Stop audio recording?";
+
   if (!settings) {
     return (
       <div style={styles.pageContainer}>
@@ -1092,6 +1596,9 @@ const RecorderPage: React.FC = () => {
               <span style={{ ...styles.formatBadge, ...styles.formatBadgeVideo }}>
                 {settings.videoFormat.toUpperCase()}
               </span>
+              <span style={{ ...styles.formatBadge, ...styles.formatBadgeAudio }}>
+                {settings.videoAudioCodec.toUpperCase()}
+              </span>
               <span style={{ ...styles.formatBadge, ...styles.formatBadgeResolution }}>
                 {settings.videoResolution}
               </span>
@@ -1115,52 +1622,76 @@ const RecorderPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Video Preview / Recorded Video */}
+            <div style={styles.deviceSelectRow}>
+              <FaMicrophone size={14} />
+              <select
+                style={styles.deviceSelect}
+                value={settings.selectedVideoAudioDeviceId || ""}
+                onChange={(e) =>
+                  updateSettings({ selectedVideoAudioDeviceId: e.target.value || null })
+                }
+                disabled={videoStatus === "recording" || videoStatus === "paused"}
+              >
+                <option value="">Default Microphone (Video Audio)</option>
+                {videoAudioDevices.map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Video Preview - Always show live feed */}
             <div style={styles.videoPreview}>
-              {videoRecordedUrl ? (
-                <video
-                  ref={recordedVideoRef}
-                  src={videoRecordedUrl}
-                  controls
-                  style={styles.videoElement}
-                />
-              ) : (
-                <>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    style={{
-                      ...styles.videoElement,
-                      display: videoPreviewStream ? "block" : "none",
-                    }}
-                  />
-                  {!videoPreviewStream && (
-                    <div style={styles.previewPlaceholder}>
-                      <FaVideo size={48} style={{ opacity: 0.5, marginBottom: "12px" }} />
-                      <p>{cameraError || "Camera preview will appear here"}</p>
-                      {cameraError && (
-                        <button
-                          onClick={startVideoPreview}
-                          style={{
-                            marginTop: "12px",
-                            padding: "8px 16px",
-                            borderRadius: "8px",
-                            border: "1px solid var(--app-border-color)",
-                            background: "var(--app-bg-color)",
-                            color: "var(--app-text-color)",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Retry Camera
-                        </button>
-                      )}
-                    </div>
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                style={{
+                  ...styles.videoElement,
+                  display: videoPreviewStream ? "block" : "none",
+                }}
+              />
+              {!videoPreviewStream && (
+                <div style={styles.previewPlaceholder}>
+                  <FaVideo size={48} style={{ opacity: 0.5, marginBottom: "12px" }} />
+                  <p>{cameraError || "Camera preview will appear here"}</p>
+                  {cameraError && (
+                    <button
+                      onClick={startVideoPreview}
+                      style={{
+                        marginTop: "12px",
+                        padding: "8px 16px",
+                        borderRadius: "8px",
+                        border: "1px solid var(--app-border-color)",
+                        background: "var(--app-bg-color)",
+                        color: "var(--app-text-color)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Retry Camera
+                    </button>
                   )}
-                </>
+                </div>
               )}
             </div>
+
+            {/* Saved Message - shows briefly after recording saves */}
+            {videoSavedMessage && (
+              <div style={{
+                textAlign: "center",
+                padding: "8px",
+                marginBottom: "8px",
+                backgroundColor: "rgba(34, 197, 94, 0.15)",
+                borderRadius: "8px",
+                color: "#22c55e",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+              }}>
+                ✓ {videoSavedMessage}
+              </div>
+            )}
 
             {/* Timer */}
             <div
@@ -1182,7 +1713,14 @@ const RecorderPage: React.FC = () => {
                 {videoStatus === "paused" ? <FaPlay size={20} /> : <FaPause size={20} />}
               </button>
               
-              {videoStatus === "idle" ? (
+              {videoStatus === "recording" || videoStatus === "paused" ? (
+                <button
+                  style={{ ...styles.controlBtn, ...styles.stopBtn }}
+                  onClick={() => stopVideoRecording("manual")}
+                >
+                  <FaStop size={20} />
+                </button>
+              ) : (
                 <button
                   style={{
                     ...styles.controlBtn,
@@ -1191,23 +1729,9 @@ const RecorderPage: React.FC = () => {
                   }}
                   onClick={startVideoRecording}
                   disabled={isVideoStarting}
+                  title={videoStatus === "stopped" ? "Start new recording" : "Start recording"}
                 >
                   <FaCircle size={24} />
-                </button>
-              ) : videoStatus === "stopped" ? (
-                <button
-                  style={{ ...styles.controlBtn, ...styles.recordBtn }}
-                  onClick={startNewVideoRecording}
-                  title="Start new recording"
-                >
-                  <FaCircle size={24} />
-                </button>
-              ) : (
-                <button
-                  style={{ ...styles.controlBtn, ...styles.stopBtn }}
-                  onClick={stopVideoRecording}
-                >
-                  <FaStop size={20} />
                 </button>
               )}
 
@@ -1224,16 +1748,6 @@ const RecorderPage: React.FC = () => {
                 {isVideoEnabled ? <FaVideo size={20} /> : <FaVideoSlash size={20} />}
               </button>
             </div>
-
-            {/* New Recording Button */}
-            {videoStatus === "stopped" && (
-              <button
-                style={styles.newRecordingBtn}
-                onClick={startNewVideoRecording}
-              >
-                New Recording
-              </button>
-            )}
           </div>
 
           {/* Audio Panel */}
@@ -1326,8 +1840,13 @@ const RecorderPage: React.FC = () => {
                 </button>
               ) : audioStatus === "stopped" ? (
                 <button
-                  style={{ ...styles.controlBtn, ...styles.recordBtn }}
-                  onClick={startNewAudioRecording}
+                  style={{
+                    ...styles.controlBtn,
+                    ...styles.recordBtn,
+                    ...(isAudioStarting ? styles.recordBtnDisabled : {}),
+                  }}
+                  onClick={startAudioRecording}
+                  disabled={isAudioStarting}
                   title="Start new recording"
                 >
                   <FaCircle size={24} />
@@ -1335,7 +1854,7 @@ const RecorderPage: React.FC = () => {
               ) : (
                 <button
                   style={{ ...styles.controlBtn, ...styles.stopBtn }}
-                  onClick={stopAudioRecording}
+                  onClick={() => stopAudioRecording("manual")}
                 >
                   <FaStop size={20} />
                 </button>
@@ -1355,15 +1874,6 @@ const RecorderPage: React.FC = () => {
               </button>
             </div>
 
-            {/* New Recording Button */}
-            {audioStatus === "stopped" && (
-              <button
-                style={styles.newRecordingBtn}
-                onClick={startNewAudioRecording}
-              >
-                New Recording
-              </button>
-            )}
           </div>
         </div>
 
@@ -1386,6 +1896,28 @@ const RecorderPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {isStopConfirmOpen && (
+        <div className="modal-overlay">
+          <div
+            className="modal-content"
+            style={{ maxWidth: "420px", backgroundColor: "var(--app-header-bg)" }}
+          >
+            <h3 style={{ marginTop: 0 }}>{stopConfirmTitle}</h3>
+            <p style={{ color: "var(--app-text-color-secondary)" }}>
+              This will finalize the current recording and save it to disk.
+            </p>
+            <div className="modal-actions" style={{ justifyContent: "flex-end" }}>
+              <button onClick={closeStopConfirm} className="secondary">
+                Cancel
+              </button>
+              <button onClick={handleConfirmStop} className="primary">
+                Stop Recording
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

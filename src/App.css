@@ -49,6 +49,21 @@
   --app-playlist-item-selected-text: #ffffff;
   --app-slide-layout-badge-bg: #264653; /* Teal/dark cyan for slide layout badge */
   --app-slide-layout-badge-text: #ffffff;
+  --app-hover-bg-color: var(--app-list-item-hover-bg);
+  --timer-next-bg: rgba(255, 162, 0, 0.5);
+
+  /* Surface + token variables for settings and cards */
+  --surface: #333333;
+  --surface-2: #2a2a2a;
+  --text: var(--app-text-color);
+  --text-dim: var(--app-text-color-secondary);
+  --border: var(--app-border-color);
+  --accent: var(--app-primary-color);
+  --radius: 10px;
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  --transition: 0.15s ease-in-out;
+  --success: #22c55e;
+  --danger: #ef4444;
 
   font-family: var(--font-sans);
   font-size: 16px;
@@ -97,6 +112,21 @@ body.theme-light {
   --app-playlist-item-selected-text: #ffffff; /* White text might still work, or adjust to #000000 if needed */
   --app-slide-layout-badge-bg: #5a9aab;
   --app-slide-layout-badge-text: #ffffff;
+  --app-hover-bg-color: var(--app-list-item-hover-bg);
+  --timer-next-bg: rgba(217, 119, 6, 0.9);
+
+  /* Surface + token overrides for light theme */
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --text: var(--app-text-color);
+  --text-dim: var(--app-text-color-secondary);
+  --border: var(--app-border-color);
+  --accent: var(--app-primary-color);
+  --radius: 10px;
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  --transition: 0.15s ease-in-out;
+  --success: #16a34a;
+  --danger: #dc2626;
 
   color: var(--app-text-color);
   background-color: var(--app-bg-color);
@@ -417,6 +447,22 @@ body.theme-light .list-item.selected:hover {
   display: flex;
   align-items: center; /* Vertically align items in nav */
   gap: 15px;
+}
+
+.ai-rate-limit-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 20px 0;
+}
+
+.ai-rate-limit-banner {
+  font-size: 0.72em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 99, 71, 0.12);
+  border: 1px solid rgba(255, 99, 71, 0.35);
+  color: var(--app-text-color);
+  white-space: nowrap;
 }
 
 /* Cleanup old Tauri template styles if not needed */
@@ -1284,6 +1330,19 @@ body.theme-light .collapsible-section .collapsible-header:hover {
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: #777;
+}
+
+body.theme-light ::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+body.theme-light ::-webkit-scrollbar-thumb {
+  background-color: #a1a1aa;
+  border: 3px solid #e5e7eb;
+}
+
+body.theme-light ::-webkit-scrollbar-thumb:hover {
+  background-color: #71717a;
 }
 
 .slide-display-scroll-container::-webkit-scrollbar-track {

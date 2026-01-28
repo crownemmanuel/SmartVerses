@@ -20,13 +20,22 @@ import {
   FaDesktop,
   FaCheck,
   FaTimes,
+  FaDatabase,
 } from "react-icons/fa";
 import {
   SmartVersesSettings as SmartVersesSettingsType,
   DEFAULT_SMART_VERSES_SETTINGS,
   TranscriptionEngine,
   AudioCaptureMode,
+  AVAILABLE_OFFLINE_MODELS,
 } from "../types/smartVerses";
+import OfflineModelManager from "./OfflineModelManager";
+import { getDownloadedModelIds, isModelDownloaded } from "../services/offlineModelService";
+import {
+  OfflineModelPreloadStatus,
+  preloadOfflineModel,
+  subscribeOfflineModelPreload,
+} from "../services/offlineModelPreloadService";
 import {
   loadSmartVersesSettings,
   saveSmartVersesSettings,
@@ -43,6 +52,7 @@ import {
   fetchGeminiModels,
   fetchGroqModels,
 } from "../services/aiService";
+import { formatGroqModelLabel } from "../utils/groqModelLimits";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
 import "../App.css";
 
@@ -68,6 +78,13 @@ const SmartVersesSettings: React.FC = () => {
   const [bibleSearchModelsLoading, setBibleSearchModelsLoading] =
     useState(false);
 
+  // Offline model manager state
+  const [showModelManager, setShowModelManager] = useState(false);
+  const [downloadedModelIds, setDownloadedModelIds] = useState<string[]>([]);
+  const [offlineModelLoad, setOfflineModelLoad] =
+    useState<OfflineModelPreloadStatus | null>(null);
+
+
   // ProPresenter activation state
   const [enabledConnections, setEnabledConnections] = useState<
     ProPresenterConnection[]
@@ -90,6 +107,9 @@ const SmartVersesSettings: React.FC = () => {
     if ((savedSettings.audioCaptureMode || "webrtc") === "native") {
       loadNativeDevices();
     }
+    
+    // Load downloaded offline models
+    setDownloadedModelIds(getDownloadedModelIds());
 
     // Load ProPresenter connections
     const connections = getEnabledConnections();
@@ -126,6 +146,43 @@ const SmartVersesSettings: React.FC = () => {
       );
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeOfflineModelPreload(setOfflineModelLoad);
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+
+    const isOfflineWhisper = settings.transcriptionEngine === "offline-whisper";
+    const isOfflineMoonshine =
+      settings.transcriptionEngine === "offline-moonshine";
+    const modelId = isOfflineWhisper
+      ? settings.offlineWhisperModel || "onnx-community/whisper-base"
+      : isOfflineMoonshine
+      ? settings.offlineMoonshineModel || "onnx-community/moonshine-base-ONNX"
+      : null;
+
+    if (!modelId) return;
+    if (isModelDownloaded(modelId)) return;
+
+    preloadOfflineModel({
+      modelId,
+      source: "settings",
+      callbacks: {
+        onComplete: () => setDownloadedModelIds(getDownloadedModelIds()),
+        onError: () => setDownloadedModelIds(getDownloadedModelIds()),
+      },
+    }).catch((error) => {
+      console.warn("Failed to preload offline model:", error);
+    });
+  }, [
+    settingsLoaded,
+    settings.transcriptionEngine,
+    settings.offlineWhisperModel,
+    settings.offlineMoonshineModel,
+  ]);
 
   // Auto-save settings on change (debounced), after initial load.
   useDebouncedEffect(
@@ -169,6 +226,73 @@ const SmartVersesSettings: React.FC = () => {
     { delayMs: 600, enabled: settingsLoaded, skipFirstRun: true }
   );
 
+  // Get available providers based on API keys
+  const getAvailableProviders = useCallback(() => {
+    const appSettings = getAppSettings();
+    const available: Array<{ value: string; label: string }> = [];
+
+    if (appSettings.openAIConfig?.apiKey) {
+      available.push({ value: "openai", label: "OpenAI" });
+    }
+    if (appSettings.geminiConfig?.apiKey) {
+      available.push({ value: "gemini", label: "Google Gemini" });
+    }
+    if (appSettings.groqConfig?.apiKey) {
+      available.push({ value: "groq", label: "Groq (Recommended - Super Fast)" });
+    }
+
+    return available;
+  }, []);
+
+  // Check if current provider still has API key, reset if not
+  useEffect(() => {
+    if (settings.bibleSearchProvider) {
+      const appSettings = getAppSettings();
+      let hasApiKey = false;
+
+      switch (settings.bibleSearchProvider) {
+        case "openai":
+          hasApiKey = !!appSettings.openAIConfig?.apiKey;
+          break;
+        case "gemini":
+          hasApiKey = !!appSettings.geminiConfig?.apiKey;
+          break;
+        case "groq":
+          hasApiKey = !!appSettings.groqConfig?.apiKey;
+          break;
+      }
+
+      if (!hasApiKey) {
+        setSettings((prev) => ({
+          ...prev,
+          bibleSearchProvider: undefined,
+          bibleSearchModel: "",
+        }));
+      }
+    }
+  }, [settings.bibleSearchProvider]);
+
+  // Default models for each provider (shown when API key is not set)
+  const DEFAULT_MODELS: Record<string, string[]> = {
+    openai: [
+      "gpt-4o",
+      "gpt-4-turbo",
+      "gpt-4",
+      "gpt-3.5-turbo",
+    ],
+    gemini: [
+      "gemini-1.5-pro",
+      "gemini-1.5-flash",
+      "gemini-pro",
+    ],
+    groq: [
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "llama-3.1-70b-versatile",
+      "mixtral-8x7b-32768",
+    ],
+  };
+
   // Load models when provider changes
   const loadBibleSearchModels = useCallback(async (provider: string) => {
     if (!provider) {
@@ -186,26 +310,48 @@ const SmartVersesSettings: React.FC = () => {
         case "openai":
           if (appSettings.openAIConfig?.apiKey) {
             models = await fetchOpenAIModels(appSettings.openAIConfig.apiKey);
+          } else {
+            // Show default models when no API key
+            models = DEFAULT_MODELS.openai;
           }
           break;
         case "gemini":
           if (appSettings.geminiConfig?.apiKey) {
             models = await fetchGeminiModels(appSettings.geminiConfig.apiKey);
+          } else {
+            // Show default models when no API key
+            models = DEFAULT_MODELS.gemini;
           }
           break;
         case "groq":
           if (appSettings.groqConfig?.apiKey) {
             models = await fetchGroqModels(appSettings.groqConfig.apiKey);
+          } else {
+            // Show default models when no API key
+            models = DEFAULT_MODELS.groq;
           }
           break;
       }
+      
+      // Ensure the currently selected model is included in the list
+      if (settings.bibleSearchModel && !models.includes(settings.bibleSearchModel)) {
+        models.unshift(settings.bibleSearchModel);
+      }
+      
       setBibleSearchModels(models);
     } catch (error) {
       console.error("Failed to load models:", error);
+      // Fallback to default models on error
+      let fallbackModels = DEFAULT_MODELS[provider] || [];
+      // Ensure the currently selected model is included
+      if (settings.bibleSearchModel && !fallbackModels.includes(settings.bibleSearchModel)) {
+        fallbackModels.unshift(settings.bibleSearchModel);
+      }
+      setBibleSearchModels(fallbackModels);
     } finally {
       setBibleSearchModelsLoading(false);
     }
-  }, []);
+  }, [settings.bibleSearchModel]);
 
   // Load models when provider changes
   useEffect(() => {
@@ -213,6 +359,20 @@ const SmartVersesSettings: React.FC = () => {
       loadBibleSearchModels(settings.bibleSearchProvider);
     }
   }, [settings.bibleSearchProvider, loadBibleSearchModels]);
+
+  const formatBibleSearchModelLabel = useCallback(
+    (modelId: string) => {
+      if (settings.bibleSearchProvider !== "groq") {
+        return modelId;
+      }
+      const baseLabel = formatGroqModelLabel(modelId);
+      if (modelId === "llama-3.1-8b-instant") {
+        return `${baseLabel} - Recommended`;
+      }
+      return baseLabel;
+    },
+    [settings.bibleSearchProvider]
+  );
 
   // Load available microphones
   const loadMicrophones = async () => {
@@ -415,6 +575,101 @@ const SmartVersesSettings: React.FC = () => {
     marginTop: "var(--spacing-1)",
   };
 
+  const selectedWhisperModelId =
+    settings.offlineWhisperModel || "onnx-community/whisper-base";
+  const selectedMoonshineModelId =
+    settings.offlineMoonshineModel || "onnx-community/moonshine-base-ONNX";
+
+  const whisperLoadStatus =
+    offlineModelLoad?.modelId === selectedWhisperModelId
+      ? offlineModelLoad
+      : null;
+  const moonshineLoadStatus =
+    offlineModelLoad?.modelId === selectedMoonshineModelId
+      ? offlineModelLoad
+      : null;
+
+  const isWhisperDownloading =
+    !!whisperLoadStatus &&
+    whisperLoadStatus.phase !== "ready" &&
+    whisperLoadStatus.phase !== "error";
+  const isMoonshineDownloading =
+    !!moonshineLoadStatus &&
+    moonshineLoadStatus.phase !== "ready" &&
+    moonshineLoadStatus.phase !== "error";
+
+  const renderOfflineLoadStatus = (status: OfflineModelPreloadStatus | null) => {
+    if (!status || status.phase === "ready") return null;
+
+    const progress = Math.max(0, Math.min(100, status.progress || 0));
+    const statusLabel =
+      status.phase === "error"
+        ? "Offline model failed to load"
+        : `Loading ${status.modelName}...`;
+
+    return (
+      <div
+        style={{
+          marginTop: "var(--spacing-2)",
+          padding: "var(--spacing-2)",
+          borderRadius: "8px",
+          border: "1px solid var(--app-border-color)",
+          backgroundColor: "var(--app-input-bg-color)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: "0.8rem",
+            color: "var(--app-text-color-secondary)",
+            marginBottom: "4px",
+          }}
+        >
+          <span>{statusLabel}</span>
+          {status.phase !== "error" && <span>{progress.toFixed(1)}%</span>}
+        </div>
+        {status.file && (
+          <div
+            style={{
+              fontSize: "0.75rem",
+              color: "var(--app-text-color-secondary)",
+              marginBottom: "6px",
+            }}
+          >
+            {status.file}
+          </div>
+        )}
+        <div
+          style={{
+            height: "6px",
+            backgroundColor: "var(--app-bg-color)",
+            borderRadius: "4px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${progress}%`,
+              backgroundColor:
+                status.phase === "error"
+                  ? "var(--danger)"
+                  : "var(--app-primary-color)",
+              borderRadius: "4px",
+              transition: "width 0.3s ease",
+            }}
+          />
+        </div>
+        {status.phase === "error" && (
+          <p style={{ ...helpTextStyle, color: "var(--danger)" }}>
+            {status.error || "Failed to load offline model. Please try again."}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ maxWidth: "800px" }}>
       <h2 style={{ marginBottom: "var(--spacing-4)" }}>SmartVerses Settings</h2>
@@ -447,50 +702,272 @@ const SmartVersesSettings: React.FC = () => {
             }
             style={inputStyle}
           >
-            <option value="assemblyai">AssemblyAI (Recommended)</option>
-            <option value="elevenlabs" disabled>
-              ElevenLabs (Coming Soon)
-            </option>
-            <option value="whisper" disabled>
-              Whisper (Coming Soon)
-            </option>
+            <optgroup label="Cloud-based (requires API key)">
+              <option value="assemblyai">AssemblyAI (Recommended)</option>
+              <option value="groq">Groq Whisper (Experimental)</option>
+            </optgroup>
+            <optgroup label="Offline (runs locally)">
+              <option value="offline-moonshine">Moonshine Offline (More Stable)</option>
+              <option value="offline-whisper">Whisper Offline (Experimental)</option>
+            </optgroup>
+            <optgroup label="Coming Soon">
+              <option value="elevenlabs" disabled>
+                ElevenLabs
+              </option>
+              <option value="whisper" disabled>
+                OpenAI Whisper API
+              </option>
+            </optgroup>
           </select>
           <p style={helpTextStyle}>
-            AssemblyAI provides high-accuracy real-time transcription.
+            {settings.transcriptionEngine === "assemblyai"
+              ? "AssemblyAI provides high-accuracy real-time transcription."
+              : settings.transcriptionEngine === "groq"
+              ? "Groq provides ultra-fast transcription using Whisper models. (Experimental)"
+              : settings.transcriptionEngine === "offline-whisper"
+              ? "Whisper Offline runs entirely on your device - no internet required after model download. (Experimental)"
+              : settings.transcriptionEngine === "offline-moonshine"
+              ? "Moonshine is optimized for real-time transcription with Voice Activity Detection (VAD). More stable than Whisper for offline use."
+              : "Select a transcription engine."}
           </p>
         </div>
 
-        <div style={fieldStyle}>
-          <label style={labelStyle}>AssemblyAI API Key</label>
-          <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
-            <input
-              type="password"
-              value={settings.assemblyAIApiKey || ""}
-              onChange={(e) => handleChange("assemblyAIApiKey", e.target.value)}
-              placeholder="Enter your AssemblyAI API key"
-              style={{ ...inputStyle, flex: 1 }}
-            />
-            <button
-              onClick={testAssemblyAIKey}
-              className="secondary"
-              style={{ whiteSpace: "nowrap" }}
+        {/* Offline Model Settings */}
+        {(settings.transcriptionEngine === "offline-whisper" ||
+          settings.transcriptionEngine === "offline-moonshine") && (
+          <div
+            style={{
+              padding: "var(--spacing-3)",
+              backgroundColor: "var(--app-bg-color)",
+              borderRadius: "8px",
+              marginBottom: "var(--spacing-4)",
+              border: "1px solid var(--app-border-color)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "var(--spacing-3)",
+              }}
             >
-              <FaKey style={{ marginRight: "4px" }} />
-              Test
-            </button>
+              <h4 style={{ margin: 0, fontSize: "0.95rem" }}>
+                Offline Model Settings
+              </h4>
+              <button
+                onClick={() => setShowModelManager(true)}
+                className="secondary btn-sm"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <FaDatabase size={12} />
+                Manage Models
+              </button>
+            </div>
+
+            {settings.transcriptionEngine === "offline-whisper" && (
+              <>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Whisper Model</label>
+                  <select
+                    value={settings.offlineWhisperModel || "onnx-community/whisper-base"}
+                    onChange={(e) =>
+                      handleChange("offlineWhisperModel", e.target.value)
+                    }
+                    style={inputStyle}
+                  >
+                    {AVAILABLE_OFFLINE_MODELS.filter((m) => m.type === "whisper").map(
+                      (model) => {
+                        const isDownloaded = downloadedModelIds.includes(model.modelId);
+                        const isRecommended =
+                          model.modelId === "onnx-community/whisper-base";
+                        return (
+                          <option key={model.id} value={model.modelId}>
+                            {model.name}
+                            {isRecommended ? " (Recommended)" : ""} ({model.size})
+                            {isDownloaded ? " ✓" : " - Not Downloaded"}
+                          </option>
+                        );
+                      }
+                    )}
+                  </select>
+                  {!downloadedModelIds.includes(selectedWhisperModelId) &&
+                    !isWhisperDownloading && (
+                    <p
+                      style={{
+                        ...helpTextStyle,
+                        color: "var(--warning)",
+                        marginTop: "var(--spacing-2)",
+                      }}
+                    >
+                      Selected model is not downloaded. Click "Manage Models" to
+                      download it first.
+                    </p>
+                  )}
+                  {renderOfflineLoadStatus(whisperLoadStatus)}
+                </div>
+
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Language</label>
+                  <select
+                    value={settings.offlineLanguage || "en"}
+                    onChange={(e) =>
+                      handleChange("offlineLanguage", e.target.value)
+                    }
+                    style={inputStyle}
+                  >
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="it">Italian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="nl">Dutch</option>
+                    <option value="pl">Polish</option>
+                    <option value="ru">Russian</option>
+                    <option value="zh">Chinese</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                  </select>
+                  <p style={helpTextStyle}>
+                    Language for transcription. The ".en" models only support English.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {settings.transcriptionEngine === "offline-moonshine" && (
+              <div style={fieldStyle}>
+                <label style={labelStyle}>Moonshine Model</label>
+                <select
+                  value={
+                    settings.offlineMoonshineModel ||
+                    "onnx-community/moonshine-base-ONNX"
+                  }
+                  onChange={(e) =>
+                    handleChange("offlineMoonshineModel", e.target.value)
+                  }
+                  style={inputStyle}
+                >
+                  {AVAILABLE_OFFLINE_MODELS.filter((m) => m.type === "moonshine").map(
+                    (model) => {
+                      const isDownloaded = downloadedModelIds.includes(model.modelId);
+                      return (
+                        <option key={model.id} value={model.modelId}>
+                          {model.name} ({model.size})
+                          {isDownloaded ? " ✓" : " - Not Downloaded"}
+                        </option>
+                      );
+                    }
+                  )}
+                </select>
+                {!downloadedModelIds.includes(selectedMoonshineModelId) &&
+                  !isMoonshineDownloading && (
+                  <p
+                    style={{
+                      ...helpTextStyle,
+                      color: "var(--warning)",
+                      marginTop: "var(--spacing-2)",
+                    }}
+                  >
+                    Selected model is not downloaded. Click "Manage Models" to
+                    download it first.
+                  </p>
+                )}
+                {renderOfflineLoadStatus(moonshineLoadStatus)}
+                <p style={helpTextStyle}>
+                  Moonshine models include built-in Voice Activity Detection (VAD)
+                  for automatic speech segmentation.
+                </p>
+              </div>
+            )}
           </div>
-          <p style={helpTextStyle}>
-            Get your API key from{" "}
-            <a
-              href="https://www.assemblyai.com/dashboard"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--app-primary-color)" }}
-            >
-              assemblyai.com/dashboard
-            </a>
-          </p>
-        </div>
+        )}
+
+        {settings.transcriptionEngine === "assemblyai" && (
+          <div style={fieldStyle}>
+            <label style={labelStyle}>AssemblyAI API Key</label>
+            <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
+              <input
+                type="password"
+                value={settings.assemblyAIApiKey || ""}
+                onChange={(e) =>
+                  handleChange("assemblyAIApiKey", e.target.value)
+                }
+                placeholder="Enter your AssemblyAI API key"
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button
+                onClick={testAssemblyAIKey}
+                className="secondary"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                <FaKey style={{ marginRight: "4px" }} />
+                Test
+              </button>
+            </div>
+            <p style={helpTextStyle}>
+              Get your API key from{" "}
+              <a
+                href="https://www.assemblyai.com/dashboard/api-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--app-primary-color)" }}
+              >
+                assemblyai.com/dashboard/api-keys
+              </a>
+            </p>
+          </div>
+        )}
+
+        {settings.transcriptionEngine === "groq" && (
+          <>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Groq API Key</label>
+              <input
+                type="password"
+                value={settings.groqApiKey || ""}
+                onChange={(e) => handleChange("groqApiKey", e.target.value)}
+                placeholder="Enter your Groq API key"
+                style={inputStyle}
+              />
+              <p style={helpTextStyle}>
+                Get your API key from{" "}
+                <a
+                  href="https://console.groq.com/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--app-primary-color)" }}
+                >
+                  console.groq.com
+                </a>
+              </p>
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Groq Model</label>
+              <select
+                value={settings.groqModel || "whisper-large-v3"}
+                onChange={(e) => handleChange("groqModel", e.target.value)}
+                style={inputStyle}
+              >
+                <option value="whisper-large-v3">
+                  whisper-large-v3 (Best Accuracy)
+                </option>
+                <option value="whisper-large-v3-turbo">
+                  whisper-large-v3-turbo (Fastest)
+                </option>
+                <option value="distil-whisper-large-v3-en">
+                  distil-whisper-large-v3-en (English Only)
+                </option>
+              </select>
+            </div>
+          </>
+        )}
 
         <div style={fieldStyle}>
           <label style={labelStyle}>Audio Capture</label>
@@ -666,6 +1143,26 @@ const SmartVersesSettings: React.FC = () => {
         </div>
 
         <div style={fieldStyle}>
+          <label style={labelStyle}>Transcription time limit (minutes)</label>
+          <input
+            type="number"
+            min={1}
+            value={settings.transcriptionTimeLimitMinutes ?? 120}
+            onChange={(e) =>
+              handleChange(
+                "transcriptionTimeLimitMinutes",
+                Math.max(1, parseInt(e.target.value, 10) || 120)
+              )
+            }
+            style={inputStyle}
+          />
+          <p style={helpTextStyle}>
+            Show a continuation prompt at this limit (default 120 minutes). If
+            no response in 1 minute, transcription auto-stops.
+          </p>
+        </div>
+
+        <div style={fieldStyle}>
           <label style={checkboxLabelStyle}>
             <input
               type="checkbox"
@@ -732,9 +1229,11 @@ const SmartVersesSettings: React.FC = () => {
                 style={inputStyle}
               >
                 <option value="">Select Provider</option>
-                <option value="openai">OpenAI</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="groq">Groq (Recommended - Super Fast)</option>
+                {getAvailableProviders().map((provider) => (
+                  <option key={provider.value} value={provider.value}>
+                    {provider.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -758,7 +1257,7 @@ const SmartVersesSettings: React.FC = () => {
                   </option>
                   {bibleSearchModels.map((model) => (
                     <option key={model} value={model}>
-                      {model}
+                      {formatBibleSearchModelLabel(model)}
                     </option>
                   ))}
                 </select>
@@ -875,6 +1374,25 @@ const SmartVersesSettings: React.FC = () => {
           </div>
           <p style={helpTextStyle}>
             Only show paraphrased verses with confidence above this threshold.
+          </p>
+        </div>
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Minimum Words for AI Analysis</label>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={settings.aiMinWordCount}
+            onChange={(e) =>
+              handleChange(
+                "aiMinWordCount",
+                Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1))
+              )
+            }
+            style={inputStyle}
+          />
+          <p style={helpTextStyle}>
+            Skip AI requests for short phrases like "thank you".
           </p>
         </div>
       </div>
@@ -1450,6 +1968,20 @@ const SmartVersesSettings: React.FC = () => {
           </span>
         )}
       </div>
+
+      {/* Offline Model Manager Modal */}
+      <OfflineModelManager
+        isOpen={showModelManager}
+        onClose={() => setShowModelManager(false)}
+        onModelDownloaded={() => {
+          // Refresh downloaded models list
+          setDownloadedModelIds(getDownloadedModelIds());
+        }}
+        onModelDeleted={() => {
+          // Refresh downloaded models list
+          setDownloadedModelIds(getDownloadedModelIds());
+        }}
+      />
     </div>
   );
 };

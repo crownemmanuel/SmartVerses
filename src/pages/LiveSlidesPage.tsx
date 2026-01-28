@@ -396,7 +396,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRight: "1px solid var(--app-border-color)",
     display: "flex",
     flexDirection: "column",
-    backgroundColor: "#1e1e1e",
+    backgroundColor: "var(--surface-2)",
   },
   sectionHeader: {
     padding: "16px",

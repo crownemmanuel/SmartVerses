@@ -1,12 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { FaDesktop, FaCheck, FaTimes, FaSpinner } from "react-icons/fa";
 import {
-  getLocalIp,
-  getLiveSlidesServerInfo,
   loadLiveSlidesSettings,
   saveLiveSlidesSettings,
-  startLiveSlidesServer,
-  stopLiveSlidesServer,
 } from "../services/liveSlideService";
 import {
   DEFAULT_LIVE_SLIDES_SETTINGS,
@@ -25,10 +21,6 @@ const LiveSlidesSettings: React.FC = () => {
   const [settings, setSettings] = useState<LiveSlidesSettingsType>(
     DEFAULT_LIVE_SLIDES_SETTINGS
   );
-  const [localIp, setLocalIp] = useState<string>("Loading...");
-  const [serverRunning, setServerRunning] = useState<boolean>(false);
-  const [serverStatusText, setServerStatusText] = useState<string>("");
-  const [isTogglingServer, setIsTogglingServer] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{
     text: string;
     type: "success" | "error" | "";
@@ -55,12 +47,6 @@ const LiveSlidesSettings: React.FC = () => {
     setSettings(loaded);
     setProPresenterRules(loaded.proPresenterActivationRules || []);
     setSettingsLoaded(true);
-
-    getLocalIp()
-      .then((ip) => setLocalIp(ip))
-      .catch(() => setLocalIp("Unable to determine"));
-
-    refreshServerStatus();
 
     const connections = getEnabledConnections();
     setEnabledConnections(connections);
@@ -150,19 +136,6 @@ const LiveSlidesSettings: React.FC = () => {
     { delayMs: 600, enabled: settingsLoaded, skipFirstRun: true }
   );
 
-  const refreshServerStatus = async () => {
-    try {
-      const info = await getLiveSlidesServerInfo();
-      setServerRunning(info.server_running);
-      setServerStatusText(
-        info.server_running ? `${info.local_ip}:${info.server_port}` : "Stopped"
-      );
-    } catch {
-      setServerRunning(false);
-      setServerStatusText("Stopped");
-    }
-  };
-
   const handleChange = (
     field: keyof LiveSlidesSettingsType,
     value: string | number | boolean
@@ -171,25 +144,6 @@ const LiveSlidesSettings: React.FC = () => {
       ...prev,
       [field]: value,
     }));
-  };
-
-  const handleToggleServer = async () => {
-    setIsTogglingServer(true);
-    setSaveMessage({ text: "", type: "" });
-    try {
-      if (serverRunning) {
-        await stopLiveSlidesServer();
-      } else {
-        await startLiveSlidesServer(settings.serverPort);
-      }
-      await refreshServerStatus();
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      setSaveMessage({ text: `Server action failed: ${msg}`, type: "error" });
-      setTimeout(() => setSaveMessage({ text: "", type: "" }), 5000);
-    } finally {
-      setIsTogglingServer(false);
-    }
   };
 
   const handleGetSlideForRule = async (ruleId: string) => {
@@ -253,206 +207,6 @@ const LiveSlidesSettings: React.FC = () => {
     <div style={{ maxWidth: "800px" }}>
       <h2 style={{ marginBottom: "var(--spacing-4)" }}>Live Slides Settings</h2>
 
-      {/* Web Server Settings Section */}
-      <div
-        style={{
-          marginBottom: "var(--spacing-5)",
-          padding: "var(--spacing-4)",
-          backgroundColor: "var(--app-header-bg)",
-          borderRadius: "12px",
-          border: "1px solid var(--app-border-color)",
-        }}
-      >
-        <h3
-          style={{
-            marginTop: 0,
-            marginBottom: "var(--spacing-4)",
-            fontSize: "1.25rem",
-            fontWeight: 600,
-          }}
-        >
-          Web Server Settings
-        </h3>
-
-        {/* Network Information */}
-        <div style={{ marginBottom: "var(--spacing-4)" }}>
-          <h4 style={{ marginBottom: "var(--spacing-2)", fontSize: "1rem" }}>
-            Network Information
-          </h4>
-          <div
-            style={{
-              padding: "var(--spacing-3)",
-              backgroundColor: "var(--app-input-bg-color)",
-              borderRadius: "8px",
-              border: "1px solid var(--app-border-color)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontWeight: 500 }}>Local IP Address:</span>
-              <span
-                style={{
-                  fontFamily: "monospace",
-                  padding: "4px 12px",
-                  backgroundColor: "var(--app-bg-color)",
-                  borderRadius: "4px",
-                }}
-              >
-                {localIp}
-              </span>
-            </div>
-            <p
-              style={{
-                margin: "var(--spacing-2) 0 0 0",
-                fontSize: "0.85em",
-                color: "var(--app-text-color-secondary)",
-              }}
-            >
-              Other devices on your local network can connect using this IP
-              address.
-            </p>
-          </div>
-        </div>
-
-        {/* Server Control */}
-        <div style={{ marginBottom: "var(--spacing-4)" }}>
-          <h4 style={{ marginBottom: "var(--spacing-2)", fontSize: "1rem" }}>
-            Server Status
-          </h4>
-          <div
-            style={{
-              padding: "var(--spacing-3)",
-              backgroundColor: "var(--app-input-bg-color)",
-              borderRadius: "8px",
-              border: "1px solid var(--app-border-color)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "var(--spacing-3)",
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: "4px" }}>
-                Status:{" "}
-                <span style={{ color: serverRunning ? "#22c55e" : "#9ca3af" }}>
-                  {serverRunning ? "Running" : "Stopped"}
-                </span>
-              </div>
-              <div
-                style={{
-                  fontSize: "0.9em",
-                  color: "var(--app-text-color-secondary)",
-                }}
-              >
-                {serverStatusText}
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
-              <button
-                onClick={handleToggleServer}
-                disabled={isTogglingServer}
-                className={serverRunning ? "secondary" : "primary"}
-                style={{ minWidth: "140px" }}
-              >
-                {serverRunning
-                  ? isTogglingServer
-                    ? "Stopping..."
-                    : "Stop Server"
-                  : isTogglingServer
-                  ? "Starting..."
-                  : "Start Server"}
-              </button>
-              <button
-                onClick={refreshServerStatus}
-                disabled={isTogglingServer}
-                className="secondary"
-              >
-                Refresh
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Server Configuration */}
-        <div>
-          <h4 style={{ marginBottom: "var(--spacing-2)", fontSize: "1rem" }}>
-            Server Configuration
-          </h4>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--spacing-3)",
-            }}
-          >
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  marginBottom: "var(--spacing-1)",
-                  fontWeight: 500,
-                }}
-              >
-                Server Port
-              </label>
-              <input
-                type="number"
-                value={settings.serverPort}
-                onChange={(e) =>
-                  handleChange("serverPort", parseInt(e.target.value, 10) || 9876)
-                }
-                min={1024}
-                max={65535}
-                style={{ width: "150px", padding: "var(--spacing-2)" }}
-              />
-              <p
-                style={{
-                  marginTop: "var(--spacing-1)",
-                  fontSize: "0.85em",
-                  color: "var(--app-text-color-secondary)",
-                }}
-              >
-                Port for the web server (default: 9876). Must be between 1024
-                and 65535. This server handles both HTTP and WebSocket
-                connections.
-              </p>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--spacing-2)",
-                padding: "var(--spacing-3)",
-                backgroundColor: "var(--app-bg-color)",
-                borderRadius: "8px",
-              }}
-            >
-              <input
-                type="checkbox"
-                id="autoStartServer"
-                checked={settings.autoStartServer}
-                onChange={(e) =>
-                  handleChange("autoStartServer", e.target.checked)
-                }
-                style={{ width: "auto", margin: 0 }}
-              />
-              <label
-                htmlFor="autoStartServer"
-                style={{ margin: 0, cursor: "pointer", fontWeight: 500 }}
-              >
-                Auto-start server when app opens
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Live Slides Output Section */}
       <div
         style={{
@@ -510,7 +264,7 @@ const LiveSlidesSettings: React.FC = () => {
                 type="text"
                 value={settings.outputPath}
                 onChange={(e) => handleChange("outputPath", e.target.value)}
-                placeholder="/tmp/proassist/live_slides/"
+                placeholder="~/Documents/ProAssist/Templates/live slides"
                 style={{ width: "100%", padding: "var(--spacing-2)" }}
               />
               <p

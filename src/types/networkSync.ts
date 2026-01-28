@@ -22,6 +22,7 @@ export interface NetworkSyncSettings {
   syncSchedule: boolean;
   autoConnect: boolean;
   followMasterTimer: boolean; // When true, run local automations when master starts a session
+  apiEnabled: boolean; // Enable HTTP API v1 (Live Slides server)
 }
 
 export const DEFAULT_NETWORK_SYNC_SETTINGS: NetworkSyncSettings = {
@@ -33,6 +34,7 @@ export const DEFAULT_NETWORK_SYNC_SETTINGS: NetworkSyncSettings = {
   syncSchedule: true,
   autoConnect: false,
   followMasterTimer: false,
+  apiEnabled: false,
 };
 
 // ============================================================================

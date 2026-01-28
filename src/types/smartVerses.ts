@@ -8,7 +8,7 @@
 // TRANSCRIPTION TYPES
 // =============================================================================
 
-export type TranscriptionEngine = 'assemblyai' | 'elevenlabs' | 'whisper';
+export type TranscriptionEngine = 'assemblyai' | 'elevenlabs' | 'whisper' | 'groq' | 'offline-whisper' | 'offline-moonshine';
 
 export type AudioCaptureMode = 'webrtc' | 'native';
 
@@ -26,12 +26,20 @@ export interface TranscriptionSegment {
   isFinal: boolean;
 }
 
+export interface ModelLoadingProgress {
+  stage: string; // e.g., "Loading tokenizer...", "Loading model...", "Warming up model..."
+  progress: number; // 0-100
+  file?: string; // Current file being loaded
+}
+
 export interface TranscriptionCallbacks {
   onInterimTranscript?: (text: string) => void;
   onFinalTranscript?: (text: string, segment: TranscriptionSegment) => void;
   onError?: (error: Error) => void;
   onConnectionClose?: (code: number, reason: string) => void;
   onStatusChange?: (status: TranscriptionStatus) => void;
+  onAudioLevel?: (level: number) => void;
+  onModelLoadingProgress?: (progress: ModelLoadingProgress) => void;
 }
 
 export type TranscriptionStatus = 'idle' | 'connecting' | 'recording' | 'error' | 'waiting_for_browser';
@@ -105,6 +113,8 @@ export interface DetectedBibleReference {
   verse?: number;
   // Navigation tracking - true if this verse was loaded via prev/next navigation
   isNavigationResult?: boolean;
+  // Highlight words from AI search
+  highlight?: string[];     // Words to highlight in the verse text
 }
 
 // =============================================================================
@@ -140,10 +150,90 @@ export interface SmartVersesChatMessage {
 // SETTINGS TYPES
 // =============================================================================
 
+// =============================================================================
+// OFFLINE MODEL TYPES
+// =============================================================================
+
+export type OfflineModelType = 'whisper' | 'moonshine';
+
+export interface OfflineModelInfo {
+  id: string;
+  name: string;
+  type: OfflineModelType;
+  modelId: string; // HuggingFace model ID (e.g., 'onnx-community/whisper-base')
+  size: string; // Human-readable size (e.g., '~150MB')
+  description: string;
+  isDownloaded: boolean;
+  downloadProgress?: number; // 0-100
+  isDownloading?: boolean;
+  supportsWebGPU: boolean;
+  supportsWASM: boolean;
+}
+
+export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
+  {
+    id: 'whisper-tiny-en',
+    name: 'Whisper Tiny (English)',
+    type: 'whisper',
+    modelId: 'onnx-community/whisper-tiny.en',
+    size: '~40MB',
+    description: 'Fastest, English only, lowest accuracy',
+    isDownloaded: false,
+    supportsWebGPU: true,
+    supportsWASM: true,
+  },
+  {
+    id: 'whisper-base',
+    name: 'Whisper Base',
+    type: 'whisper',
+    modelId: 'onnx-community/whisper-base',
+    size: '~150MB',
+    description: 'Good balance of speed and accuracy, multilingual',
+    isDownloaded: false,
+    supportsWebGPU: true,
+    supportsWASM: true,
+  },
+  {
+    id: 'whisper-small',
+    name: 'Whisper Small',
+    type: 'whisper',
+    modelId: 'onnx-community/whisper-small',
+    size: '~500MB',
+    description: 'Better accuracy, slower, multilingual',
+    isDownloaded: false,
+    supportsWebGPU: true,
+    supportsWASM: true,
+  },
+  {
+    id: 'moonshine-base',
+    name: 'Moonshine Base',
+    type: 'moonshine',
+    modelId: 'onnx-community/moonshine-base-ONNX',
+    size: '~200MB',
+    description: 'Fast and accurate, optimized for real-time use',
+    isDownloaded: false,
+    supportsWebGPU: true,
+    supportsWASM: true,
+  },
+  {
+    id: 'moonshine-tiny',
+    name: 'Moonshine Tiny',
+    type: 'moonshine',
+    modelId: 'onnx-community/moonshine-tiny-ONNX',
+    size: '~50MB',
+    description: 'Fastest Moonshine model, good for low-powered devices',
+    isDownloaded: false,
+    supportsWebGPU: true,
+    supportsWASM: true,
+  },
+];
+
 export interface SmartVersesSettings {
   // Transcription settings
   transcriptionEngine: TranscriptionEngine;
   assemblyAIApiKey?: string;
+  groqApiKey?: string;
+  groqModel?: string;
   selectedMicrophoneId?: string;
   audioCaptureMode?: AudioCaptureMode;
   selectedNativeMicrophoneId?: string;
@@ -152,6 +242,12 @@ export interface SmartVersesSettings {
   remoteTranscriptionEnabled?: boolean;
   remoteTranscriptionHost?: string;
   remoteTranscriptionPort?: number;
+  transcriptionTimeLimitMinutes?: number; // Auto-stop prompt threshold (default: 120)
+  
+  // Offline transcription settings
+  offlineWhisperModel?: string; // Model ID for offline Whisper
+  offlineMoonshineModel?: string; // Model ID for offline Moonshine
+  offlineLanguage?: string; // Language code for offline transcription (e.g., 'en')
   
   // AI Search settings
   enableAISearch: boolean;
@@ -163,6 +259,7 @@ export interface SmartVersesSettings {
   enableKeyPointExtraction: boolean;
   keyPointExtractionInstructions?: string;
   paraphraseConfidenceThreshold: number; // Default 0.6
+  aiMinWordCount: number; // Default 6
   
   // Display settings
   autoAddDetectedToHistory: boolean; // Add detected refs from transcription to chat history
@@ -199,6 +296,10 @@ export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
   remoteTranscriptionEnabled: false,
   remoteTranscriptionHost: "",
   remoteTranscriptionPort: 9876,
+  transcriptionTimeLimitMinutes: 120,
+  offlineWhisperModel: 'onnx-community/whisper-base',
+  offlineMoonshineModel: 'onnx-community/moonshine-base-ONNX',
+  offlineLanguage: 'en',
   enableAISearch: false, // Off by default - uses text search instead
   bibleSearchProvider: 'groq',
   bibleSearchModel: 'llama-3.3-70b-versatile',
@@ -207,6 +308,7 @@ export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
   keyPointExtractionInstructions:
     "Extract 1–2 concise, quotable key points suitable for slides/lower-thirds. Prefer short sentences, avoid filler, keep the original voice, and skip vague statements.",
   paraphraseConfidenceThreshold: 0.6,
+  aiMinWordCount: 6,
   autoAddDetectedToHistory: false,
   highlightDirectReferences: true,
   highlightParaphrasedReferences: true,

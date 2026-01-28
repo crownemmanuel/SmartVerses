@@ -5,6 +5,8 @@ import {
   getCurrentSlideIndex,
 } from "../services/propresenterService";
 import { ProPresenterActivationConfig, ProPresenterConnection } from "../types/propresenter";
+import { GlobalTemplate } from "../types/globalChat";
+import { loadGlobalTemplates, globalTemplateToActivation } from "../utils/globalTemplates";
 import "../App.css";
 
 interface ActivatePresentationModalProps {
@@ -39,7 +41,12 @@ const ActivatePresentationModal: React.FC<ActivatePresentationModalProps> = ({
   const [enabledConnections, setEnabledConnections] = useState<ProPresenterConnection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>("");
 
-  // Load enabled connections when modal opens
+  // Global templates
+  const [globalTemplates, setGlobalTemplates] = useState<GlobalTemplate[]>([]);
+  const [selectedGlobalTemplateId, setSelectedGlobalTemplateId] = useState<string>("");
+  const [selectionMode, setSelectionMode] = useState<"global" | "manual">("global");
+
+  // Load enabled connections and global templates when modal opens
   useEffect(() => {
     if (isOpen) {
       const connections = getEnabledConnections();
@@ -48,8 +55,54 @@ const ActivatePresentationModal: React.FC<ActivatePresentationModalProps> = ({
       if (connections.length > 0 && !selectedConnectionId) {
         setSelectedConnectionId(connections[0].id);
       }
+
+      // Load global templates
+      const templates = loadGlobalTemplates();
+      setGlobalTemplates(templates);
+      
+      // If global templates exist, default to global mode; otherwise manual
+      if (templates.length > 0) {
+        setSelectionMode("global");
+        // Auto-select first template and set config
+        const firstTemplate = templates[0];
+        setSelectedGlobalTemplateId(firstTemplate.id);
+        // Also set the savedConfig so Save button appears
+        const activation = globalTemplateToActivation(firstTemplate);
+        setSavedConfig({
+          presentationUuid: activation.presentationUuid,
+          slideIndex: activation.slideIndex,
+          presentationName: activation.presentationName,
+          activationClicks: activation.activationClicks,
+          takeOffClicks: activation.takeOffClicks,
+        });
+        setActivationClicks(activation.activationClicks ?? 1);
+        setTakeOffClicks(activation.takeOffClicks ?? 0);
+      } else {
+        setSelectionMode("manual");
+      }
     }
   }, [isOpen]);
+
+  // Handle global template selection
+  const handleGlobalTemplateSelect = (templateId: string) => {
+    setSelectedGlobalTemplateId(templateId);
+    const template = globalTemplates.find(t => t.id === templateId);
+    if (template) {
+      const activation = globalTemplateToActivation(template);
+      const config: ProPresenterActivationConfig = {
+        presentationUuid: activation.presentationUuid,
+        slideIndex: activation.slideIndex,
+        presentationName: activation.presentationName,
+        activationClicks: activation.activationClicks,
+        takeOffClicks: activation.takeOffClicks,
+      };
+      setSavedConfig(config);
+      setActivationClicks(activation.activationClicks ?? 1);
+      setTakeOffClicks(activation.takeOffClicks ?? 0);
+      setSuccess(true);
+      setError(null);
+    }
+  };
 
   // Reset savedConfig when currentConfig changes
   useEffect(() => {
@@ -136,30 +189,187 @@ const ActivatePresentationModal: React.FC<ActivatePresentationModalProps> = ({
           {title}
         </h2>
 
-        <div
-          style={{
-            marginBottom: "20px",
-            padding: "12px",
-            backgroundColor: "var(--app-header-bg)",
-            borderRadius: "8px",
-            border: "1px solid var(--app-border-color)",
-          }}
-        >
-          <p style={{ margin: "0 0 12px 0", color: "var(--app-text-color)" }}>
-            <strong>Instructions:</strong>
-          </p>
-          <ol
+        {/* Selection Mode Tabs */}
+        {globalTemplates.length > 0 && (
+          <div
             style={{
-              margin: "0",
-              paddingLeft: "20px",
-              color: "var(--app-text-color-secondary)",
+              display: "flex",
+              gap: "0",
+              marginBottom: "16px",
+              borderRadius: "8px",
+              overflow: "hidden",
+              border: "1px solid var(--app-border-color)",
             }}
           >
-            <li>Go to ProPresenter and put the slide you want to activate live</li>
-            <li>Click the button below to read the current slide information</li>
-            <li>Save the configuration</li>
-          </ol>
-        </div>
+            <button
+              onClick={() => {
+                setSelectionMode("global");
+                // Re-apply the selected global template's config
+                if (selectedGlobalTemplateId) {
+                  const template = globalTemplates.find(t => t.id === selectedGlobalTemplateId);
+                  if (template) {
+                    const activation = globalTemplateToActivation(template);
+                    setSavedConfig({
+                      presentationUuid: activation.presentationUuid,
+                      slideIndex: activation.slideIndex,
+                      presentationName: activation.presentationName,
+                      activationClicks: activation.activationClicks,
+                      takeOffClicks: activation.takeOffClicks,
+                    });
+                    setActivationClicks(activation.activationClicks ?? 1);
+                    setTakeOffClicks(activation.takeOffClicks ?? 0);
+                    setSuccess(true);
+                  }
+                }
+              }}
+              style={{
+                flex: 1,
+                padding: "10px 16px",
+                border: "none",
+                backgroundColor: selectionMode === "global" 
+                  ? "var(--success)" 
+                  : "var(--app-header-bg)",
+                color: selectionMode === "global" 
+                  ? "white" 
+                  : "var(--app-text-color-secondary)",
+                cursor: "pointer",
+                fontSize: "0.9em",
+                fontWeight: selectionMode === "global" ? 600 : 400,
+                transition: "all 0.2s",
+              }}
+            >
+              Use Global Template
+            </button>
+            <button
+              onClick={() => {
+                setSelectionMode("manual");
+                setSuccess(false);
+                setSavedConfig(currentConfig || null);
+                setActivationClicks(currentConfig?.activationClicks ?? 1);
+                setTakeOffClicks(currentConfig?.takeOffClicks ?? 0);
+              }}
+              style={{
+                flex: 1,
+                padding: "10px 16px",
+                border: "none",
+                borderLeft: "1px solid var(--app-border-color)",
+                backgroundColor: selectionMode === "manual" 
+                  ? "var(--primary-color)" 
+                  : "var(--app-header-bg)",
+                color: selectionMode === "manual" 
+                  ? "white" 
+                  : "var(--app-text-color-secondary)",
+                cursor: "pointer",
+                fontSize: "0.9em",
+                fontWeight: selectionMode === "manual" ? 600 : 400,
+                transition: "all 0.2s",
+              }}
+            >
+              Get from ProPresenter
+            </button>
+          </div>
+        )}
+
+        {/* Global Template Selection */}
+        {selectionMode === "global" && globalTemplates.length > 0 && (
+          <div
+            style={{
+              marginBottom: "16px",
+              padding: "12px",
+              backgroundColor: "rgba(16, 185, 129, 0.05)",
+              borderRadius: "8px",
+              border: "1px solid rgba(16, 185, 129, 0.2)",
+            }}
+          >
+            <label
+              style={{
+                fontSize: "0.85em",
+                display: "block",
+                marginBottom: "8px",
+                color: "var(--app-text-color)",
+                fontWeight: 600,
+              }}
+            >
+              Select a Global Template:
+            </label>
+            <select
+              value={selectedGlobalTemplateId}
+              onChange={(e) => handleGlobalTemplateSelect(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                fontSize: "0.9em",
+                backgroundColor: "var(--app-input-bg-color)",
+                color: "var(--app-input-text-color)",
+                border: "1px solid var(--app-border-color)",
+                borderRadius: "6px",
+                cursor: "pointer",
+              }}
+            >
+              {globalTemplates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                  {template.description ? ` — ${template.description}` : ""}
+                </option>
+              ))}
+            </select>
+            {selectedGlobalTemplateId && (
+              <div style={{ 
+                marginTop: "10px", 
+                fontSize: "0.8em", 
+                color: "var(--app-text-color-secondary)",
+                padding: "8px",
+                backgroundColor: "rgba(0, 0, 0, 0.2)",
+                borderRadius: "4px",
+              }}>
+                {(() => {
+                  const template = globalTemplates.find(t => t.id === selectedGlobalTemplateId);
+                  if (!template) return null;
+                  return (
+                    <>
+                      <div><strong>Presentation:</strong> {template.presentationName || template.presentationUuid}</div>
+                      <div><strong>Slide:</strong> {template.slideIndex}</div>
+                      {template.activationClicks && template.activationClicks > 1 && (
+                        <div><strong>Go Live Clicks:</strong> {template.activationClicks}</div>
+                      )}
+                      {template.takeOffClicks && template.takeOffClicks > 0 && (
+                        <div><strong>Take Off Clicks:</strong> {template.takeOffClicks}</div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Manual Instructions - Only show in manual mode or if no global templates */}
+        {(selectionMode === "manual" || globalTemplates.length === 0) && (
+          <div
+            style={{
+              marginBottom: "20px",
+              padding: "12px",
+              backgroundColor: "var(--app-header-bg)",
+              borderRadius: "8px",
+              border: "1px solid var(--app-border-color)",
+            }}
+          >
+            <p style={{ margin: "0 0 12px 0", color: "var(--app-text-color)" }}>
+              <strong>Instructions:</strong>
+            </p>
+            <ol
+              style={{
+                margin: "0",
+                paddingLeft: "20px",
+                color: "var(--app-text-color-secondary)",
+              }}
+            >
+              <li>Go to ProPresenter and put the slide you want to activate live</li>
+              <li>Click the button below to read the current slide information</li>
+              <li>Save the configuration</li>
+            </ol>
+          </div>
+        )}
 
         {error && (
           <div
@@ -286,8 +496,8 @@ const ActivatePresentationModal: React.FC<ActivatePresentationModalProps> = ({
           </div>
         )}
 
-        {/* ProPresenter Connection Selector */}
-        {enabledConnections.length > 0 && (
+        {/* ProPresenter Connection Selector - Only in manual mode */}
+        {(selectionMode === "manual" || globalTemplates.length === 0) && enabledConnections.length > 0 && (
           <div
             style={{
               marginBottom: "12px",
@@ -356,24 +566,27 @@ const ActivatePresentationModal: React.FC<ActivatePresentationModalProps> = ({
             <FaTimes />
             Cancel
           </button>
-          <button
-            onClick={handleGetSlide}
-            disabled={isLoading || enabledConnections.length === 0}
-            className="secondary"
-            style={{ minWidth: "140px" }}
-          >
-            {isLoading ? (
-              <>
-                <FaSpinner style={{ animation: "spin 1s linear infinite" }} />
-                Reading...
-              </>
-            ) : (
-              <>
-                <FaDesktop />
-                Get Slide
-              </>
-            )}
-          </button>
+          {/* Get Slide button - only in manual mode */}
+          {(selectionMode === "manual" || globalTemplates.length === 0) && (
+            <button
+              onClick={handleGetSlide}
+              disabled={isLoading || enabledConnections.length === 0}
+              className="secondary"
+              style={{ minWidth: "140px" }}
+            >
+              {isLoading ? (
+                <>
+                  <FaSpinner style={{ animation: "spin 1s linear infinite" }} />
+                  Reading...
+                </>
+              ) : (
+                <>
+                  <FaDesktop />
+                  Get Slide
+                </>
+              )}
+            </button>
+          )}
           {savedConfig && (
             <button onClick={handleSave} className="primary">
               <FaCheck />

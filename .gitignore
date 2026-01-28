@@ -6,9 +6,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
+.cache
 node_modules
 dist
+devdata
 files
 dist-ssr
 *.local
@@ -27,3 +28,7 @@ tools/scripture-eval/output
 *.njsproj
 *.sln
 *.sw?
+
+# Development data and cache
+.cache/
+devdata/

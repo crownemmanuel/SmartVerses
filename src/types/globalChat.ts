@@ -57,6 +57,29 @@ export interface ProPresenterAITemplate {
 }
 
 // ============================================
+// Global Templates (Reusable ProPresenter Activations)
+// ============================================
+
+/**
+ * Global Template - A reusable ProPresenter activation configuration
+ * that can be selected from a dropdown anywhere ProPresenter triggers are used.
+ * This saves users from repeatedly configuring the same presentation/slide.
+ */
+export interface GlobalTemplate {
+  id: string;
+  name: string; // User-friendly name (e.g., "Main Lower Third", "Prayer Overlay")
+  description?: string; // Optional description for clarity
+  presentationUuid: string; // ProPresenter presentation UUID
+  presentationName?: string; // Human-readable presentation name (cached from ProPresenter)
+  slideIndex: number; // Slide index within the presentation
+  activationClicks?: number; // Number of times to trigger on "Go Live" (default: 1)
+  takeOffClicks?: number; // Number of times to trigger on "Take Off" (default: 0 = don't trigger)
+  connectionIds?: string[]; // Specific ProPresenter connection IDs (empty = all enabled)
+  createdAt: number; // Timestamp for sorting/display
+  updatedAt: number; // Timestamp for tracking changes
+}
+
+// ============================================
 // AI Context Types
 // ============================================
 

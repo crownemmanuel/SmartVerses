@@ -11,7 +11,9 @@ import {
   generateUUID,
 } from "../services/propresenterService";
 import ProPresenterAITemplatesSettings from "./ProPresenterAITemplatesSettings";
+import GlobalTemplatesSettings from "./GlobalTemplatesSettings";
 import { loadProPresenterAITemplates } from "../utils/proPresenterAITemplates";
+import { loadGlobalTemplates } from "../utils/globalTemplates";
 import "../App.css";
 
 interface ConnectionStatus {
@@ -24,13 +26,18 @@ const ProPresenterSettings: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>({});
   const [isAITemplatesExpanded, setIsAITemplatesExpanded] = useState(true);
+  const [isGlobalTemplatesExpanded, setIsGlobalTemplatesExpanded] = useState(true);
   const [aiTemplatesCount, setAiTemplatesCount] = useState(0);
+  const [globalTemplatesCount, setGlobalTemplatesCount] = useState(0);
 
   useEffect(() => {
     setConnections(loadProPresenterConnections());
     // Load AI templates count for display
-    const templates = loadProPresenterAITemplates();
-    setAiTemplatesCount(templates.length);
+    const aiTemplates = loadProPresenterAITemplates();
+    setAiTemplatesCount(aiTemplates.length);
+    // Load global templates count for display
+    const globalTemplates = loadGlobalTemplates();
+    setGlobalTemplatesCount(globalTemplates.length);
   }, []);
 
   const handleAddConnection = () => {
@@ -392,6 +399,60 @@ const ProPresenterSettings: React.FC = () => {
             </p>
             <ProPresenterAITemplatesSettings 
               onTemplatesChange={(templates) => setAiTemplatesCount(templates.length)}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Global Templates Section */}
+      <div style={{
+        marginTop: "var(--spacing-4)",
+        padding: "var(--spacing-4)",
+        backgroundColor: "var(--app-header-bg)",
+        borderRadius: "12px",
+        border: "1px solid var(--app-border-color)",
+      }}>
+        <div 
+          onClick={() => setIsGlobalTemplatesExpanded(!isGlobalTemplatesExpanded)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
+            {isGlobalTemplatesExpanded ? <FaChevronDown size={12} /> : <FaChevronRight size={12} />}
+            <h2 style={{ margin: 0, fontSize: "1.1rem" }}>
+              Global Templates
+            </h2>
+            <span style={{
+              padding: "2px 8px",
+              borderRadius: "12px",
+              fontSize: "0.75rem",
+              fontWeight: 500,
+              backgroundColor: globalTemplatesCount > 0 ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.1)",
+              color: globalTemplatesCount > 0 ? "rgb(16, 185, 129)" : "var(--app-text-color-secondary)",
+            }}>
+              ({globalTemplatesCount})
+            </span>
+          </div>
+        </div>
+        
+        {isGlobalTemplatesExpanded && (
+          <div style={{ marginTop: "var(--spacing-4)" }}>
+            <p style={{ 
+              margin: 0, 
+              marginBottom: "var(--spacing-4)",
+              fontSize: "0.875rem", 
+              color: "var(--app-text-color-secondary)" 
+            }}>
+              Reusable ProPresenter activations. Create once, then select from a dropdown anywhere you need to trigger a slide.
+              This saves you from configuring the same presentation/slide repeatedly across the app.
+            </p>
+            <GlobalTemplatesSettings 
+              onTemplatesChange={(templates) => setGlobalTemplatesCount(templates.length)}
             />
           </div>
         )}

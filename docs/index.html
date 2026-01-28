@@ -237,6 +237,8 @@
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+        display: inline-block;
+        min-height: 1.2em;
       }
 
       .hero p {
@@ -354,6 +356,329 @@
       }
       .mockup-slide:nth-child(4) {
         width: 70%;
+      }
+
+      .smartverses-section-title {
+        text-align: center;
+        margin-bottom: 2rem;
+        font-size: 2.5rem;
+        font-weight: 800;
+        line-height: 1.2;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .smartverses-preview {
+        width: 100%;
+        border-radius: 16px;
+        border: 1px solid var(--border-subtle);
+        box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);
+        background: linear-gradient(
+          180deg,
+          rgba(123, 47, 191, 0.1) 0%,
+          rgba(0, 212, 255, 0.05) 100%
+        );
+        padding: 2rem;
+        backdrop-filter: blur(10px);
+      }
+
+      .onboarding-split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3rem;
+        align-items: center;
+        min-height: 500px;
+      }
+
+      .onboarding-visual {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        background: var(--bg-card);
+        border-radius: 20px;
+        border: 1px solid var(--border-subtle);
+        min-height: 400px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s ease;
+      }
+
+      .onboarding-visual:hover {
+        background: var(--bg-card-hover);
+        border-color: rgba(123, 47, 191, 0.3);
+      }
+
+      .onboarding-visual::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--gradient-primary);
+        opacity: 0.8;
+      }
+
+      .onboarding-content {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .onboarding-title {
+        font-size: 2.5rem;
+        font-weight: 800;
+        line-height: 1.2;
+        margin: 0;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .onboarding-body {
+        font-size: 1.125rem;
+        line-height: 1.7;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+
+      .smartverses-demo {
+        width: 100%;
+        max-width: 600px;
+        height: 100%;
+        min-height: 400px;
+        padding: 16px;
+        background-color: #252526;
+        border-radius: 12px;
+        border: 1px solid #3c3c3c;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .demo-transcript-segment {
+        padding: 12px;
+        border-radius: 10px;
+        background-color: #333333;
+        border: 1px solid #3c3c3c;
+        animation: slideInUp 0.3s ease;
+      }
+
+      @keyframes slideInUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .demo-transcript-text {
+        margin: 0;
+        line-height: 1.6;
+        color: #cccccc;
+        font-size: 0.95rem;
+      }
+
+      .demo-cursor {
+        display: inline-block;
+        width: 2px;
+        margin-left: 2px;
+        animation: blink 1s step-start infinite;
+        color: #00d4ff;
+      }
+
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      .demo-detection-container {
+        margin-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        animation: fadeIn 0.4s ease;
+      }
+
+      .smartverses-demo [hidden] {
+        display: none !important;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .demo-verse-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        cursor: default;
+        transition: all 0.2s ease;
+        animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        border: 1px solid transparent;
+        background-color: transparent;
+        pointer-events: none;
+      }
+
+      .demo-play-icon {
+        width: 12px;
+        height: 12px;
+        display: inline-block;
+      }
+
+      @keyframes scaleIn {
+        from {
+          opacity: 0;
+          transform: scale(0.8);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      .demo-verse-badge.direct {
+        border-color: #22c55e;
+        color: #22c55e;
+      }
+
+      .demo-verse-badge.paraphrase {
+        border-color: #3b82f6;
+        color: #3b82f6;
+      }
+
+      .demo-confidence-badge {
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background-color: rgba(59, 130, 246, 0.15);
+        color: #3b82f6;
+      }
+
+      .demo-verse-card {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background-color: #333333;
+        animation: expandDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        transform-origin: top;
+      }
+
+      @keyframes expandDown {
+        from {
+          opacity: 0;
+          max-height: 0;
+          transform: scaleY(0);
+        }
+        to {
+          opacity: 1;
+          max-height: 500px;
+          transform: scaleY(1);
+        }
+      }
+
+      .demo-verse-card.direct {
+        border: 1px solid #22c55e;
+      }
+
+      .demo-verse-card.paraphrase {
+        border: 1px solid #3b82f6;
+      }
+
+      .demo-verse-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+
+      .demo-verse-reference {
+        font-weight: 800;
+        font-size: 0.9rem;
+      }
+
+      .demo-verse-card.direct .demo-verse-reference {
+        color: #22c55e;
+      }
+
+      .demo-verse-card.paraphrase .demo-verse-reference {
+        color: #3b82f6;
+      }
+
+      .demo-go-live-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 800;
+        background-color: #007acc;
+        color: white;
+        border: none;
+        cursor: default;
+        transition: all 0.2s ease;
+        pointer-events: none;
+      }
+
+      .demo-verse-text {
+        margin: 0;
+        line-height: 1.5;
+        color: #cccccc;
+        font-size: 0.9rem;
+      }
+
+      .demo-matched-phrase {
+        margin: 8px 0 0;
+        font-size: 0.8rem;
+        font-style: italic;
+        color: #999999;
+      }
+
+      @media (max-width: 900px) {
+        .onboarding-split {
+          grid-template-columns: 1fr;
+          gap: 2rem;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .smartverses-section-title {
+          font-size: 2rem;
+        }
+
+        .onboarding-title {
+          font-size: 2rem;
+        }
+
+        .onboarding-body {
+          font-size: 1rem;
+        }
+
+        .onboarding-visual {
+          min-height: 250px;
+          padding: 1.5rem;
+        }
       }
 
       /* Features Section */
@@ -966,22 +1291,14 @@
 
     <!-- Hero Section -->
     <section class="hero">
-      <div class="hero-badge animate-in">
-        <span class="dot"></span>
-        <span>Built for ProPresenter Users</span>
-      </div>
       <h1 class="animate-in delay-1">
-        AI-Powered Automation for
-        <span class="gradient-text">ProPresenter</span>
+        AI-Powered Automation
+        <span class="gradient-text typing-text" id="typingText">for ProPresenter</span>
       </h1>
       <p class="animate-in delay-2">
-        ProAssist is the ultimate automation companion for ProPresenter.
-        Transform raw text into beautifully formatted slides with AI-powered
-        processing, manage schedules and timers with Stage Assist, collaborate
-        in real-time with Live Slides, search and display Bible verses with
-        SmartVerses, record professional video and audio content, and control
-        ProPresenter presentations with advanced automation. All powered by
-        intelligent AI assistants that understand your workflow.
+        ProAssist brings AI and intelligent automation into your media workflow.
+        It is designed to work natively with ProPresenter and can also run as a
+        standalone tool.
       </p>
       <div class="hero-buttons animate-in delay-3">
         <a href="#download" class="btn btn-primary">
@@ -1028,16 +1345,113 @@
         </p>
       </div>
       <div class="hero-image animate-in delay-4">
-        <div class="app-preview">
-          <div class="app-mockup">
-            <div class="app-mockup-content">
-              <div class="app-mockup-sidebar"></div>
-              <div class="app-mockup-main">
-                <div class="mockup-slide"></div>
-                <div class="mockup-slide"></div>
-                <div class="mockup-slide"></div>
-                <div class="mockup-slide"></div>
+        <h2 class="smartverses-section-title">Meet Smart Verses</h2>
+        <div class="smartverses-preview">
+          <div class="onboarding-split">
+            <div class="onboarding-visual smartverses-visual">
+              <div class="smartverses-demo" data-smartverses-demo>
+                <div class="demo-transcript-segment" data-segment="1">
+                  <p class="demo-transcript-text">
+                    <span data-transcript="1"></span>
+                    <span class="demo-cursor" data-cursor="1">|</span>
+                  </p>
+                  <div class="demo-detection-container" data-detection="1" hidden>
+                    <button class="demo-verse-badge direct" type="button">
+                      <svg
+                        class="demo-play-icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M8 5v14l11-7z"
+                          fill="currentColor"
+                        ></path>
+                      </svg>
+                      <span>John 3:16</span>
+                    </button>
+                  </div>
+                  <div class="demo-verse-card direct" data-verse="1" hidden>
+                    <div class="demo-verse-header">
+                      <div class="demo-verse-reference">John 3:16</div>
+                      <button class="demo-go-live-btn" type="button">
+                        <svg
+                          class="demo-play-icon"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M8 5v14l11-7z"
+                            fill="currentColor"
+                          ></path>
+                        </svg>
+                        Go Live
+                      </button>
+                    </div>
+                    <p class="demo-verse-text">
+                      For God so loved the world, that he gave his only
+                      begotten Son, that whosoever believeth in him should not
+                      perish, but have everlasting life.
+                    </p>
+                  </div>
+                </div>
+                <div class="demo-transcript-segment" data-segment="2" hidden>
+                  <p class="demo-transcript-text">
+                    <span data-transcript="2"></span>
+                    <span class="demo-cursor" data-cursor="2">|</span>
+                  </p>
+                  <div class="demo-detection-container" data-detection="2" hidden>
+                    <button class="demo-verse-badge paraphrase" type="button">
+                      <svg
+                        class="demo-play-icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M8 5v14l11-7z"
+                          fill="currentColor"
+                        ></path>
+                      </svg>
+                      <span>John 1:1</span>
+                      <span class="demo-confidence-badge">88%</span>
+                    </button>
+                  </div>
+                  <div class="demo-verse-card paraphrase" data-verse="2" hidden>
+                    <div class="demo-verse-header">
+                      <div class="demo-verse-reference">John 1:1</div>
+                      <button class="demo-go-live-btn" type="button">
+                        <svg
+                          class="demo-play-icon"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M8 5v14l11-7z"
+                            fill="currentColor"
+                          ></path>
+                        </svg>
+                        Go Live
+                      </button>
+                    </div>
+                    <p class="demo-verse-text">
+                      In the beginning was the Word, and the Word was with God,
+                      and the Word was God.
+                    </p>
+                    <p class="demo-matched-phrase">
+                      Matched: "In the beginning was the Word and the Word was
+                      with God"
+                    </p>
+                  </div>
+                </div>
               </div>
+            </div>
+            <div class="onboarding-content smartverses-content">
+              <p class="onboarding-body">
+                Smart Verses listens to your sermon or service in real time.
+                Using AI, it detects scriptures when they are mentioned or
+                paraphrased and can display them live to the audience. It also
+                extracts key points from the sermon that can be displayed live
+                or shared on social media.
+              </p>
             </div>
           </div>
         </div>
@@ -1534,6 +1948,135 @@
           observer.observe(el);
         });
 
+      function startSmartVersesDemo() {
+        const demo = document.querySelector("[data-smartverses-demo]");
+        if (!demo) {
+          return;
+        }
+
+        const transcript1 = demo.querySelector('[data-transcript="1"]');
+        const transcript2 = demo.querySelector('[data-transcript="2"]');
+        const cursor1 = demo.querySelector('[data-cursor="1"]');
+        const cursor2 = demo.querySelector('[data-cursor="2"]');
+        const detection1 = demo.querySelector('[data-detection="1"]');
+        const detection2 = demo.querySelector('[data-detection="2"]');
+        const verse1 = demo.querySelector('[data-verse="1"]');
+        const verse2 = demo.querySelector('[data-verse="2"]');
+        const segment2 = demo.querySelector('[data-segment="2"]');
+
+        const fullText1 =
+          "The Bible says in the book of John chapter 3 verse 16";
+        const fullText2 =
+          "In the beginning was the Word and the Word was with God";
+        const postTypingDelayMs = 1200;
+
+        let timers = [];
+
+        const clearTimers = () => {
+          timers.forEach((timer) => {
+            clearTimeout(timer);
+            clearInterval(timer);
+          });
+          timers = [];
+        };
+
+        const setHidden = (element, hidden) => {
+          if (element) {
+            element.hidden = hidden;
+          }
+        };
+
+        const setCursorVisible = (element, visible) => {
+          if (element) {
+            element.style.display = visible ? "inline-block" : "none";
+          }
+        };
+
+        const typeText = (element, cursor, text, intervalMs, done) => {
+          if (!element) {
+            if (done) {
+              done();
+            }
+            return;
+          }
+          element.textContent = "";
+          const words = text.split(" ");
+          let wordIndex = 0;
+          setCursorVisible(cursor, true);
+
+          const intervalId = setInterval(() => {
+            if (wordIndex < words.length) {
+              element.textContent +=
+                (wordIndex ? " " : "") + words[wordIndex];
+              wordIndex += 1;
+            } else {
+              clearInterval(intervalId);
+              setCursorVisible(cursor, false);
+              if (done) {
+                done();
+              }
+            }
+          }, intervalMs);
+
+          timers.push(intervalId);
+        };
+
+        const reset = () => {
+          clearTimers();
+          if (transcript1) {
+            transcript1.textContent = "";
+          }
+          if (transcript2) {
+            transcript2.textContent = "";
+          }
+          setHidden(detection1, true);
+          setHidden(verse1, true);
+          setHidden(detection2, true);
+          setHidden(verse2, true);
+          setHidden(segment2, true);
+          setCursorVisible(cursor1, false);
+          setCursorVisible(cursor2, false);
+        };
+
+        const runCycle = () => {
+          reset();
+          typeText(transcript1, cursor1, fullText1, 180, () => {
+            timers.push(
+              setTimeout(() => {
+                setHidden(detection1, false);
+                timers.push(
+                  setTimeout(() => {
+                    setHidden(verse1, false);
+                    timers.push(
+                      setTimeout(() => {
+                        setHidden(segment2, false);
+                        typeText(transcript2, cursor2, fullText2, 180, () => {
+                          timers.push(
+                            setTimeout(() => {
+                              setHidden(detection2, false);
+                              timers.push(
+                                setTimeout(() => {
+                                  setHidden(verse2, false);
+                                  timers.push(
+                                    setTimeout(runCycle, 3000)
+                                  );
+                                }, 1000)
+                              );
+                            }, postTypingDelayMs)
+                          );
+                        });
+                      }, 2500)
+                    );
+                  }, 1000)
+                );
+              }, postTypingDelayMs)
+            );
+          });
+        };
+
+        runCycle();
+      }
+
       // macOS Installation Modal
       let macDownloadUrl = null;
       const macInstallModal = document.getElementById("macInstallModal");
@@ -1902,14 +2445,67 @@
         }
       }
 
+      function startTypingAnimation() {
+        const typingElement = document.getElementById("typingText");
+        if (!typingElement) return;
+
+        const texts = ["for ProPresenter", "Or Any Workflow"];
+        let textIndex = 0;
+        let charIndex = 0;
+        let isDeleting = false;
+        let typingSpeed = 100;
+        let deletingSpeed = 50;
+        let pauseTime = 2000;
+        let cursorVisible = true;
+
+        // Blink cursor animation
+        setInterval(() => {
+          cursorVisible = !cursorVisible;
+        }, 500);
+
+        function type() {
+          const currentText = texts[textIndex];
+          let displayText = "";
+          
+          if (isDeleting) {
+            displayText = currentText.substring(0, charIndex - 1);
+            charIndex--;
+            typingSpeed = deletingSpeed;
+          } else {
+            displayText = currentText.substring(0, charIndex + 1);
+            charIndex++;
+            typingSpeed = 100;
+          }
+
+          // Add blinking cursor
+          typingElement.textContent = displayText + (cursorVisible ? "|" : "");
+
+          if (!isDeleting && charIndex === currentText.length) {
+            typingSpeed = pauseTime;
+            isDeleting = true;
+          } else if (isDeleting && charIndex === 0) {
+            isDeleting = false;
+            textIndex = (textIndex + 1) % texts.length;
+            typingSpeed = 500;
+          }
+
+          setTimeout(type, typingSpeed);
+        }
+
+        type();
+      }
+
+      function onReady() {
+        getLatestReleaseDownloads();
+        startSmartVersesDemo();
+        startTypingAnimation();
+      }
+
       // Wait for DOM to be ready, then fetch downloads
       if (document.readyState === "loading") {
-        document.addEventListener(
-          "DOMContentLoaded",
-          getLatestReleaseDownloads
-        );
+        document.addEventListener("DOMContentLoaded", onReady);
       } else {
-        getLatestReleaseDownloads();
+        onReady();
       }
     </script>
   </body>

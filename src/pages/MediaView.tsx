@@ -8,7 +8,9 @@ import {
   subscribeToLiveTestimony,
   subscribeToTestimoniesByDateAndService,
   getServices,
+  isValidFirebaseConfig,
 } from "../services/firebaseService";
+import { sendSlidesToDisplay } from "../services/displayService";
 import { Testimony, LiveTestimony, ServiceType, FirebaseConfig } from "../types/testimonies";
 import { formatNameForCopy } from "../utils/nameUtils";
 import {
@@ -82,17 +84,34 @@ const MediaView: React.FC = () => {
 
   useEffect(() => {
     // Load Firebase config
-    const config = loadFirebaseConfig();
-    if (!config) {
-      setError("Firebase configuration not found. Please configure it in Settings > Live Testimonies.");
+    let config: FirebaseConfig | null = null;
+    try {
+      config = loadFirebaseConfig();
+      if (!config) {
+        setError("Firebase configuration not found. Please configure it in Settings > Live Testimonies.");
+        return;
+      }
+    } catch (err) {
+      console.error("Failed to load Firebase config:", err);
+      setError("Firebase configuration error. Please check your Firebase settings in Settings > Live Testimonies.");
       return;
     }
+
+    // Validate config before using it
+    if (!isValidFirebaseConfig(config)) {
+      setError(
+        "Invalid Firebase configuration. Please check your databaseURL in Settings > Live Testimonies. " +
+        "It should be in the format: https://<YOUR-FIREBASE>.firebaseio.com"
+      );
+      return;
+    }
+
     setFirebaseConfig(config);
 
     // Load services
     const loadServicesData = async () => {
       try {
-        const loadedServices = await getServices(config);
+        const loadedServices = await getServices(config!);
         setServices(loadedServices);
         if (loadedServices.length > 0) {
           // Only set to first service if no service is currently selected or if saved service is not in the list
@@ -105,7 +124,8 @@ const MediaView: React.FC = () => {
         }
       } catch (err) {
         console.error("Failed to load services:", err);
-        setError("Failed to load services. Check your Firebase configuration.");
+        const errorMsg = describeFirebaseError(err);
+        setError(`Failed to load services: ${errorMsg}. Check your Firebase configuration in Settings > Live Testimonies.`);
       }
     };
     loadServicesData();
@@ -113,32 +133,51 @@ const MediaView: React.FC = () => {
     // Load current live testimony
     const loadCurrentLive = async () => {
       try {
-        const live = await getLiveTestimony(config);
+        const live = await getLiveTestimony(config!);
         setCurrentLive(live);
       } catch (err) {
         console.error("Failed to load current live:", err);
+        setError(`Failed to load current live testimony: ${describeFirebaseError(err)}`);
       }
     };
     loadCurrentLive();
 
     // Subscribe to live testimony changes
-    const unsubscribe = subscribeToLiveTestimony(
-      config,
-      (live) => {
-        setCurrentLive(live);
-      },
-      (err) => {
-        // Important: in production, failures here can look like "stuck loading" unless we surface them.
-        setError(`Live Testimony subscription failed: ${describeFirebaseError(err)}`);
-      }
-    );
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = subscribeToLiveTestimony(
+        config!,
+        (live) => {
+          setCurrentLive(live);
+        },
+        (err) => {
+          // Important: in production, failures here can look like "stuck loading" unless we surface them.
+          setError(`Live Testimony subscription failed: ${describeFirebaseError(err)}`);
+        }
+      );
+    } catch (err) {
+      console.error("Failed to initialize Firebase subscriptions:", err);
+      setError(`Firebase initialization failed: ${describeFirebaseError(err)}. Please check your Firebase configuration.`);
+    }
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   // Subscribe to real-time testimonies updates
   useEffect(() => {
     if (!firebaseConfig || !service || !date) return;
+
+    // Validate config again before subscribing
+    if (!isValidFirebaseConfig(firebaseConfig)) {
+      setError(
+        "Invalid Firebase configuration. Please check your databaseURL in Settings > Live Testimonies."
+      );
+      return;
+    }
 
     // Cleanup previous subscription
     if (unsubscribeTestimoniesRef.current) {
@@ -161,25 +200,32 @@ const MediaView: React.FC = () => {
     }, 15000);
 
     // Subscribe to real-time updates
-    const unsubscribe = subscribeToTestimoniesByDateAndService(
-      firebaseConfig,
-      date,
-      service,
-      (updatedTestimonies) => {
-        window.clearTimeout(timeoutId);
-        setTestimonies(updatedTestimonies);
-        setIsLoading(false);
-        setIsSubscribed(true);
-      },
-      (err) => {
-        window.clearTimeout(timeoutId);
-        setIsLoading(false);
-        setIsSubscribed(false);
-        setError(`Testimonies subscription failed: ${describeFirebaseError(err)}`);
-      }
-    );
-
-    unsubscribeTestimoniesRef.current = unsubscribe;
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = subscribeToTestimoniesByDateAndService(
+        firebaseConfig,
+        date,
+        service,
+        (updatedTestimonies) => {
+          window.clearTimeout(timeoutId);
+          setTestimonies(updatedTestimonies);
+          setIsLoading(false);
+          setIsSubscribed(true);
+        },
+        (err) => {
+          window.clearTimeout(timeoutId);
+          setIsLoading(false);
+          setIsSubscribed(false);
+          setError(`Testimonies subscription failed: ${describeFirebaseError(err)}`);
+        }
+      );
+      unsubscribeTestimoniesRef.current = unsubscribe;
+    } catch (err) {
+      window.clearTimeout(timeoutId);
+      setIsLoading(false);
+      setIsSubscribed(false);
+      setError(`Failed to subscribe to testimonies: ${describeFirebaseError(err)}`);
+    }
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -296,6 +342,12 @@ const MediaView: React.FC = () => {
         content: formattedName,
       });
 
+      try {
+        await sendSlidesToDisplay([formattedName]);
+      } catch (error) {
+        console.warn("[Display] Failed to update testimony on audience display:", error);
+      }
+
       // Trigger ProPresenter presentation if configured
       if (settings.proPresenterActivation) {
         const { presentationUuid, slideIndex, activationClicks } = settings.proPresenterActivation;
@@ -389,6 +441,12 @@ const MediaView: React.FC = () => {
           filePath,
           content: "",
         });
+      }
+
+      try {
+        await sendSlidesToDisplay([]);
+      } catch (error) {
+        console.warn("[Display] Failed to clear testimony on audience display:", error);
       }
 
       // Trigger ProPresenter take-off clicks if configured

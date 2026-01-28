@@ -234,7 +234,13 @@ const ProPresenterAITemplatesSettings: React.FC<ProPresenterAITemplatesSettingsP
         {templates.map((template) => (
           <div
             key={template.id}
-            className="p-4 bg-white/5 border border-white/10 rounded-lg"
+            style={{
+              padding: "16px",
+              backgroundColor: "rgba(255, 255, 255, 0.03)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: "10px",
+              marginBottom: "12px",
+            }}
           >
             {isEditing === template.id ? (
               <TemplateForm
@@ -245,35 +251,136 @@ const ProPresenterAITemplatesSettings: React.FC<ProPresenterAITemplatesSettingsP
                 onBrowseFolder={browseForFolder}
               />
             ) : (
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-white">{template.name}</span>
-                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Header row with name and badges */}
+                  <div style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: "10px", 
+                    marginBottom: "8px",
+                    flexWrap: "wrap",
+                  }}>
+                    <span style={{ 
+                      fontWeight: 600, 
+                      fontSize: "1rem",
+                      color: "var(--app-text-color)",
+                    }}>
+                      {template.name}
+                    </span>
+                    <span style={{
+                      padding: "3px 10px",
+                      backgroundColor: "rgba(59, 130, 246, 0.2)",
+                      color: "rgb(147, 197, 253)",
+                      fontSize: "0.7rem",
+                      fontWeight: 500,
+                      borderRadius: "6px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                    }}>
                       {USE_CASE_LABELS[template.useCase]}
                     </span>
-                    <span className="text-white/40 text-xs">
-                      {template.maxLines} lines
+                    <span style={{
+                      padding: "3px 8px",
+                      backgroundColor: "rgba(139, 92, 246, 0.15)",
+                      color: "rgb(196, 181, 253)",
+                      fontSize: "0.7rem",
+                      fontWeight: 500,
+                      borderRadius: "6px",
+                    }}>
+                      {template.maxLines} {template.maxLines === 1 ? "line" : "lines"}
                     </span>
                   </div>
-                  <p className="text-white/60 text-sm mb-2">{template.description}</p>
-                  <div className="text-xs text-white/40 space-y-0.5">
-                    <div>Output: {template.outputPath}{template.outputFileNamePrefix}[1-{template.maxLines}].txt</div>
-                    <div>Presentation: {template.presentationUuid} (slide {template.slideIndex})</div>
+                  
+                  {/* Description */}
+                  {template.description && (
+                    <p style={{ 
+                      margin: "0 0 12px 0", 
+                      color: "rgba(255, 255, 255, 0.6)", 
+                      fontSize: "0.875rem",
+                      lineHeight: 1.4,
+                    }}>
+                      {template.description}
+                    </p>
+                  )}
+                  
+                  {/* Details grid */}
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr",
+                    gap: "6px 12px",
+                    fontSize: "0.8rem",
+                    color: "rgba(255, 255, 255, 0.5)",
+                    backgroundColor: "rgba(0, 0, 0, 0.2)",
+                    padding: "10px 12px",
+                    borderRadius: "6px",
+                  }}>
+                    <span style={{ fontWeight: 500, color: "rgba(255, 255, 255, 0.7)" }}>Output:</span>
+                    <span style={{ 
+                      fontFamily: "monospace", 
+                      fontSize: "0.75rem",
+                      wordBreak: "break-all",
+                    }}>
+                      {template.outputPath}{template.outputFileNamePrefix}[1-{template.maxLines}].txt
+                    </span>
+                    <span style={{ fontWeight: 500, color: "rgba(255, 255, 255, 0.7)" }}>Presentation:</span>
+                    <span style={{ 
+                      fontFamily: "monospace", 
+                      fontSize: "0.75rem",
+                      wordBreak: "break-all",
+                    }}>
+                      {template.presentationUuid} <span style={{ color: "rgba(255, 255, 255, 0.4)" }}>(slide {template.slideIndex})</span>
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
+                
+                {/* Action buttons */}
+                <div style={{ display: "flex", alignItems: "center", gap: "4px", marginLeft: "12px" }}>
                   <button
                     onClick={() => startEditing(template)}
-                    className="p-2 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-colors"
+                    style={{
+                      padding: "8px",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      borderRadius: "6px",
+                      color: "rgba(255, 255, 255, 0.5)",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
+                      e.currentTarget.style.color = "rgba(255, 255, 255, 0.9)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                      e.currentTarget.style.color = "rgba(255, 255, 255, 0.5)";
+                    }}
+                    title="Edit template"
                   >
-                    <PencilIcon className="w-4 h-4" />
+                    <PencilIcon style={{ width: "16px", height: "16px" }} />
                   </button>
                   <button
                     onClick={() => deleteTemplate(template.id)}
-                    className="p-2 hover:bg-red-500/20 rounded-lg text-white/60 hover:text-red-400 transition-colors"
+                    style={{
+                      padding: "8px",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      borderRadius: "6px",
+                      color: "rgba(255, 255, 255, 0.5)",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.2)";
+                      e.currentTarget.style.color = "rgb(248, 113, 113)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                      e.currentTarget.style.color = "rgba(255, 255, 255, 0.5)";
+                    }}
+                    title="Delete template"
                   >
-                    <TrashIcon className="w-4 h-4" />
+                    <TrashIcon style={{ width: "16px", height: "16px" }} />
                   </button>
                 </div>
               </div>

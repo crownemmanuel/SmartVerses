@@ -356,7 +356,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               type="text"
               value={outputPath}
               onChange={(e) => setOutputPath(e.target.value)}
-              placeholder="/tmp/proassist/live_testimony/"
+              placeholder="~/Documents/ProAssist/Templates"
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
             <p style={{ marginTop: "var(--spacing-1)", fontSize: "0.85em", color: "var(--app-text-color-secondary)" }}>

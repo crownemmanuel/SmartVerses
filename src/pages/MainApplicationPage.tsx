@@ -57,6 +57,7 @@ import { useNetworkSync } from "../hooks/useNetworkSync";
 import { loadNetworkSyncSettings } from "../services/networkSyncService";
 import { useStageAssist } from "../contexts/StageAssistContext";
 import AIAutomationDropdown from "../components/AIAutomationDropdown";
+import { sendSlidesToDisplay } from "../services/displayService";
 
 const MainApplicationPage: React.FC = () => {
   // Access schedule from StageAssist context for auto-timer assignment
@@ -98,10 +99,12 @@ const MainApplicationPage: React.FC = () => {
   const [copyStatusMain, setCopyStatusMain] = useState<string>(""); // Added state for feedback
   const [proofreadCorrectedSlideIds, setProofreadCorrectedSlideIds] = useState<
     string[]
-  >([]); // Track slides corrected by AI proofreading
+  >([]);
+  const [windowWidth, setWindowWidth] = useState<number>(window.innerWidth); // Track slides corrected by AI proofreading
   const [typingUrlModal, setTypingUrlModal] = useState<{ url: string } | null>(
     null
   );
+  const [isCreateBlankOpen, setIsCreateBlankOpen] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [renameInitialName, setRenameInitialName] = useState("");
   const [renameTarget, setRenameTarget] = useState<
@@ -212,6 +215,18 @@ const MainApplicationPage: React.FC = () => {
       window.removeEventListener("templates-updated", handleTemplatesUpdated);
     };
   }, [reloadTemplates]);
+
+  // Track window width for responsive UI
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   // Listen for AI-created slides event (from Global AI Chat Assistant)
   useEffect(() => {
@@ -742,12 +757,24 @@ const MainApplicationPage: React.FC = () => {
 
     if (!template) {
       // Live Slides items don't require a template; they use Live Slides settings for output.
-      if (!isLiveSlidesItem) {
+      // Also allow items with ProPresenter activation configured - they can trigger without file output
+      const hasProPresenterActivation = !!(
+        slide.proPresenterActivation ||
+        playlistItem.defaultProPresenterActivation
+      );
+      
+      if (!isLiveSlidesItem && !hasProPresenterActivation) {
         console.error(
           `Template '${playlistItem.templateName}' not found for playlist item '${playlistItem.title}'.`
         );
         alert(`Error: Template definition not found for this item.`);
         return;
+      }
+      
+      if (!isLiveSlidesItem) {
+        console.warn(
+          `Template '${playlistItem.templateName}' not found, but ProPresenter activation is configured. Skipping file output.`
+        );
       }
     }
 
@@ -777,6 +804,13 @@ const MainApplicationPage: React.FC = () => {
     }
 
     const lines = slide.text.split("\n");
+
+    try {
+      await sendSlidesToDisplay(lines);
+    } catch (error) {
+      console.warn("[Display] Failed to update slides on audience display:", error);
+    }
+
     const rawBasePath = isLiveSlidesItem
       ? liveSlidesSettings?.outputPath
       : template?.outputPath;
@@ -784,6 +818,9 @@ const MainApplicationPage: React.FC = () => {
     const prefix = ((isLiveSlidesItem
       ? liveSlidesSettings?.outputFilePrefix
       : template?.outputFileNamePrefix) || "").trim();
+
+    // Check if we have a valid output path for file writing
+    const hasValidOutputPath = basePath && basePath !== "/";
 
     // Check if this is an auto-scripture slide with custom mapping configured
     const isScriptureWithMapping =
@@ -793,7 +830,10 @@ const MainApplicationPage: React.FC = () => {
       template.scriptureTextFileIndex !== undefined;
 
     try {
-      if (isScriptureWithMapping) {
+      // Only write files if we have a valid output path
+      if (!hasValidOutputPath) {
+        console.log("No output path configured - skipping file writing");
+      } else if (isScriptureWithMapping) {
         // For auto-scripture slides with mapping configured:
         // - Write verse text to the designated text file index
         // - Write reference to the designated reference file index
@@ -1090,6 +1130,12 @@ const MainApplicationPage: React.FC = () => {
     if (!template && !isLiveSlidesItem) {
       console.warn("Template not found for take off action");
       return;
+    }
+
+    try {
+      await sendSlidesToDisplay([]);
+    } catch (error) {
+      console.warn("[Display] Failed to clear slides on audience display:", error);
     }
 
     const liveSlidesSettings = isLiveSlidesItem
@@ -1559,6 +1605,56 @@ const MainApplicationPage: React.FC = () => {
       ) {
         broadcastPlaylistItem(selectedPlaylistId, newPlaylistItem, "create");
       }
+    }
+  };
+
+  const handleCreateBlankPresentation = (title: string) => {
+    if (!selectedPlaylistId) {
+      alert("No playlist selected to add the item to.");
+      return;
+    }
+
+    if (templates.length === 0) {
+      alert("No templates available. Please create a template first.");
+      return;
+    }
+
+    const template = templates[0];
+    const defaultLayout = template.availableLayouts[0] || "one-line";
+    const timestamp = Date.now();
+    const blankSlide: Slide = {
+      id: `slide-${timestamp}-0`,
+      text: "",
+      layout: defaultLayout,
+      order: 1,
+    };
+
+    const newPlaylistItem: PlaylistItem = {
+      id: `item-${timestamp}`,
+      title,
+      slides: [blankSlide],
+      templateName: template.name,
+      templateColor: template.color || "#808080",
+      defaultProPresenterActivation: template.proPresenterActivation,
+    };
+
+    setPlaylists((prevPlaylists) =>
+      prevPlaylists.map((p) => {
+        if (p.id === selectedPlaylistId) {
+          return { ...p, items: [...p.items, newPlaylistItem] };
+        }
+        return p;
+      })
+    );
+    setSelectedItemId(newPlaylistItem.id);
+
+    const syncSettings = loadNetworkSyncSettings();
+    if (
+      syncSettings.syncPlaylists &&
+      syncSettings.mode !== "off" &&
+      syncSettings.mode !== "slave"
+    ) {
+      broadcastPlaylistItem(selectedPlaylistId, newPlaylistItem, "create");
     }
   };
 
@@ -2081,7 +2177,7 @@ const MainApplicationPage: React.FC = () => {
     borderRight: "1px solid var(--app-border-color)",
     overflowY: "auto",
     padding: isPlaylistCollapsed ? "var(--spacing-2)" : "var(--spacing-3)",
-    backgroundColor: "#1e1e1e",
+    backgroundColor: "var(--surface-2)",
     transition: "width 0.2s ease",
     display: "flex",
     flexDirection: "column",
@@ -2260,6 +2356,39 @@ const MainApplicationPage: React.FC = () => {
                   <button
                     onClick={() => {
                       setShowImportDropdown(false);
+                      if (currentPlaylist) {
+                        setIsCreateBlankOpen(true);
+                      } else {
+                        alert("Please select a playlist first.");
+                      }
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      width: "100%",
+                      padding: "10px 14px",
+                      backgroundColor: "transparent",
+                      color: "var(--app-text-color)",
+                      border: "none",
+                      borderBottom: "1px solid var(--app-border-color)",
+                      cursor: "pointer",
+                      fontSize: "0.875rem",
+                      textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor =
+                        "var(--app-hover-bg-color)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }}
+                  >
+                    <FaPlus style={{ opacity: 0.7 }} /> Blank Presentation
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowImportDropdown(false);
                       setIsImportFromNetworkOpen(true);
                     }}
                     disabled={!canLoadFromMaster}
@@ -2322,9 +2451,14 @@ const MainApplicationPage: React.FC = () => {
               disabled={!currentPlaylist}
               className="secondary"
               title="Import from Live Slides session"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: windowWidth <= 1000 ? "0" : "6px",
+              }}
             >
               <FaDesktop />
-              Live Slides
+              {windowWidth > 1000 && <span>Live Slides</span>}
             </button>
             <button
               onClick={handleToggleTranscriptionPanel}
@@ -2333,11 +2467,11 @@ const MainApplicationPage: React.FC = () => {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "6px",
+                gap: windowWidth <= 1000 ? "0" : "6px",
               }}
             >
               <FaMicrophone />
-              Live Transcription
+              {windowWidth > 1000 && <span>Live Transcription</span>}
             </button>
             <button
               onClick={() => {
@@ -3140,6 +3274,13 @@ const MainApplicationPage: React.FC = () => {
         title={
           renameTarget?.type === "item" ? "Rename Item" : "Rename Playlist"
         }
+      />
+      <RenameModal
+        isOpen={isCreateBlankOpen}
+        onClose={() => setIsCreateBlankOpen(false)}
+        onRename={handleCreateBlankPresentation}
+        currentName=""
+        title="New Blank Presentation"
       />
       <ConfirmDialog
         isOpen={!!pendingDelete}
