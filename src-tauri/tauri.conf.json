@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' https://*.firebaseio.com https://*.firebaseapp.com https://*.googleapis.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; connect-src 'self' https: http: ws: wss: ipc: ipc://localhost http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://cdn.jsdelivr.net; img-src 'self' data: blob: asset: https://asset.localhost; media-src 'self' asset: https://asset.localhost blob:;"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' https://*.firebaseio.com https://*.firebaseapp.com https://*.googleapis.com https://www.googletagmanager.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; connect-src 'self' https: http: ws: wss: ipc: ipc://localhost http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://cdn.jsdelivr.net https://www.google-analytics.com; img-src 'self' data: blob: asset: https://asset.localhost; media-src 'self' asset: https://asset.localhost blob:;"
     },
     "withGlobalTauri": true
   },
