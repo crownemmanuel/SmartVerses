@@ -10,7 +10,7 @@ import Footer from '../components/sections/Footer.astro';
 
 <Layout title="ProAssist - AI-Powered Automation for ProPresenter">
   <!-- Software Application Schema -->
-  <script type="application/ld+json" slot="head">
+  <script is:inline type="application/ld+json" slot="head">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
@@ -44,7 +44,7 @@ import Footer from '../components/sections/Footer.astro';
   </script>
 
   <!-- Organization Schema -->
-  <script type="application/ld+json" slot="head">
+  <script is:inline type="application/ld+json" slot="head">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
@@ -62,7 +62,7 @@ import Footer from '../components/sections/Footer.astro';
   </script>
 
   <!-- FAQ Schema for AEO -->
-  <script type="application/ld+json" slot="head">
+  <script is:inline type="application/ld+json" slot="head">
     {
       "@context": "https://schema.org",
       "@type": "FAQPage",
@@ -112,7 +112,7 @@ import Footer from '../components/sections/Footer.astro';
   </script>
 
   <!-- HowTo Schema -->
-  <script type="application/ld+json" slot="head">
+  <script is:inline type="application/ld+json" slot="head">
     {
       "@context": "https://schema.org",
       "@type": "HowTo",

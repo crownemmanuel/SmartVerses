@@ -303,10 +303,13 @@
 
     if (!wrapper || !card) return;
 
+    // Store references to avoid null checks in nested functions
+    const wrapperEl = wrapper;
+    const cardEl = card;
     const maxRotation = 15;
 
     function handleMouseMove(e: MouseEvent) {
-      const rect = wrapper.getBoundingClientRect();
+      const rect = wrapperEl.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
 
@@ -319,7 +322,7 @@
       const rotateX = -((e.clientY - centerY) / (rect.height / 2)) * maxRotation;
 
       // Apply transforms to main card
-      card.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg) translateZ(30px) scale(1.02)`;
+      cardEl.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg) translateZ(30px) scale(1.02)`;
 
       // Apply offset transforms to back layers for parallax depth
       if (backLayer) {
@@ -338,7 +341,7 @@
 
     function handleMouseLeave() {
       // Reset to default position with smooth transition
-      card.style.transform = 'rotateY(-5deg) rotateX(2deg) translateZ(0px) scale(1)';
+      cardEl.style.transform = 'rotateY(-5deg) rotateX(2deg) translateZ(0px) scale(1)';
       if (backLayer) {
         backLayer.style.transform = 'translateZ(-80px) translateX(40px) translateY(40px)';
       }
@@ -352,14 +355,14 @@
 
     function handleMouseEnter() {
       // Faster transitions on enter for responsiveness
-      card.style.transition = 'transform 0.1s ease-out';
+      cardEl.style.transition = 'transform 0.1s ease-out';
       if (backLayer) backLayer.style.transition = 'transform 0.1s ease-out';
       if (midLayer) midLayer.style.transition = 'transform 0.1s ease-out';
     }
 
-    wrapper.addEventListener('mousemove', handleMouseMove);
-    wrapper.addEventListener('mouseleave', handleMouseLeave);
-    wrapper.addEventListener('mouseenter', handleMouseEnter);
+    wrapperEl.addEventListener('mousemove', handleMouseMove);
+    wrapperEl.addEventListener('mouseleave', handleMouseLeave);
+    wrapperEl.addEventListener('mouseenter', handleMouseEnter);
 
     // Set initial state
     handleMouseLeave();

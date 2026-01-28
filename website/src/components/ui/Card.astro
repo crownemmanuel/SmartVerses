@@ -2,10 +2,11 @@
 interface Props {
   variant?: 'default' | 'featured' | 'gradient';
   class?: string;
+  style?: string;
   hover?: boolean;
 }
 
-const { variant = 'default', class: className = '', hover = true } = Astro.props;
+const { variant = 'default', class: className = '', style = '', hover = true } = Astro.props;
 
 const baseStyles = 'rounded-2xl p-6 transition-all duration-300 relative overflow-hidden';
 
@@ -20,7 +21,7 @@ const hoverStyles = hover ? 'hover:bg-white/[0.06] hover:-translate-y-1 hover:bo
 const classes = `${baseStyles} ${variants[variant]} ${hoverStyles} ${className}`;
 ---
 
-<div class={classes}>
+<div class={classes} style={style}>
   <!-- Top accent line for default cards -->
   {variant === 'default' && (
     <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-purple-deep to-cyan-bright opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
