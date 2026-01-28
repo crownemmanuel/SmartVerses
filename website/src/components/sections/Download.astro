@@ -9,7 +9,7 @@ const platforms = [
     platform: 'mac',
     gradient: 'from-zinc-500/20 via-zinc-400/10 to-transparent',
     glow: 'group-hover:shadow-zinc-500/25',
-    iconBg: 'bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900'
+    iconBg: 'bg-gradient-to-br from-zinc-100 to-zinc-200'
   },
   {
     icon: 'simple-icons:windows',
@@ -18,7 +18,7 @@ const platforms = [
     platform: 'windows',
     gradient: 'from-blue-500/20 via-cyan-400/10 to-transparent',
     glow: 'group-hover:shadow-blue-500/25',
-    iconBg: 'bg-gradient-to-br from-blue-100 to-cyan-100 dark:from-blue-900/50 dark:to-cyan-900/50'
+    iconBg: 'bg-gradient-to-br from-blue-100 to-cyan-100'
   },
   {
     icon: 'simple-icons:linux',
@@ -27,7 +27,7 @@ const platforms = [
     platform: 'linux',
     gradient: 'from-amber-500/20 via-orange-400/10 to-transparent',
     glow: 'group-hover:shadow-amber-500/25',
-    iconBg: 'bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/50 dark:to-orange-900/50'
+    iconBg: 'bg-gradient-to-br from-amber-100 to-orange-100'
   }
 ];
 ---
@@ -39,7 +39,7 @@ const platforms = [
 
     <div class="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-3">
       {platforms.map((platform) => (
-        <div class={`group relative overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-gradient-to-b from-white to-zinc-50/80 dark:from-zinc-900 dark:to-zinc-950 p-8 text-center transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl ${platform.glow}`}>
+        <div class={`group relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-gradient-to-b from-white to-zinc-50/80 p-8 text-center transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl ${platform.glow}`}>
           <!-- Gradient overlay -->
           <div class={`absolute inset-0 bg-gradient-to-br ${platform.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
 
@@ -52,8 +52,8 @@ const platforms = [
           <div class="relative z-10">
             <!-- Icon container -->
             <div class="flex justify-center mb-5">
-              <div class={`${platform.iconBg} rounded-2xl p-4 shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3`}>
-                <Icon name={platform.icon} class="size-10 text-zinc-800 dark:text-zinc-100" />
+              <div class={`${platform.iconBg} rounded-2xl p-4 shadow-lg ring-1 ring-black/5 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3`}>
+                <Icon name={platform.icon} class="size-10 text-zinc-800" />
               </div>
             </div>
 
@@ -63,7 +63,7 @@ const platforms = [
             <a
               href="#"
               data-platform={platform.platform}
-              class="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-white px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 shadow-lg shadow-zinc-900/20 dark:shadow-white/20 transition-all duration-200 hover:shadow-xl hover:scale-105 active:scale-100"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-zinc-900/20 transition-all duration-200 hover:shadow-xl hover:scale-105 active:scale-100"
             >
               <Icon name="ph:download-simple-bold" class="size-4" />
               <span>Loading...</span>
