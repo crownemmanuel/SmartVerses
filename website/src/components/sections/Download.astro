@@ -1,0 +1,153 @@
+---
+import { Apple, Windows, Linux } from 'lucide-astro';
+
+const platforms = [
+  { icon: Apple, name: 'macOS', subtitle: 'Apple Silicon & Intel', platform: 'mac' },
+  { icon: Windows, name: 'Windows', subtitle: 'Windows 10 & 11', platform: 'windows' },
+  { icon: Linux, name: 'Linux', subtitle: 'AppImage, DEB & RPM', platform: 'linux' }
+];
+---
+
+<section id="download" class="py-16 md:py-32">
+  <div class="mx-auto max-w-5xl px-6 text-center">
+    <h2 class="text-balance text-4xl font-semibold lg:text-5xl">Download ProAssist</h2>
+    <p class="mt-4 text-muted-foreground">Available for macOS, Windows, and Linux. Free and open source.</p>
+
+    <div class="mx-auto mt-12 grid max-w-3xl gap-6 md:grid-cols-3">
+      {platforms.map((platform) => {
+        const IconComponent = platform.icon;
+        return (
+        <div class="group rounded-xl border bg-background p-6 text-center shadow-sm shadow-zinc-950/5 transition-shadow hover:shadow-md">
+          <div class="flex justify-center mb-4 transition-transform group-hover:scale-110">
+            <IconComponent size={48} class="text-foreground" />
+          </div>
+          <h3 class="font-medium">{platform.name}</h3>
+          <p class="text-sm text-muted-foreground mb-4">{platform.subtitle}</p>
+          <a
+            href="#"
+            data-platform={platform.platform}
+            class="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+          >
+            Loading...
+          </a>
+        </div>
+        );
+      })}
+    </div>
+  </div>
+</section>
+
+<!-- macOS Modal -->
+<div id="mac-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+  <div class="bg-background rounded-2xl border p-8 max-w-md w-full shadow-2xl">
+    <div class="flex justify-between items-center mb-6">
+      <h2 class="text-xl font-semibold">macOS Installation</h2>
+      <button id="close-modal" class="p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-accent transition-colors">
+        <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="space-y-4 text-sm text-muted-foreground mb-6">
+      <p><strong class="text-foreground">Note:</strong> This app is not signed with an Apple Developer certificate.</p>
+      <div class="rounded-lg border bg-zinc-50 p-4">
+        <p class="font-medium text-foreground mb-1">Option 1 (Recommended)</p>
+        <p>Right-click the DMG → Open</p>
+      </div>
+      <div class="rounded-lg border bg-zinc-50 p-4">
+        <p class="font-medium text-foreground mb-1">Option 2</p>
+        <code class="block mt-1 text-xs bg-zinc-100 px-2 py-1 rounded">xattr -cr /path/to/proassist.app</code>
+      </div>
+    </div>
+
+    <a
+      id="mac-download-btn"
+      href="#"
+      target="_blank"
+      class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+    >
+      Download DMG
+    </a>
+  </div>
+</div>
+
+<script>
+  let macDownloadUrl: string | null = null;
+  const macModal = document.getElementById('mac-modal');
+  const closeModal = document.getElementById('close-modal');
+  const macDownloadBtn = document.getElementById('mac-download-btn');
+
+  function showMacModal() {
+    if (macDownloadUrl && macModal) {
+      macModal.classList.remove('hidden');
+      macModal.classList.add('flex');
+    }
+  }
+
+  function hideMacModal() {
+    macModal?.classList.add('hidden');
+    macModal?.classList.remove('flex');
+  }
+
+  closeModal?.addEventListener('click', hideMacModal);
+  macModal?.addEventListener('click', (e) => { if (e.target === macModal) hideMacModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMacModal(); });
+
+  macDownloadBtn?.addEventListener('click', (e) => {
+    if (macDownloadUrl) {
+      window.open(macDownloadUrl, '_blank');
+      e.preventDefault();
+    }
+    setTimeout(hideMacModal, 100);
+  });
+
+  async function fetchDownloads() {
+    const macLink = document.querySelector('a[data-platform="mac"]') as HTMLAnchorElement;
+    const winLink = document.querySelector('a[data-platform="windows"]') as HTMLAnchorElement;
+    const linuxLink = document.querySelector('a[data-platform="linux"]') as HTMLAnchorElement;
+
+    try {
+      const res = await fetch('https://api.github.com/repos/crownemmanuel/proassist/releases/latest');
+      if (!res.ok) throw new Error('Failed');
+      const release = await res.json();
+
+      const macAsset = release.assets.find((a: any) => a.name.endsWith('.dmg'));
+      const winAsset = release.assets.find((a: any) => a.name.endsWith('.msi') || a.name.endsWith('.exe'));
+      const linuxAsset = release.assets.find((a: any) => a.name.endsWith('.AppImage') || a.name.endsWith('.deb'));
+
+      if (macLink && macAsset) {
+        macDownloadUrl = macAsset.browser_download_url;
+        macLink.textContent = `Download (${release.tag_name})`;
+        macLink.onclick = (e) => { e.preventDefault(); showMacModal(); };
+        if (macDownloadBtn) {
+          (macDownloadBtn as HTMLAnchorElement).href = macDownloadUrl!;
+        }
+      }
+
+      if (winLink && winAsset) {
+        winLink.href = winAsset.browser_download_url;
+        winLink.textContent = `Download (${release.tag_name})`;
+        winLink.target = '_blank';
+      }
+
+      if (linuxLink && linuxAsset) {
+        linuxLink.href = linuxAsset.browser_download_url;
+        linuxLink.textContent = `Download (${release.tag_name})`;
+        linuxLink.target = '_blank';
+      }
+    } catch {
+      const fallback = 'https://github.com/crownemmanuel/proassist/releases';
+      [macLink, winLink, linuxLink].forEach(link => {
+        if (link) {
+          link.href = fallback;
+          link.textContent = 'View Releases';
+          link.target = '_blank';
+          link.onclick = null;
+        }
+      });
+    }
+  }
+
+  fetchDownloads();
+</script>
