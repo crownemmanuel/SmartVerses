@@ -1,0 +1,376 @@
+---
+---
+
+<main class="overflow-hidden">
+  <!-- Subtle background decorations -->
+  <div aria-hidden class="pointer-events-none absolute inset-0 isolate hidden opacity-65 contain-strict lg:block">
+    <div class="w-140 h-320 -translate-y-87.5 absolute left-0 top-0 -rotate-45 rounded-full bg-[radial-gradient(68.54%_68.72%_at_55.02%_31.46%,hsla(0,0%,85%,.08)_0,hsla(0,0%,55%,.02)_50%,hsla(0,0%,45%,0)_80%)]"></div>
+    <div class="h-320 absolute left-0 top-0 w-60 -rotate-45 rounded-full bg-[radial-gradient(50%_50%_at_50%_50%,hsla(0,0%,85%,.06)_0,hsla(0,0%,45%,.02)_80%,transparent_100%)] [translate:5%_-50%]"></div>
+  </div>
+
+  <section class="relative pt-24 md:pt-32 lg:pt-40 pb-16 md:pb-24">
+    <div class="mx-auto max-w-7xl px-6">
+      <!-- Split layout: Text left, Demo right -->
+      <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+
+        <!-- Left side: Text content -->
+        <div class="max-w-xl">
+          <!-- Badge -->
+          <a
+            href="#features"
+            class="hover:bg-muted bg-secondary group inline-flex w-fit items-center gap-3 rounded-full border p-1 pl-4 shadow-md shadow-zinc-950/5 transition-colors duration-300 mb-8"
+          >
+            <span class="text-foreground text-sm">AI-Powered Automation</span>
+            <span class="block h-4 w-px bg-zinc-300"></span>
+            <div class="bg-background group-hover:bg-muted size-6 overflow-hidden rounded-full transition-colors duration-500">
+              <div class="flex w-12 -translate-x-1/2 transition-transform duration-500 ease-in-out group-hover:translate-x-0">
+                <span class="flex size-6">
+                  <svg class="m-auto size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </span>
+                <span class="flex size-6">
+                  <svg class="m-auto size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </a>
+
+          <!-- Heading -->
+          <h1 class="text-4xl font-semibold tracking-tight text-zinc-900 sm:text-5xl lg:text-6xl animate-fade-in-blur">
+            Modern Automation for ProPresenter
+          </h1>
+
+          <!-- Subheading -->
+          <p class="mt-6 text-lg text-muted-foreground leading-relaxed animate-fade-in-blur delay-200">
+            One tool that does it all. AI-powered slides, live transcription, Bible verse detection, and real-time collaboration—right inside ProAssist.
+          </p>
+
+          <!-- CTA Buttons -->
+          <div class="mt-10 flex flex-wrap items-center gap-4 animate-fade-in-blur delay-300">
+            <a
+              href="#download"
+              class="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-zinc-900/20 transition-all hover:bg-zinc-800 hover:shadow-xl"
+            >
+              Get Started
+              <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
+            <a
+              href="https://github.com/crownemmanuel/proassist"
+              target="_blank"
+              class="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-6 py-3.5 text-sm font-semibold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 hover:border-zinc-300"
+            >
+              <svg class="size-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+              </svg>
+              View on GitHub
+            </a>
+          </div>
+
+                  </div>
+
+        <!-- Right side: Smart Verses Demo with 3D perspective -->
+        <div id="demo-wrapper" class="relative animate-fade-in-blur delay-500" style="perspective: 1200px;">
+          <!-- Layered 3D background elements -->
+          <div class="absolute -inset-4 bg-gradient-to-tr from-blue-500/20 via-purple-500/10 to-emerald-500/20 rounded-3xl blur-3xl opacity-60"></div>
+
+          <!-- Back layer - offset card (larger and more offset) -->
+          <div id="demo-back-layer" class="absolute -inset-2 bg-zinc-700/80 rounded-2xl border border-zinc-500/30 transition-transform duration-300 ease-out" style="transform: translateZ(-80px) translateX(40px) translateY(40px); transform-style: preserve-3d;"></div>
+
+          <!-- Middle layer - gradient accent (slightly larger) -->
+          <div id="demo-mid-layer" class="absolute -inset-1 bg-gradient-to-br from-blue-500/30 to-emerald-500/30 rounded-2xl border border-zinc-600/40 transition-transform duration-300 ease-out" style="transform: translateZ(-40px) translateX(20px) translateY(20px); transform-style: preserve-3d;"></div>
+
+          <!-- Main card -->
+          <div id="demo-card" class="relative bg-zinc-900 rounded-2xl border border-zinc-700 p-5 shadow-2xl shadow-zinc-950/40 transition-transform duration-300 ease-out overflow-hidden" style="transform-style: preserve-3d;">
+            <!-- Glare/shine effect -->
+            <div id="demo-glare" class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 rounded-2xl" style="background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15) 0%, transparent 60%);"></div>
+
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-semibold text-white">Smart Verses</h3>
+              <div class="flex items-center gap-1.5">
+                <span class="size-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="text-xs text-emerald-400 font-medium">Live</span>
+              </div>
+            </div>
+
+            <!-- Demo Visual -->
+            <div class="space-y-3 min-h-[320px]">
+              <!-- Segment 1 -->
+              <div id="segment-1" class="p-3 bg-zinc-800 rounded-xl border border-zinc-700">
+                <p class="text-zinc-300 text-sm leading-relaxed min-h-[1.25em]">
+                  <span id="transcript-1"></span>
+                  <span id="cursor-1" class="text-blue-400">|</span>
+                </p>
+                <div id="detection-1" class="mt-2.5 opacity-0 transition-opacity duration-300">
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500 text-emerald-400 text-xs font-bold">
+                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    John 3:16
+                  </span>
+                </div>
+                <div id="verse-1" class="mt-2.5 p-2.5 bg-zinc-800/50 rounded-lg border border-emerald-500 opacity-0 transition-opacity duration-300">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <span class="font-bold text-emerald-400 text-xs">John 3:16</span>
+                    <span class="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-600 text-white text-[10px] font-bold">
+                      <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      Go Live
+                    </span>
+                  </div>
+                  <p class="text-zinc-300 text-xs leading-relaxed">
+                    For God so loved the world, that he gave his only begotten Son...
+                  </p>
+                </div>
+              </div>
+
+              <!-- Segment 2 -->
+              <div id="segment-2" class="p-3 bg-zinc-800 rounded-xl border border-zinc-700 opacity-0 transition-opacity duration-300">
+                <p class="text-zinc-300 text-sm leading-relaxed min-h-[1.25em]">
+                  <span id="transcript-2"></span>
+                  <span id="cursor-2" class="text-blue-400 opacity-0">|</span>
+                </p>
+                <div id="detection-2" class="mt-2.5 opacity-0 transition-opacity duration-300">
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-blue-500 text-blue-400 text-xs font-bold">
+                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    John 1:1
+                    <span class="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-[9px]">88%</span>
+                  </span>
+                </div>
+                <div id="verse-2" class="mt-2.5 p-2.5 bg-zinc-800/50 rounded-lg border border-blue-500 opacity-0 transition-opacity duration-300">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <span class="font-bold text-blue-400 text-xs">John 1:1</span>
+                    <span class="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-600 text-white text-[10px] font-bold">
+                      <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      Go Live
+                    </span>
+                  </div>
+                  <p class="text-zinc-300 text-xs leading-relaxed">
+                    In the beginning was the Word, and the Word was with God...
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Feature tags -->
+            <div class="flex flex-wrap gap-2 mt-4 pt-4 border-t border-zinc-800">
+              <span class="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-md text-[10px] font-medium">
+                Direct Quotes
+              </span>
+              <span class="px-2.5 py-1 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-md text-[10px] font-medium">
+                Paraphrases
+              </span>
+              <span class="px-2.5 py-1 bg-violet-500/10 border border-violet-500/30 text-violet-400 rounded-md text-[10px] font-medium">
+                Real-time AI
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<style>
+  /* 3D effect for the curve */
+  .curve-shadow {
+    filter: drop-shadow(0 -10px 20px rgba(0, 0, 0, 0.05));
+  }
+</style>
+
+<style>
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+  #cursor-1, #cursor-2 {
+    animation: blink 1s step-start infinite;
+  }
+</style>
+
+<script>
+  function startSmartVersesDemo() {
+    const transcript1 = document.getElementById('transcript-1');
+    const transcript2 = document.getElementById('transcript-2');
+    const cursor1 = document.getElementById('cursor-1');
+    const cursor2 = document.getElementById('cursor-2');
+    const detection1 = document.getElementById('detection-1');
+    const detection2 = document.getElementById('detection-2');
+    const verse1 = document.getElementById('verse-1');
+    const verse2 = document.getElementById('verse-2');
+    const segment2 = document.getElementById('segment-2');
+
+    const text1 = "The Bible says in John chapter 3 verse 16";
+    const text2 = "In the beginning was the Word";
+
+    let timers: number[] = [];
+
+    function clearTimers() {
+      timers.forEach(timer => clearTimeout(timer));
+      timers = [];
+    }
+
+    function show(el: HTMLElement | null) {
+      el?.classList.remove('opacity-0');
+      el?.classList.add('opacity-100');
+    }
+
+    function hide(el: HTMLElement | null) {
+      el?.classList.add('opacity-0');
+      el?.classList.remove('opacity-100');
+    }
+
+    function typeText(element: HTMLElement | null, cursor: HTMLElement | null, text: string, speed: number, callback?: () => void) {
+      if (!element) return;
+      element.textContent = '';
+      const words = text.split(' ');
+      let wordIndex = 0;
+
+      show(cursor);
+
+      const interval = setInterval(() => {
+        if (wordIndex < words.length) {
+          element.textContent += (wordIndex ? ' ' : '') + words[wordIndex];
+          wordIndex++;
+        } else {
+          clearInterval(interval);
+          hide(cursor);
+          if (callback) callback();
+        }
+      }, speed);
+
+      timers.push(interval as unknown as number);
+    }
+
+    function reset() {
+      clearTimers();
+      if (transcript1) transcript1.textContent = '';
+      if (transcript2) transcript2.textContent = '';
+      hide(detection1);
+      hide(verse1);
+      hide(detection2);
+      hide(verse2);
+      hide(segment2);
+      show(cursor1);
+      hide(cursor2);
+    }
+
+    function runCycle() {
+      reset();
+
+      typeText(transcript1, cursor1, text1, 150, () => {
+        timers.push(setTimeout(() => {
+          show(detection1);
+          timers.push(setTimeout(() => {
+            show(verse1);
+            timers.push(setTimeout(() => {
+              show(segment2);
+              show(cursor2);
+              typeText(transcript2, cursor2, text2, 150, () => {
+                timers.push(setTimeout(() => {
+                  show(detection2);
+                  timers.push(setTimeout(() => {
+                    show(verse2);
+                    timers.push(setTimeout(runCycle, 3000) as unknown as number);
+                  }, 800) as unknown as number);
+                }, 1000) as unknown as number);
+              });
+            }, 2000) as unknown as number);
+          }, 800) as unknown as number);
+        }, 1000) as unknown as number);
+      });
+    }
+
+    runCycle();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startSmartVersesDemo);
+  } else {
+    startSmartVersesDemo();
+  }
+</script>
+
+<script>
+  // Interactive 3D tilt effect
+  function init3DEffect() {
+    const wrapper = document.getElementById('demo-wrapper');
+    const card = document.getElementById('demo-card');
+    const backLayer = document.getElementById('demo-back-layer');
+    const midLayer = document.getElementById('demo-mid-layer');
+    const glare = document.getElementById('demo-glare');
+
+    if (!wrapper || !card) return;
+
+    // Store references to avoid null checks in nested functions
+    const wrapperEl = wrapper;
+    const cardEl = card;
+    const maxRotation = 15;
+
+    function handleMouseMove(e: MouseEvent) {
+      const rect = wrapperEl.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      // Calculate mouse position as percentage
+      const mouseX = ((e.clientX - rect.left) / rect.width) * 100;
+      const mouseY = ((e.clientY - rect.top) / rect.height) * 100;
+
+      // Calculate rotation based on mouse position relative to center
+      const rotateY = ((e.clientX - centerX) / (rect.width / 2)) * maxRotation;
+      const rotateX = -((e.clientY - centerY) / (rect.height / 2)) * maxRotation;
+
+      // Apply transforms to main card
+      cardEl.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg) translateZ(30px) scale(1.02)`;
+
+      // Apply offset transforms to back layers for parallax depth
+      if (backLayer) {
+        backLayer.style.transform = `translateZ(-80px) translateX(${40 + rotateY * 1.2}px) translateY(${40 - rotateX * 1.2}px) rotateY(${rotateY * 0.3}deg) rotateX(${rotateX * 0.3}deg)`;
+      }
+      if (midLayer) {
+        midLayer.style.transform = `translateZ(-40px) translateX(${20 + rotateY * 0.7}px) translateY(${20 - rotateX * 0.7}px) rotateY(${rotateY * 0.5}deg) rotateX(${rotateX * 0.5}deg)`;
+      }
+
+      // Move glare effect to follow mouse
+      if (glare) {
+        glare.style.background = `radial-gradient(circle at ${mouseX}% ${mouseY}%, rgba(255,255,255,0.2) 0%, transparent 50%)`;
+        glare.style.opacity = '1';
+      }
+    }
+
+    function handleMouseLeave() {
+      // Reset to default position with smooth transition
+      cardEl.style.transform = 'rotateY(-5deg) rotateX(2deg) translateZ(0px) scale(1)';
+      if (backLayer) {
+        backLayer.style.transform = 'translateZ(-80px) translateX(40px) translateY(40px)';
+      }
+      if (midLayer) {
+        midLayer.style.transform = 'translateZ(-40px) translateX(20px) translateY(20px)';
+      }
+      if (glare) {
+        glare.style.opacity = '0';
+      }
+    }
+
+    function handleMouseEnter() {
+      // Faster transitions on enter for responsiveness
+      cardEl.style.transition = 'transform 0.1s ease-out';
+      if (backLayer) backLayer.style.transition = 'transform 0.1s ease-out';
+      if (midLayer) midLayer.style.transition = 'transform 0.1s ease-out';
+    }
+
+    wrapperEl.addEventListener('mousemove', handleMouseMove);
+    wrapperEl.addEventListener('mouseleave', handleMouseLeave);
+    wrapperEl.addEventListener('mouseenter', handleMouseEnter);
+
+    // Set initial state
+    handleMouseLeave();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init3DEffect);
+  } else {
+    init3DEffect();
+  }
+</script>

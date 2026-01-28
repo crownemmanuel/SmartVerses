@@ -1,0 +1,138 @@
+---
+const navLinks = [
+  { href: '#features', label: 'Features' },
+  { href: '#how-it-works', label: 'How It Works' },
+  { href: '#download', label: 'Download' },
+  { href: 'https://github.com/crownemmanuel/proassist', label: 'GitHub', external: true },
+];
+---
+
+<header>
+  <nav id="nav" data-state="" class="fixed z-20 w-full px-2">
+    <div id="nav-inner" class="mx-auto mt-2 max-w-6xl px-6 transition-all duration-300 lg:px-12">
+      <div class="relative flex flex-wrap items-center justify-between gap-6 py-3 lg:gap-0 lg:py-4">
+        <!-- Logo -->
+        <div class="flex w-full justify-between lg:w-auto">
+          <a href="/" class="flex items-center gap-2">
+            <img src="/ProAssist.png" alt="ProAssist - AI-Powered ProPresenter Automation" class="h-8 w-8 rounded-lg" />
+            <span class="text-lg font-semibold">ProAssist</span>
+          </a>
+
+          <!-- Mobile menu button -->
+          <button
+            id="menu-btn"
+            aria-label="Toggle menu"
+            class="relative z-20 -m-2.5 -mr-4 block cursor-pointer p-2.5 lg:hidden"
+          >
+            <svg class="menu-icon size-6 transition-all duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            <svg class="close-icon absolute inset-0 m-auto size-6 -rotate-180 scale-0 opacity-0 transition-all duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Desktop nav links (center) -->
+        <div class="absolute inset-0 m-auto hidden size-fit lg:block">
+          <ul class="flex gap-8 text-sm">
+            {navLinks.map((link) => (
+              <li>
+                <a
+                  href={link.href}
+                  target={link.external ? '_blank' : undefined}
+                  class="text-muted-foreground hover:text-foreground block transition-colors duration-150"
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <!-- CTA buttons + mobile menu -->
+        <div id="mobile-menu" class="bg-background mb-6 hidden w-full flex-wrap items-center justify-end space-y-8 rounded-3xl border p-6 shadow-2xl shadow-zinc-300/20 md:flex-nowrap lg:m-0 lg:flex lg:w-fit lg:gap-6 lg:space-y-0 lg:border-transparent lg:bg-transparent lg:p-0 lg:shadow-none">
+          <!-- Mobile nav links -->
+          <div class="lg:hidden">
+            <ul class="space-y-6 text-base">
+              {navLinks.map((link) => (
+                <li>
+                  <a
+                    href={link.href}
+                    target={link.external ? '_blank' : undefined}
+                    class="text-muted-foreground hover:text-foreground block transition-colors duration-150"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <!-- Buttons -->
+          <div class="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit">
+            <a
+              href="#download"
+              class="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+            >
+              Download
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<script>
+  const nav = document.getElementById('nav');
+  const navInner = document.getElementById('nav-inner');
+  const menuBtn = document.getElementById('menu-btn');
+  const mobileMenu = document.getElementById('mobile-menu');
+  const menuIcon = document.querySelector('.menu-icon');
+  const closeIcon = document.querySelector('.close-icon');
+
+  let menuOpen = false;
+
+  // Scroll effect
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 50) {
+      navInner?.classList.add('bg-background/50', 'max-w-4xl', 'rounded-2xl', 'border', 'backdrop-blur-lg', 'lg:px-5');
+      navInner?.classList.remove('max-w-6xl', 'lg:px-12');
+    } else {
+      navInner?.classList.remove('bg-background/50', 'max-w-4xl', 'rounded-2xl', 'border', 'backdrop-blur-lg', 'lg:px-5');
+      navInner?.classList.add('max-w-6xl', 'lg:px-12');
+    }
+  });
+
+  // Mobile menu toggle
+  menuBtn?.addEventListener('click', () => {
+    menuOpen = !menuOpen;
+    nav?.setAttribute('data-state', menuOpen ? 'active' : '');
+
+    if (menuOpen) {
+      mobileMenu?.classList.remove('hidden');
+      mobileMenu?.classList.add('block');
+      menuIcon?.classList.add('rotate-180', 'scale-0', 'opacity-0');
+      closeIcon?.classList.remove('-rotate-180', 'scale-0', 'opacity-0');
+      closeIcon?.classList.add('rotate-0', 'scale-100', 'opacity-100');
+    } else {
+      mobileMenu?.classList.add('hidden');
+      mobileMenu?.classList.remove('block');
+      menuIcon?.classList.remove('rotate-180', 'scale-0', 'opacity-0');
+      closeIcon?.classList.add('-rotate-180', 'scale-0', 'opacity-0');
+      closeIcon?.classList.remove('rotate-0', 'scale-100', 'opacity-100');
+    }
+  });
+
+  // Close on link click
+  mobileMenu?.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => {
+      menuOpen = false;
+      nav?.setAttribute('data-state', '');
+      mobileMenu?.classList.add('hidden');
+      menuIcon?.classList.remove('rotate-180', 'scale-0', 'opacity-0');
+      closeIcon?.classList.add('-rotate-180', 'scale-0', 'opacity-0');
+    });
+  });
+</script>
