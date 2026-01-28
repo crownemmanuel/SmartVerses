@@ -50,22 +50,29 @@
   }
 }
 
-/* Dark mode overrides */
+/* Dark mode overrides
+ * --------------------------------------------------
+ * To customize dark mode colors, edit values below.
+ * Uses oklch() for perceptually uniform color.
+ * Key principle: white text (#fff / oklch(1 0 0)),
+ * NOT gray, for readability and WCAG AA contrast.
+ * -------------------------------------------------- */
 .dark {
-  --color-background: oklch(0.141 0.005 285.823);
-  --color-foreground: oklch(0.985 0 0);
-  --color-card: oklch(0.21 0.006 285.885);
-  --color-card-foreground: oklch(0.985 0 0);
-  --color-primary: oklch(0.92 0.004 286.32);
-  --color-primary-foreground: oklch(0.21 0.006 285.885);
-  --color-secondary: oklch(0.274 0.006 286.033);
-  --color-secondary-foreground: oklch(0.985 0 0);
-  --color-muted: oklch(0.274 0.006 286.033);
-  --color-muted-foreground: oklch(0.705 0.015 286.067);
-  --color-accent: oklch(0.274 0.006 286.033);
-  --color-accent-foreground: oklch(0.985 0 0);
-  --color-border: oklch(1 0 0 / 10%);
+  --color-background: oklch(0.13 0.005 285);
+  --color-foreground: oklch(1 0 0);
+  --color-card: oklch(0.18 0.005 285);
+  --color-card-foreground: oklch(1 0 0);
+  --color-primary: oklch(1 0 0);
+  --color-primary-foreground: oklch(0.13 0.005 285);
+  --color-secondary: oklch(0.22 0.006 285);
+  --color-secondary-foreground: oklch(1 0 0);
+  --color-muted: oklch(0.22 0.006 285);
+  --color-muted-foreground: oklch(0.82 0.01 286);
+  --color-accent: oklch(0.22 0.006 285);
+  --color-accent-foreground: oklch(1 0 0);
+  --color-border: oklch(1 0 0 / 12%);
   --color-input: oklch(1 0 0 / 15%);
+  --color-ring: oklch(0.75 0.015 286);
 }
 
 /* Animation keyframes */

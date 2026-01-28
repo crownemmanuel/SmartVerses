@@ -18,7 +18,7 @@ const twitterHandle = "@proassist_app"; // Placeholder
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -70,9 +70,20 @@ const twitterHandle = "@proassist_app"; // Placeholder
       <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
     </noscript>
 
+    <!-- Theme: dark by default, light opt-in via toggle -->
+    <script is:inline>
+      (function() {
+        var t = localStorage.getItem('theme');
+        // Dark is default. Only go light if user explicitly chose it.
+        if (t !== 'light') {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+
     <slot name="head" />
   </head>
-  <body class="min-h-screen bg-background text-foreground font-sans selection:bg-violet-100 selection:text-violet-900">
+  <body class="min-h-screen bg-background text-foreground font-sans selection:bg-violet-100 selection:text-violet-900 dark:selection:bg-violet-900 dark:selection:text-violet-100">
     <slot />
   </body>
 </html>
