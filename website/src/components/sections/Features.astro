@@ -13,30 +13,26 @@ import { Icon } from 'astro-icon/components';
       </h2>
     </div>
 
-    <!-- AI Hero Section -->
+    <!-- AI Hero Section - Now Light -->
     <div class="relative mb-8">
-      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 p-8 md:p-12 lg:p-16">
+      <div class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-50 via-blue-50 to-fuchsia-50 border border-violet-100 p-8 md:p-12 lg:p-16">
         <!-- Animated gradient orbs -->
-        <div class="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full blur-3xl opacity-60"></div>
-        <div class="absolute bottom-0 left-0 w-72 h-72 bg-gradient-to-tr from-fuchsia-500/20 to-pink-500/20 rounded-full blur-3xl opacity-40"></div>
+        <div class="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-400/20 to-violet-400/20 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-0 left-0 w-72 h-72 bg-gradient-to-tr from-fuchsia-400/15 to-pink-400/15 rounded-full blur-3xl"></div>
 
         <div class="relative z-10 grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
           <div>
-            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 text-sm text-white/80 mb-6">
-              <Icon name="ph:sparkle-fill" class="size-4 text-amber-400" />
-              Powered by AI
-            </div>
-            <h3 class="text-3xl md:text-4xl font-bold text-white mb-4">
+            <h3 class="text-3xl md:text-4xl font-bold text-zinc-900 mb-4">
               AI that understands your workflow
             </h3>
-            <p class="text-lg text-zinc-400 leading-relaxed mb-8">
+            <p class="text-lg text-zinc-600 leading-relaxed mb-8">
               From GPT-4 to Gemini to Groq — choose your AI provider. Our intelligent processing splits content perfectly,
               extracts schedules from images, detects Bible verses in speech, and automates proofreading.
               All with a natural language assistant at your fingertips.
             </p>
             <div class="flex flex-wrap gap-3">
               {['OpenAI GPT-4', 'Google Gemini', 'Groq', 'AssemblyAI'].map((provider) => (
-                <span class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm text-zinc-300">
+                <span class="px-3 py-1.5 rounded-lg bg-white/80 border border-violet-200 text-sm text-zinc-700 shadow-sm">
                   {provider}
                 </span>
               ))}
@@ -51,11 +47,11 @@ import { Icon } from 'astro-icon/components';
               { icon: 'ph:image-bold', label: 'Image Extract', desc: 'Schedule from photos' },
               { icon: 'ph:sparkle-bold', label: 'Auto Proofread', desc: 'Smart corrections' },
             ].map((item) => (
-              <div class="group/card p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
-                <div class="size-10 rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center mb-3">
+              <div class="group/card p-4 rounded-2xl bg-white/70 border border-violet-100 hover:bg-white hover:border-violet-200 hover:shadow-lg transition-all duration-300">
+                <div class="size-10 rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center mb-3 shadow-lg shadow-violet-500/25">
                   <Icon name={item.icon} class="size-5 text-white" />
                 </div>
-                <p class="font-medium text-white text-sm">{item.label}</p>
+                <p class="font-medium text-zinc-900 text-sm">{item.label}</p>
                 <p class="text-xs text-zinc-500">{item.desc}</p>
               </div>
             ))}
@@ -67,12 +63,12 @@ import { Icon } from 'astro-icon/components';
     <!-- Bento Grid -->
     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
 
-      <!-- Live Collaboration - Wide -->
-      <div class="md:col-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 p-8">
+      <!-- Live Collaboration - Wide & Interactive -->
+      <div class="md:col-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 p-8" id="collab-card">
         <div class="absolute top-4 right-4 flex gap-1">
           <span class="size-3 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span class="size-3 rounded-full bg-emerald-300 animate-pulse delay-75"></span>
-          <span class="size-3 rounded-full bg-emerald-200 animate-pulse delay-150"></span>
+          <span class="size-3 rounded-full bg-emerald-300 animate-pulse" style="animation-delay: 150ms"></span>
+          <span class="size-3 rounded-full bg-emerald-200 animate-pulse" style="animation-delay: 300ms"></span>
         </div>
         <div class="flex flex-col md:flex-row md:items-center gap-6">
           <div class="flex-1">
@@ -80,17 +76,30 @@ import { Icon } from 'astro-icon/components';
               <Icon name="ph:users-three-bold" class="size-7 text-white" />
             </div>
             <h3 class="text-2xl font-bold text-zinc-900 mb-2">Real-time Collaboration</h3>
-            <p class="text-zinc-600 leading-relaxed">
+            <p class="text-zinc-600 leading-relaxed transition-all duration-300" id="collab-description">
               WebSocket-powered Live Slides let your team edit from any browser. Share URLs, sync across devices,
               and see changes instantly. Perfect for remote teams and distributed workflows.
             </p>
           </div>
-          <div class="flex items-center gap-3 md:flex-col">
-            {['Live Slides', 'Network Sync', 'Remote Access'].map((tag) => (
-              <span class="px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap">
-                {tag}
-              </span>
-            ))}
+          <div class="flex items-center gap-3 md:flex-col" id="collab-tags">
+            <button
+              data-collab="live-slides"
+              class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-500 bg-emerald-500 text-white text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
+            >
+              Live Slides
+            </button>
+            <button
+              data-collab="network-sync"
+              class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
+            >
+              Network Sync
+            </button>
+            <button
+              data-collab="remote-access"
+              class="collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer"
+            >
+              Remote Access
+            </button>
           </div>
         </div>
       </div>
@@ -146,26 +155,55 @@ import { Icon } from 'astro-icon/components';
         </p>
       </div>
 
-      <!-- Templates - Wide -->
-      <div class="md:col-span-2 lg:col-span-2 group relative overflow-hidden rounded-3xl bg-zinc-900 p-8">
-        <div class="flex flex-col md:flex-row md:items-center gap-6">
+      <!-- Templates - Wide & Interactive (Now Light) -->
+      <div class="md:col-span-2 lg:col-span-2 group relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-50 to-zinc-100 border border-zinc-200 p-8" id="templates-card">
+        <div class="flex flex-col md:flex-row md:items-start gap-6">
           <div class="flex-1">
-            <div class="size-12 rounded-xl bg-white/10 flex items-center justify-center mb-4">
+            <div class="size-12 rounded-xl bg-gradient-to-br from-zinc-700 to-zinc-900 flex items-center justify-center mb-4 shadow-lg shadow-zinc-500/25">
               <Icon name="ph:stack-bold" class="size-6 text-white" />
             </div>
-            <h3 class="text-xl font-bold text-white mb-2">Flexible Templates</h3>
-            <p class="text-zinc-400 text-sm leading-relaxed">
-              Four processing modes — Simple, Regex, JavaScript, or AI-Powered. Build templates that match your exact workflow.
+            <h3 class="text-xl font-bold text-zinc-900 mb-2">Flexible Templates</h3>
+            <p class="text-zinc-600 text-sm leading-relaxed mb-4" id="template-description">
+              Split content by character count, word count, or line breaks. Perfect for simple text processing without complex rules.
             </p>
-          </div>
-          <div class="flex gap-2">
-            {['Simple', 'Regex', 'JavaScript', 'AI'].map((mode, i) => (
-              <div class={`px-3 py-2 rounded-lg text-xs font-medium ${
-                i === 3 ? 'bg-gradient-to-r from-blue-500 to-violet-500 text-white' : 'bg-white/10 text-zinc-300'
-              }`}>
-                {mode}
+            <!-- Code Preview -->
+            <div class="bg-zinc-900 rounded-xl p-4 font-mono text-sm overflow-hidden">
+              <div class="flex items-center gap-2 mb-3 pb-3 border-b border-zinc-700">
+                <span class="size-3 rounded-full bg-red-500"></span>
+                <span class="size-3 rounded-full bg-yellow-500"></span>
+                <span class="size-3 rounded-full bg-green-500"></span>
+                <span class="text-zinc-500 text-xs ml-2">template.config</span>
               </div>
-            ))}
+              <pre class="text-zinc-300 transition-all duration-300" id="template-code"><span class="text-blue-400">mode:</span> <span class="text-emerald-400">"simple"</span>
+<span class="text-blue-400">split_by:</span> <span class="text-emerald-400">"lines"</span>
+<span class="text-blue-400">max_chars:</span> <span class="text-amber-400">80</span></pre>
+            </div>
+          </div>
+          <div class="flex flex-wrap md:flex-col gap-2" id="template-modes">
+            <button
+              data-mode="simple"
+              class="template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-zinc-900 text-white shadow-lg cursor-pointer hover:scale-105"
+            >
+              Simple
+            </button>
+            <button
+              data-mode="regex"
+              class="template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-white border border-zinc-200 text-zinc-700 cursor-pointer hover:scale-105 hover:border-zinc-300"
+            >
+              Regex
+            </button>
+            <button
+              data-mode="javascript"
+              class="template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-white border border-zinc-200 text-zinc-700 cursor-pointer hover:scale-105 hover:border-zinc-300"
+            >
+              JavaScript
+            </button>
+            <button
+              data-mode="ai"
+              class="template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-gradient-to-r from-blue-500 to-violet-500 text-white cursor-pointer hover:scale-105"
+            >
+              AI ✨
+            </button>
           </div>
         </div>
       </div>
@@ -200,3 +238,110 @@ import { Icon } from 'astro-icon/components';
     </div>
   </div>
 </section>
+
+<script>
+  // Template Mode Interactivity
+  const templateModes = document.querySelectorAll('.template-mode');
+  const templateDescription = document.getElementById('template-description');
+  const templateCode = document.getElementById('template-code');
+
+  const templateData: Record<string, { description: string; code: string }> = {
+    simple: {
+      description: 'Split content by character count, word count, or line breaks. Perfect for simple text processing without complex rules.',
+      code: `<span class="text-blue-400">mode:</span> <span class="text-emerald-400">"simple"</span>
+<span class="text-blue-400">split_by:</span> <span class="text-emerald-400">"lines"</span>
+<span class="text-blue-400">max_chars:</span> <span class="text-amber-400">80</span>`
+    },
+    regex: {
+      description: 'Use regular expressions to match and split content. Great for structured data like verses, timestamps, or formatted text.',
+      code: `<span class="text-blue-400">mode:</span> <span class="text-emerald-400">"regex"</span>
+<span class="text-blue-400">pattern:</span> <span class="text-emerald-400">/^\\d+\\./gm</span>
+<span class="text-blue-400">capture:</span> <span class="text-amber-400">true</span>`
+    },
+    javascript: {
+      description: 'Write custom JavaScript functions for complete control. Transform, filter, and process content with full programming power.',
+      code: `<span class="text-blue-400">mode:</span> <span class="text-emerald-400">"javascript"</span>
+<span class="text-fuchsia-400">function</span> <span class="text-amber-400">process</span>(text) {
+  <span class="text-fuchsia-400">return</span> text.<span class="text-amber-400">split</span>(<span class="text-emerald-400">'\\n'</span>);
+}`
+    },
+    ai: {
+      description: 'Let AI intelligently split and format your content. It understands context, handles edge cases, and produces perfectly formatted slides.',
+      code: `<span class="text-blue-400">mode:</span> <span class="text-emerald-400">"ai"</span>
+<span class="text-blue-400">provider:</span> <span class="text-emerald-400">"openai"</span>
+<span class="text-blue-400">prompt:</span> <span class="text-emerald-400">"Split into slides"</span>
+<span class="text-zinc-500">// ✨ AI handles the rest</span>`
+    }
+  };
+
+  templateModes.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.getAttribute('data-mode');
+      if (!mode || !templateDescription || !templateCode) return;
+
+      // Update active state
+      templateModes.forEach(b => {
+        const m = b.getAttribute('data-mode');
+        if (m === mode) {
+          if (m === 'ai') {
+            b.className = 'template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-gradient-to-r from-blue-500 to-violet-500 text-white cursor-pointer hover:scale-105 shadow-lg';
+          } else {
+            b.className = 'template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-zinc-900 text-white shadow-lg cursor-pointer hover:scale-105';
+          }
+        } else {
+          if (m === 'ai') {
+            b.className = 'template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-gradient-to-r from-blue-500/20 to-violet-500/20 border border-violet-200 text-violet-700 cursor-pointer hover:scale-105';
+          } else {
+            b.className = 'template-mode px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 bg-white border border-zinc-200 text-zinc-700 cursor-pointer hover:scale-105 hover:border-zinc-300';
+          }
+        }
+      });
+
+      // Update content with animation
+      templateDescription.style.opacity = '0';
+      templateCode.style.opacity = '0';
+
+      setTimeout(() => {
+        templateDescription.textContent = templateData[mode].description;
+        templateCode.innerHTML = templateData[mode].code;
+        templateDescription.style.opacity = '1';
+        templateCode.style.opacity = '1';
+      }, 150);
+    });
+  });
+
+  // Collaboration Tags Interactivity
+  const collabTags = document.querySelectorAll('.collab-tag');
+  const collabDescription = document.getElementById('collab-description');
+
+  const collabData: Record<string, string> = {
+    'live-slides': 'WebSocket-powered Live Slides let your team edit from any browser. Share URLs, sync across devices, and see changes instantly. Perfect for remote teams and distributed workflows.',
+    'network-sync': 'Synchronize playlists and schedules across multiple ProAssist instances. Master/Slave/Peer modes ensure everyone stays perfectly in sync during live events.',
+    'remote-access': 'Access timer controls and presentation settings remotely via shareable links. Perfect for stage managers and production teams working from different locations.'
+  };
+
+  collabTags.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const collab = btn.getAttribute('data-collab');
+      if (!collab || !collabDescription) return;
+
+      // Update active state
+      collabTags.forEach(b => {
+        const c = b.getAttribute('data-collab');
+        if (c === collab) {
+          b.className = 'collab-tag px-4 py-2 rounded-full border-2 border-emerald-500 bg-emerald-500 text-white text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer';
+        } else {
+          b.className = 'collab-tag px-4 py-2 rounded-full border-2 border-emerald-200 bg-emerald-500/10 text-emerald-700 text-sm font-medium whitespace-nowrap transition-all duration-200 hover:scale-105 cursor-pointer';
+        }
+      });
+
+      // Update content with animation
+      collabDescription.style.opacity = '0';
+
+      setTimeout(() => {
+        collabDescription.textContent = collabData[collab];
+        collabDescription.style.opacity = '1';
+      }, 150);
+    });
+  });
+</script>
