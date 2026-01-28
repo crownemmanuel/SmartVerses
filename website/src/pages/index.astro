@@ -146,7 +146,23 @@ import Footer from '../components/sections/Footer.astro';
       ]
     }
   </script>
-  <div class="min-h-screen bg-background">
+  <div class="min-h-screen bg-background relative overflow-hidden">
+    <!-- Ambient background orbs (dark mode only) -->
+    <div class="ambient-bg pointer-events-none absolute inset-0 hidden dark:block" aria-hidden="true">
+      <!-- Top-left: violet glow -->
+      <div class="orb orb-1 absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-violet-500/[0.14] blur-[120px]"></div>
+      <!-- Top-right: blue glow -->
+      <div class="orb orb-2 absolute -top-20 right-0 w-[500px] h-[500px] rounded-full bg-blue-500/[0.12] blur-[100px]"></div>
+      <!-- Mid-left: emerald glow (near Features) -->
+      <div class="orb orb-3 absolute top-[30%] -left-32 w-[450px] h-[450px] rounded-full bg-emerald-500/[0.10] blur-[110px]"></div>
+      <!-- Mid-right: fuchsia glow -->
+      <div class="orb orb-4 absolute top-[45%] -right-20 w-[400px] h-[400px] rounded-full bg-fuchsia-500/[0.12] blur-[100px]"></div>
+      <!-- Lower: amber glow (near HowItWorks) -->
+      <div class="orb orb-5 absolute top-[65%] left-[10%] w-[500px] h-[500px] rounded-full bg-amber-500/[0.09] blur-[120px]"></div>
+      <!-- Bottom: blue glow (near Download/Footer) -->
+      <div class="orb orb-6 absolute top-[85%] right-[5%] w-[550px] h-[550px] rounded-full bg-blue-500/[0.11] blur-[130px]"></div>
+    </div>
+
     <div class="relative z-10">
       <Header />
       <Hero />
@@ -161,5 +177,53 @@ import Footer from '../components/sections/Footer.astro';
 <style>
   :target {
     scroll-margin-top: 5rem;
+  }
+
+  /* Ambient orb drift animations — slow, organic movement */
+  .orb {
+    will-change: transform;
+  }
+  .orb-1 {
+    animation: drift-1 18s ease-in-out infinite alternate;
+  }
+  .orb-2 {
+    animation: drift-2 22s ease-in-out infinite alternate;
+  }
+  .orb-3 {
+    animation: drift-3 20s ease-in-out infinite alternate;
+  }
+  .orb-4 {
+    animation: drift-4 24s ease-in-out infinite alternate;
+  }
+  .orb-5 {
+    animation: drift-5 19s ease-in-out infinite alternate;
+  }
+  .orb-6 {
+    animation: drift-6 21s ease-in-out infinite alternate;
+  }
+
+  @keyframes drift-1 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(60px, 40px) scale(1.1); }
+  }
+  @keyframes drift-2 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(-50px, 50px) scale(0.95); }
+  }
+  @keyframes drift-3 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(40px, -30px) scale(1.08); }
+  }
+  @keyframes drift-4 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(-60px, -40px) scale(1.05); }
+  }
+  @keyframes drift-5 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(50px, 35px) scale(0.92); }
+  }
+  @keyframes drift-6 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(-45px, -50px) scale(1.12); }
   }
 </style>
