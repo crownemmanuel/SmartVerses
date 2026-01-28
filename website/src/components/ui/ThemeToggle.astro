@@ -2,10 +2,9 @@
 /**
  * ThemeToggle - Accessible dark/light mode toggle.
  *
- * Uses localStorage ('theme') and falls back to system preference.
- * Adds/removes 'dark' class on <html> element.
+ * Desktop: Uses View Transitions API with a clip-path curtain wipe from top.
+ * Mobile: Instant toggle (no view transition) for performance.
  *
- * To modify: change icons, animation, or button styling below.
  * Theme colors are defined in globals.css under `.dark { }`.
  */
 ---
@@ -52,13 +51,11 @@
 
     function updateIcons(isDark: boolean) {
       if (isDark) {
-        // Show sun, hide moon
         sunIcon?.classList.remove('rotate-90', 'scale-0', 'opacity-0');
         sunIcon?.classList.add('rotate-0', 'scale-100', 'opacity-100');
         moonIcon?.classList.add('-rotate-90', 'scale-0', 'opacity-0');
         moonIcon?.classList.remove('rotate-0', 'scale-100', 'opacity-100');
       } else {
-        // Show moon, hide sun
         moonIcon?.classList.remove('-rotate-90', 'scale-0', 'opacity-0');
         moonIcon?.classList.add('rotate-0', 'scale-100', 'opacity-100');
         sunIcon?.classList.add('rotate-90', 'scale-0', 'opacity-0');
@@ -69,10 +66,37 @@
     // Set initial icon state
     updateIcons(document.documentElement.classList.contains('dark'));
 
-    btn.addEventListener('click', () => {
+    /** Apply the theme change (class + localStorage) */
+    function applyThemeToggle() {
       const isDark = document.documentElement.classList.toggle('dark');
       localStorage.setItem('theme', isDark ? 'dark' : 'light');
       updateIcons(isDark);
+    }
+
+    /**
+     * Desktop-only: View Transitions API with clip-path curtain wipe.
+     * The old snapshot stays visible while the new theme is revealed
+     * from top to bottom via an animated clip-path (polygon).
+     *
+     * Mobile (<1024px): skip the transition, just toggle instantly.
+     */
+    function isDesktop() {
+      return window.innerWidth >= 1024;
+    }
+
+    btn.addEventListener('click', () => {
+      // Mobile or no View Transitions support — instant toggle
+      if (!isDesktop() || !document.startViewTransition) {
+        applyThemeToggle();
+        return;
+      }
+
+      // Desktop: use View Transitions API with curtain wipe
+      const transition = document.startViewTransition(() => {
+        applyThemeToggle();
+      });
+
+      // The CSS animation handles the rest (see <style> below)
     });
   }
 
@@ -82,3 +106,39 @@
     initThemeToggle();
   }
 </script>
+
+<style is:global>
+  /*
+   * View Transition: Curtain wipe from top
+   * ----------------------------------------
+   * ::view-transition-old = snapshot of the previous theme
+   * ::view-transition-new = the incoming theme
+   *
+   * We animate the NEW view's clip-path from a thin strip at the top
+   * to the full viewport, creating a "curtain drop" effect.
+   * The OLD view stays fully visible underneath until covered.
+   *
+   * Only active on desktop (>=1024px). Mobile has no transition.
+   */
+
+  @media (min-width: 1024px) {
+    ::view-transition-old(root) {
+      animation: none;
+      z-index: 1;
+    }
+
+    ::view-transition-new(root) {
+      animation: curtain-wipe 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      z-index: 2;
+    }
+
+    @keyframes curtain-wipe {
+      from {
+        clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
+      }
+      to {
+        clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+      }
+    }
+  }
+</style>
