@@ -45,8 +45,17 @@ const twitterHandle = "@proassist_app"; // Placeholder
     <meta property="twitter:image" content={new URL(image, Astro.url)} />
     {twitterHandle && <meta property="twitter:site" content={twitterHandle} />}
 
+    <!-- Favicon & Theme -->
     <link rel="icon" type="image/png" href="/ProAssist.png" />
+    <link rel="apple-touch-icon" href="/ProAssist.png" />
+    <meta name="theme-color" content="#18181b" />
+    <meta name="msapplication-TileColor" content="#18181b" />
     <meta name="generator" content={Astro.generator} />
+
+    <!-- Additional SEO -->
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="Emmanuel Crown" />
+    <meta name="application-name" content="ProAssist" />
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -54,7 +63,12 @@ const twitterHandle = "@proassist_app"; // Placeholder
     <link
       href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    </noscript>
 
     <slot name="head" />
   </head>

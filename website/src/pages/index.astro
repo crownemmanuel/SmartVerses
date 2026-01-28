@@ -9,6 +9,7 @@ import Footer from '../components/sections/Footer.astro';
 ---
 
 <Layout title="ProAssist - AI-Powered Automation for ProPresenter">
+  <!-- Software Application Schema -->
   <script type="application/ld+json" slot="head">
     {
       "@context": "https://schema.org",
@@ -27,7 +28,7 @@ import Footer from '../components/sections/Footer.astro';
         "name": "Emmanuel Crown",
         "url": "https://github.com/crownemmanuel"
       },
-      "softwareVersion": "0.0.1",
+      "softwareVersion": "0.7.0",
       "featureList": [
         "AI Slide Generation",
         "Live Transcription",
@@ -36,7 +37,113 @@ import Footer from '../components/sections/Footer.astro';
         "Multi-Device Sync",
         "ProPresenter Remote Control"
       ],
-      "url": "https://proassist.app"
+      "url": "https://proassist.app",
+      "downloadUrl": "https://github.com/crownemmanuel/proassist/releases",
+      "screenshot": "https://proassist.app/ProAssist.png"
+    }
+  </script>
+
+  <!-- Organization Schema -->
+  <script type="application/ld+json" slot="head">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "ProAssist",
+      "url": "https://proassist.app",
+      "logo": "https://proassist.app/ProAssist.png",
+      "sameAs": [
+        "https://github.com/crownemmanuel/proassist"
+      ],
+      "founder": {
+        "@type": "Person",
+        "name": "Emmanuel Crown"
+      }
+    }
+  </script>
+
+  <!-- FAQ Schema for AEO -->
+  <script type="application/ld+json" slot="head">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is ProAssist?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ProAssist is an AI-powered automation tool for ProPresenter that provides live transcription, automatic Bible verse detection, intelligent slide generation, and real-time collaboration features for worship teams."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is ProAssist free to use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, ProAssist is completely free and open source. You can download it from GitHub and use it without any cost or subscription."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What platforms does ProAssist support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ProAssist is available for Windows, macOS, and Linux. You can download the appropriate version for your operating system from the releases page."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does the Smart Bible Verse Detection work?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ProAssist uses AI-powered speech recognition to listen to live audio and automatically detects when Bible verses are quoted or referenced. It can identify both direct quotes and paraphrased references, then instantly display the verse in ProPresenter."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does ProAssist work with ProPresenter 7?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, ProAssist is designed to work seamlessly with ProPresenter 7, connecting via the ProPresenter API to control presentations, trigger slides, and sync content in real-time."
+          }
+        }
+      ]
+    }
+  </script>
+
+  <!-- HowTo Schema -->
+  <script type="application/ld+json" slot="head">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Set Up ProAssist with ProPresenter",
+      "description": "Learn how to install and configure ProAssist to automate your ProPresenter workflow with AI-powered features.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Download ProAssist",
+          "text": "Download ProAssist for your operating system (Windows, macOS, or Linux) from the official releases page on GitHub."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Connect to ProPresenter",
+          "text": "Launch ProAssist and connect it to your ProPresenter instance using the built-in connection wizard. ProAssist uses the ProPresenter API for seamless integration."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Configure Audio Input",
+          "text": "Select your audio input source for live transcription. ProAssist can capture audio from your microphone or system audio for real-time speech recognition."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 4,
+          "name": "Start Automating",
+          "text": "Enable the features you want to use such as Smart Verse Detection, AI Slide Generation, or Schedule Automation. ProAssist will now work alongside ProPresenter to enhance your worship presentations."
+        }
+      ]
     }
   </script>
   <div class="min-h-screen bg-background">
