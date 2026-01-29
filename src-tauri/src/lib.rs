@@ -1271,7 +1271,34 @@ fn get_available_monitors_safe(
     window: tauri::WebviewWindow,
 ) -> Result<Vec<SafeMonitorInfo>, String> {
     match window.available_monitors() {
-        Ok(monitors) => {
+        Ok(mut monitors) => {
+            monitors.sort_by(|a, b| {
+                let a_pos = a.position();
+                let b_pos = b.position();
+                let a_primary = a_pos.x == 0 && a_pos.y == 0;
+                let b_primary = b_pos.x == 0 && b_pos.y == 0;
+                if a_primary != b_primary {
+                    return if a_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                }
+                if a_pos.x != b_pos.x {
+                    return a_pos.x.cmp(&b_pos.x);
+                }
+                if a_pos.y != b_pos.y {
+                    return a_pos.y.cmp(&b_pos.y);
+                }
+                let a_size = a.size();
+                let b_size = b.size();
+                if a_size.width != b_size.width {
+                    return a_size.width.cmp(&b_size.width);
+                }
+                if a_size.height != b_size.height {
+                    return a_size.height.cmp(&b_size.height);
+                }
+                let a_name = a.name().map(|s| s.as_str()).unwrap_or("");
+                let b_name = b.name().map(|s| s.as_str()).unwrap_or("");
+                a_name.cmp(&b_name)
+            });
+
             let mut safe_monitors = Vec::new();
             for monitor in monitors {
                 let pos = monitor.position();
@@ -1307,10 +1334,17 @@ fn open_audience_display_window(
 
     // Check if window already exists
     if let Some(existing_window) = app_handle.get_webview_window(WINDOW_LABEL) {
-        // Window exists, just focus it
-        if let Err(e) = existing_window.set_focus() {
-            eprintln!("[Display] Error focusing audience display window: {:?}", e);
-            return Err(format!("Failed to focus window: {:?}", e));
+        // Window exists, avoid focusing on macOS to prevent Space jumps.
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Err(e) = existing_window.set_focus() {
+                eprintln!("[Display] Error focusing audience display window: {:?}", e);
+                return Err(format!("Failed to focus window: {:?}", e));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = existing_window;
         }
         return Ok(());
     }
@@ -1336,7 +1370,34 @@ fn open_audience_display_window(
     let (new_x, new_y, width, height, is_fullscreen, physical_x, physical_y, physical_width, physical_height) = if let Some(index) = monitor_index {
         // Try to find the monitor by index
         match parent_window.available_monitors() {
-            Ok(monitors) => {
+            Ok(mut monitors) => {
+                monitors.sort_by(|a, b| {
+                    let a_pos = a.position();
+                    let b_pos = b.position();
+                    let a_primary = a_pos.x == 0 && a_pos.y == 0;
+                    let b_primary = b_pos.x == 0 && b_pos.y == 0;
+                    if a_primary != b_primary {
+                        return if a_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                    }
+                    if a_pos.x != b_pos.x {
+                        return a_pos.x.cmp(&b_pos.x);
+                    }
+                    if a_pos.y != b_pos.y {
+                        return a_pos.y.cmp(&b_pos.y);
+                    }
+                    let a_size = a.size();
+                    let b_size = b.size();
+                    if a_size.width != b_size.width {
+                        return a_size.width.cmp(&b_size.width);
+                    }
+                    if a_size.height != b_size.height {
+                        return a_size.height.cmp(&b_size.height);
+                    }
+                    let a_name = a.name().map(|s| s.as_str()).unwrap_or("");
+                    let b_name = b.name().map(|s| s.as_str()).unwrap_or("");
+                    a_name.cmp(&b_name)
+                });
+
                 if let Some(monitor) = monitors.get(index) {
                     let pos = monitor.position();
                     let size = monitor.size();
@@ -1487,9 +1548,36 @@ fn show_monitor_identify_window(
     }
 
     // Get the target monitor
-    let monitors = app_handle
+    let mut monitors = app_handle
         .available_monitors()
         .map_err(|e| format!("Failed to get monitors: {:?}", e))?;
+
+    monitors.sort_by(|a, b| {
+        let a_pos = a.position();
+        let b_pos = b.position();
+        let a_primary = a_pos.x == 0 && a_pos.y == 0;
+        let b_primary = b_pos.x == 0 && b_pos.y == 0;
+        if a_primary != b_primary {
+            return if a_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+        }
+        if a_pos.x != b_pos.x {
+            return a_pos.x.cmp(&b_pos.x);
+        }
+        if a_pos.y != b_pos.y {
+            return a_pos.y.cmp(&b_pos.y);
+        }
+        let a_size = a.size();
+        let b_size = b.size();
+        if a_size.width != b_size.width {
+            return a_size.width.cmp(&b_size.width);
+        }
+        if a_size.height != b_size.height {
+            return a_size.height.cmp(&b_size.height);
+        }
+        let a_name = a.name().map(|s| s.as_str()).unwrap_or("");
+        let b_name = b.name().map(|s| s.as_str()).unwrap_or("");
+        a_name.cmp(&b_name)
+    });
 
     let monitor = monitors
         .get(monitor_index)

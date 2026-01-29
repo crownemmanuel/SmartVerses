@@ -291,11 +291,39 @@ function convertToMonitor(info: SafeMonitorInfo): Monitor {
   } as Monitor;
 }
 
+function sortMonitors(monitors: Monitor[]): Monitor[] {
+  return [...monitors].sort((a, b) => {
+    const aIsPrimary = (a.position?.x ?? 0) === 0 && (a.position?.y ?? 0) === 0;
+    const bIsPrimary = (b.position?.x ?? 0) === 0 && (b.position?.y ?? 0) === 0;
+    if (aIsPrimary !== bIsPrimary) return aIsPrimary ? -1 : 1;
+
+    const ax = a.position?.x ?? 0;
+    const bx = b.position?.x ?? 0;
+    if (ax !== bx) return ax - bx;
+
+    const ay = a.position?.y ?? 0;
+    const by = b.position?.y ?? 0;
+    if (ay !== by) return ay - by;
+
+    const aw = a.size?.width ?? 0;
+    const bw = b.size?.width ?? 0;
+    if (aw !== bw) return aw - bw;
+
+    const ah = a.size?.height ?? 0;
+    const bh = b.size?.height ?? 0;
+    if (ah !== bh) return ah - bh;
+
+    const an = a.name ?? "";
+    const bn = b.name ?? "";
+    return an.localeCompare(bn);
+  });
+}
+
 export async function getAvailableMonitors(): Promise<Monitor[]> {
   try {
     // Use our safe Rust command that handles optional workArea
     const safeMonitors = await invoke<SafeMonitorInfo[]>("get_available_monitors_safe");
-    return safeMonitors.map((info) => convertToMonitor(info));
+    return sortMonitors(safeMonitors.map((info) => convertToMonitor(info)));
   } catch (error) {
     console.error("[Display] Failed to load monitors:", error);
     // Log more details about the error for debugging
@@ -308,6 +336,30 @@ export async function getAvailableMonitors(): Promise<Monitor[]> {
 
 export async function openDisplayWindow(settings: DisplaySettings): Promise<void> {
   try {
+    // If the window already exists, avoid re-opening (prevents macOS Space jumps).
+    if (!displayWindow) {
+      try {
+        displayWindow = await WebviewWindow.getByLabel(DISPLAY_WINDOW_LABEL);
+      } catch {
+        displayWindow = null;
+      }
+    }
+
+    if (displayWindow) {
+      const isMac = navigator.userAgent.includes("Mac");
+      if (!isMac) {
+        try {
+          await displayWindow.show();
+        } catch {
+          // Ignore show errors; window may already be visible.
+        }
+      }
+      setTimeout(() => {
+        emit("display:settings", settings);
+      }, 100);
+      return;
+    }
+
     console.log("[Display] Opening audience display window via Rust command", settings.monitorIndex);
     
     // Call the Rust command to create or show the window
