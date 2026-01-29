@@ -57,6 +57,9 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
                   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+                  # Enable ARM i8mm (Int8 Matrix Multiply) for whisper-rs/ggml on Apple Silicon (aarch64-apple-darwin)
+                  CFLAGS: ${{ matrix.args == '--target aarch64-apple-darwin' && '-march=armv8.2-a+dotprod+i8mm' || '' }}
+                  CXXFLAGS: ${{ matrix.args == '--target aarch64-apple-darwin' && '-march=armv8.2-a+dotprod+i8mm' || '' }}
               with:
                   args: ${{ matrix.args }}
 
