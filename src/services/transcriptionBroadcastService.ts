@@ -9,6 +9,7 @@ export interface TranscriptionStreamMessage {
   timestamp: number;
   engine: string;
   text: string;
+  audio_level?: number;
   segment?: TranscriptionSegment;
   scripture_references?: string[];
   key_points?: KeyPoint[];

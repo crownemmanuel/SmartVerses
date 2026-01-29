@@ -74,6 +74,7 @@ const resolveTranscriptionProvider = (
     engine === "assemblyai" ||
     engine === "groq" ||
     engine === "offline-whisper" ||
+    engine === "offline-whisper-native" ||
     engine === "offline-moonshine"
   ) {
     return engine;
@@ -346,6 +347,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 handleNext("groq-setup");
               } else if (
                 state.transcriptionProvider === "offline-whisper" ||
+                state.transcriptionProvider === "offline-whisper-native" ||
                 state.transcriptionProvider === "offline-moonshine"
               ) {
                 handleNext("offline-model-setup");
@@ -405,9 +407,15 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         return (
           <OfflineModelSetupScreen
             modelType={
-              state.transcriptionProvider === "offline-whisper"
+              state.transcriptionProvider === "offline-whisper" ||
+              state.transcriptionProvider === "offline-whisper-native"
                 ? "whisper"
                 : "moonshine"
+            }
+            whisperBackend={
+              state.transcriptionProvider === "offline-whisper-native"
+                ? "native"
+                : "web"
             }
             onNext={() => {
               updateState({ transcriptionConfigured: true });
@@ -442,6 +450,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 handleBack("assemblyai-setup");
               } else if (
                 state.transcriptionProvider === "offline-whisper" ||
+                state.transcriptionProvider === "offline-whisper-native" ||
                 state.transcriptionProvider === "offline-moonshine"
               ) {
                 handleBack("offline-model-setup");

@@ -16,6 +16,7 @@
  */
 
 import { getAssemblyAITemporaryToken } from "./assemblyaiTokenService";
+import { invoke } from "@tauri-apps/api/core";
 import {
   TranscriptionEngine,
   TranscriptionCallbacks,
@@ -25,12 +26,19 @@ import {
   DEFAULT_SMART_VERSES_SETTINGS,
 } from "../types/smartVerses";
 import RecordRTC, { StereoAudioRecorder } from "recordrtc";
+import {
+  isNativeWhisperModelDownloaded,
+  resolveNativeWhisperModelPath,
+} from "./nativeWhisperModelService";
 
 type NativeAudioInputDevice = {
   id: string;
   name: string;
   is_default: boolean;
 };
+
+const isMacOS = (): boolean =>
+  typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent || "");
 
 // =============================================================================
 // STORAGE FUNCTIONS
@@ -1080,6 +1088,464 @@ function createWavFile(samples: Float32Array, sampleRate: number): Blob {
 function writeString(view: DataView, offset: number, string: string) {
   for (let i = 0; i < string.length; i++) {
     view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
+// =============================================================================
+// MAC NATIVE WHISPER TRANSCRIPTION SERVICE (Metal)
+// =============================================================================
+
+type NativeAsrSegment = {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+};
+
+type NativeAsrResult = {
+  full_text: string;
+  new_segments: NativeAsrSegment[];
+};
+
+/**
+ * Mac Native Whisper Transcription Service
+ *
+ * Uses whisper-rs via Tauri backend with Metal acceleration.
+ */
+export class MacNativeWhisperTranscriptionService implements ITranscriptionService {
+  readonly engine: TranscriptionEngine = "offline-whisper-native";
+
+  private callbacks: TranscriptionCallbacks = {};
+  private _isRecording: boolean = false;
+  private audioCaptureMode: "webrtc" | "native" = "webrtc";
+  private selectedMicId: string = "";
+  private selectedNativeDeviceId: string | null = null;
+  private nativeUnlisten: null | (() => void) = null;
+
+  private mediaStream: MediaStream | null = null;
+  private audioContext: AudioContext | null = null;
+  private mediaStreamSource: MediaStreamAudioSourceNode | null = null;
+  private scriptProcessor: ScriptProcessorNode | null = null;
+
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private isPolling: boolean = false;
+  private lastInterimText: string = "";
+  private segmentCounter: number = 0;
+  private lastFinalText: string = "";
+  private lastFinalEndMs: number = 0;
+
+  private modelFileName: string;
+  private language: string;
+
+  constructor(
+    modelFileName: string,
+    language: string = "en",
+    callbacks: TranscriptionCallbacks = {}
+  ) {
+    this.modelFileName = modelFileName;
+    this.language = language;
+    this.callbacks = callbacks;
+  }
+
+  get isRecording(): boolean {
+    return this._isRecording;
+  }
+
+  setCallbacks(callbacks: TranscriptionCallbacks): void {
+    this.callbacks = callbacks;
+  }
+
+  setModelFileName(fileName: string): void {
+    this.modelFileName = fileName;
+  }
+
+  setLanguage(language: string): void {
+    this.language = language;
+  }
+
+  setAudioCaptureMode(mode: "webrtc" | "native"): void {
+    this.audioCaptureMode = mode;
+  }
+
+  setNativeMicrophoneDeviceId(deviceId: string | null): void {
+    this.selectedNativeDeviceId = deviceId;
+  }
+
+  async getNativeMicrophoneDevices(): Promise<NativeAudioInputDevice[]> {
+    try {
+      const mod = await import("@tauri-apps/api/core");
+      return await mod.invoke<NativeAudioInputDevice[]>(
+        "list_native_audio_input_devices"
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async getMicrophoneDevices(): Promise<MediaDeviceInfo[]> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter((device) => device.kind === "audioinput");
+    } catch (error) {
+      console.error("Error getting microphone devices:", error);
+      return [];
+    }
+  }
+
+  setMicrophone(deviceId: string): void {
+    this.selectedMicId = deviceId;
+  }
+
+  private emitAudioLevel(level: number): void {
+    const clamped = Math.max(0, Math.min(1, level));
+    this.callbacks.onAudioLevel?.(clamped);
+  }
+
+  private computeRmsFromFloat32(samples: Float32Array): number {
+    if (samples.length === 0) return 0;
+    let sumSquares = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      sumSquares += s * s;
+    }
+    return Math.sqrt(sumSquares / samples.length);
+  }
+
+  private computeRmsFromInt16(samples: Int16Array): number {
+    if (samples.length === 0) return 0;
+    let sumSquares = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i] / 32768;
+      sumSquares += s * s;
+    }
+    return Math.sqrt(sumSquares / samples.length);
+  }
+
+  private normalizeOverlapText(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9'\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private extractNewNativeText(newText: string): string {
+    if (!this.lastFinalText) {
+      return newText;
+    }
+
+    const lastTrimmed = this.lastFinalText.trim();
+    const newTrimmed = newText.trim();
+
+    if (!lastTrimmed || !newTrimmed) {
+      return newText;
+    }
+
+    const lastNormalized = this.normalizeOverlapText(lastTrimmed);
+    const newNormalized = this.normalizeOverlapText(newTrimmed);
+
+    if (!lastNormalized || !newNormalized) {
+      return newText;
+    }
+
+    const lastWords = lastNormalized.split(/\s+/);
+    const newWords = newNormalized.split(/\s+/);
+
+    let maxOverlapWords = 0;
+    const minOverlapWords = 2;
+
+    for (let i = Math.min(lastWords.length, newWords.length); i >= minOverlapWords; i--) {
+      const lastSuffix = lastWords.slice(-i).join(" ");
+      const newPrefix = newWords.slice(0, i).join(" ");
+      if (lastSuffix === newPrefix) {
+        maxOverlapWords = i;
+        break;
+      }
+    }
+
+    if (maxOverlapWords > 0) {
+      const originalWords = newTrimmed.split(/\s+/);
+      const remainingWords = originalWords.slice(maxOverlapWords);
+      return remainingWords.join(" ").trim();
+    }
+
+    let maxOverlapLength = 0;
+    const minOverlapLength = 20;
+
+    for (let i = Math.min(lastNormalized.length, newNormalized.length); i >= minOverlapLength; i--) {
+      const lastSuffix = lastNormalized.slice(-i);
+      const newPrefix = newNormalized.slice(0, i);
+      if (lastSuffix === newPrefix) {
+        maxOverlapLength = i;
+        break;
+      }
+    }
+
+    if (maxOverlapLength > 0) {
+      const words = newTrimmed.split(/\s+/);
+      let charCount = 0;
+      let wordIndex = 0;
+
+      for (let i = 0; i < words.length; i++) {
+        const normalizedWord = this.normalizeOverlapText(words[i]);
+        const wordLength = normalizedWord.length + 1; // +1 for space
+        if (charCount + wordLength > maxOverlapLength) {
+          wordIndex = i;
+          break;
+        }
+        charCount += wordLength;
+      }
+
+      const remainingWords = words.slice(wordIndex);
+      return remainingWords.join(" ").trim();
+    }
+
+    return newText;
+  }
+
+  private async cleanupAudioResources(): Promise<void> {
+    await this.stopNativeAudioCapture();
+
+    if (this.scriptProcessor) {
+      this.scriptProcessor.disconnect();
+      this.scriptProcessor = null;
+    }
+
+    if (this.mediaStreamSource) {
+      this.mediaStreamSource.disconnect();
+      this.mediaStreamSource = null;
+    }
+
+    if (this.audioContext) {
+      try {
+        await this.audioContext.close();
+      } catch {
+        // ignore
+      }
+      this.audioContext = null;
+    }
+
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((track: MediaStreamTrack) => {
+        track.stop();
+      });
+      this.mediaStream = null;
+    }
+  }
+
+  private async stopNativeAudioCapture(): Promise<void> {
+    if (!this.nativeUnlisten) return;
+    try {
+      const core = await import("@tauri-apps/api/core");
+      await core.invoke("stop_native_audio_stream");
+    } catch {
+      // ignore
+    }
+    try {
+      this.nativeUnlisten();
+    } catch {
+      // ignore
+    }
+    this.nativeUnlisten = null;
+  }
+
+  private async startAudioCapture(): Promise<void> {
+    if (this.audioCaptureMode === "native") {
+      const events = await import("@tauri-apps/api/event");
+      const core = await import("@tauri-apps/api/core");
+
+      const base64ToInt16Array = (b64: string): Int16Array => {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Int16Array(bytes.buffer);
+      };
+
+      this.nativeUnlisten = await events.listen<{ data_b64: string }>(
+        "native_audio_chunk",
+        (evt) => {
+          try {
+            const int16 = base64ToInt16Array(evt.payload.data_b64);
+            this.emitAudioLevel(this.computeRmsFromInt16(int16));
+            void this.pushAudio(int16).catch(() => {
+              // ignore
+            });
+          } catch {
+            // ignore
+          }
+        }
+      );
+
+      await core.invoke("start_native_audio_stream", {
+        deviceId: this.selectedNativeDeviceId ?? undefined,
+      });
+    } else {
+      const constraints: MediaStreamConstraints = {
+        audio: this.selectedMicId
+          ? {
+              deviceId: { exact: this.selectedMicId },
+              sampleRate: 16000,
+              channelCount: 1,
+              echoCancellation: true,
+              noiseSuppression: true,
+            }
+          : {
+              sampleRate: 16000,
+              channelCount: 1,
+              echoCancellation: true,
+              noiseSuppression: true,
+            },
+      };
+
+      this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.audioContext = new AudioContext({ sampleRate: 16000 });
+      this.mediaStreamSource = this.audioContext.createMediaStreamSource(
+        this.mediaStream
+      );
+      this.scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+
+      this.scriptProcessor.onaudioprocess = (event) => {
+        const inputData = event.inputBuffer.getChannelData(0);
+        this.emitAudioLevel(this.computeRmsFromFloat32(inputData));
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        void this.pushAudio(pcm16).catch(() => {
+          // ignore
+        });
+      };
+
+      this.mediaStreamSource.connect(this.scriptProcessor);
+      this.scriptProcessor.connect(this.audioContext.destination);
+    }
+  }
+
+  private async pushAudio(pcm16: Int16Array): Promise<void> {
+    const payload = Array.from(pcm16);
+    await invoke("asr_push_audio", { pcmChunk: payload });
+  }
+
+  private startPolling(): void {
+    if (this.pollInterval) return;
+    this.pollInterval = setInterval(() => {
+      this.pollOnce().catch(() => {
+        // ignore
+      });
+    }, 250);
+  }
+
+  private stopPolling(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+  }
+
+  private async pollOnce(): Promise<void> {
+    if (this.isPolling) return;
+    this.isPolling = true;
+    try {
+      const result = await invoke<NativeAsrResult>("asr_poll");
+      if (!result) return;
+
+      if (result.full_text && result.full_text !== this.lastInterimText) {
+        this.lastInterimText = result.full_text;
+        this.callbacks.onInterimTranscript?.(result.full_text);
+      }
+
+      if (Array.isArray(result.new_segments) && result.new_segments.length > 0) {
+        for (const segment of result.new_segments) {
+          const text = segment.text?.trim();
+          if (!text) continue;
+          const startMs = typeof segment.start_ms === "number" ? segment.start_ms : 0;
+          const endMs = typeof segment.end_ms === "number" ? segment.end_ms : 0;
+
+          let emitText = text;
+          if (this.lastFinalText && startMs < this.lastFinalEndMs) {
+            emitText = this.extractNewNativeText(text);
+          }
+
+          if (!emitText.trim()) {
+            this.lastFinalText = text;
+            this.lastFinalEndMs = Math.max(this.lastFinalEndMs, endMs);
+            continue;
+          }
+
+          const transcriptionSegment: TranscriptionSegment = {
+            id: `segment-${++this.segmentCounter}`,
+            text: emitText,
+            timestamp: Date.now(),
+            isFinal: true,
+          };
+          this.callbacks.onFinalTranscript?.(emitText, transcriptionSegment);
+          this.lastFinalText = text;
+          this.lastFinalEndMs = Math.max(this.lastFinalEndMs, endMs);
+        }
+      }
+    } finally {
+      this.isPolling = false;
+    }
+  }
+
+  async startTranscription(): Promise<void> {
+    if (this._isRecording) return;
+    if (!isMacOS()) {
+      throw new Error("Mac native Whisper is only available on macOS");
+    }
+
+    this.callbacks.onStatusChange?.("connecting");
+    this.lastInterimText = "";
+    this.lastFinalText = "";
+    this.lastFinalEndMs = 0;
+
+    const modelFileName = this.modelFileName || "ggml-small.en-q5_1.bin";
+    const isDownloaded = await isNativeWhisperModelDownloaded(modelFileName);
+    if (!isDownloaded) {
+      throw new Error("Selected native Whisper model is not downloaded");
+    }
+
+    const modelPath = await resolveNativeWhisperModelPath(modelFileName);
+
+    try {
+      await invoke("asr_init", {
+        modelPath,
+        language: this.language || "en",
+        windowMs: 6000,
+        stepMs: 500,
+      });
+
+      await this.startAudioCapture();
+
+      this._isRecording = true;
+      this.startPolling();
+      this.callbacks.onStatusChange?.("recording");
+    } catch (error) {
+      this._isRecording = false;
+      this.callbacks.onStatusChange?.("error");
+      this.callbacks.onError?.(error as Error);
+      await this.cleanupAudioResources();
+      throw error;
+    }
+  }
+
+  async stopTranscription(): Promise<void> {
+    this._isRecording = false;
+    this.stopPolling();
+    await this.cleanupAudioResources();
+    try {
+      await invoke("asr_reset");
+    } catch {
+      // ignore
+    }
+    this.emitAudioLevel(0);
+    this.callbacks.onStatusChange?.("idle");
+  }
+
+  destroy(): void {
+    this.stopTranscription();
   }
 }
 
@@ -2150,6 +2616,12 @@ export function createTranscriptionService(
     case "offline-whisper":
       return new OfflineWhisperTranscriptionService(
         settings.offlineWhisperModel || "onnx-community/whisper-base",
+        settings.offlineLanguage || "en",
+        callbacks
+      );
+    case "offline-whisper-native":
+      return new MacNativeWhisperTranscriptionService(
+        settings.offlineWhisperNativeModel || "ggml-small.en-q5_1.bin",
         settings.offlineLanguage || "en",
         callbacks
       );

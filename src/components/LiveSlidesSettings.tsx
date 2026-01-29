@@ -264,7 +264,7 @@ const LiveSlidesSettings: React.FC = () => {
                 type="text"
                 value={settings.outputPath}
                 onChange={(e) => handleChange("outputPath", e.target.value)}
-                placeholder="~/Documents/ProAssist/Templates/live slides"
+                placeholder="~/Documents/SmartVerses/Templates/LiveSlides"
                 style={{ width: "100%", padding: "var(--spacing-2)" }}
               />
               <p

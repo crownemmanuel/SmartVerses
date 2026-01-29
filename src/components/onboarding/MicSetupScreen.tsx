@@ -8,6 +8,7 @@ import {
   loadSmartVersesSettings,
   saveSmartVersesSettings,
 } from "../../services/transcriptionService";
+import { mapAudioLevel } from "../../utils/audioMeter";
 import "./onboarding.css";
 
 type NativeAudioInputDevice = {
@@ -165,7 +166,7 @@ const MicSetupScreen: React.FC<MicSetupScreenProps> = ({
           const rms = computeRmsFromInt16(int16);
           const nextLevel = audioLevelRef.current * 0.65 + rms * 0.35;
           audioLevelRef.current = nextLevel;
-          setAudioLevel(nextLevel);
+          setAudioLevel(mapAudioLevel(nextLevel));
 
           if (nextLevel > AUDIO_ACTIVE_THRESHOLD) {
             setAudioActive(true);
@@ -337,9 +338,9 @@ const MicSetupScreen: React.FC<MicSetupScreenProps> = ({
                     width: `${Math.max(2, Math.round((isTesting ? audioLevel : 0) * 100))}%`,
                     backgroundColor:
                       isTesting
-                        ? audioLevel > 0.7
+                        ? audioLevel > 0.85
                           ? "rgb(220, 38, 38)"
-                          : audioLevel > 0.4
+                          : audioLevel > 0.7
                           ? "rgb(234, 179, 8)"
                           : "rgb(34, 197, 94)"
                         : "rgba(148, 163, 184, 0.5)",
@@ -369,7 +370,7 @@ const MicSetupScreen: React.FC<MicSetupScreenProps> = ({
           className="onboarding-body"
           style={{ fontSize: "0.9rem", marginTop: "1.5rem" }}
         >
-          You can change this later in Settings → SmartVerses → Microphone.
+          You can change this later in Settings → Transcription → Microphone.
         </p>
 
         <div className="onboarding-buttons">

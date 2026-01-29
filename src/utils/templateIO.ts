@@ -155,7 +155,7 @@ function fillTemplateDefaults(t: Template): Template {
       t.processWithAI || t.processingType === "ai" ? t.aiProvider : undefined,
     aiModel:
       t.processWithAI || t.processingType === "ai" ? t.aiModel : undefined,
-    outputPath: t.outputPath || "~/Documents/ProAssist/Templates",
+    outputPath: t.outputPath || "~/Documents/SmartVerses/Templates",
     outputFileNamePrefix: t.outputFileNamePrefix || "imported_slide_",
     // Preserve ProPresenter activation settings if present
     proPresenterActivation: t.proPresenterActivation,

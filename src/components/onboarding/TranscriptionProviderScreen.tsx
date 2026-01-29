@@ -7,9 +7,19 @@ import { FaCloud, FaCoins, FaLaptop, FaCheck } from "react-icons/fa";
 import "./onboarding.css";
 
 interface TranscriptionProviderScreenProps {
-  selectedProvider?: "assemblyai" | "groq" | "offline-whisper" | "offline-moonshine";
+  selectedProvider?:
+    | "assemblyai"
+    | "groq"
+    | "offline-whisper"
+    | "offline-whisper-native"
+    | "offline-moonshine";
   onSelectProvider: (
-    provider: "assemblyai" | "groq" | "offline-whisper" | "offline-moonshine"
+    provider:
+      | "assemblyai"
+      | "groq"
+      | "offline-whisper"
+      | "offline-whisper-native"
+      | "offline-moonshine"
   ) => void;
   onNext: () => void;
   onBack: () => void;
@@ -21,10 +31,21 @@ type TabType = "cloud" | "free" | "offline";
 const TranscriptionProviderScreen: React.FC<
   TranscriptionProviderScreenProps
 > = ({ selectedProvider, onSelectProvider, onNext, onBack, onSkip }) => {
+  const isMac =
+    typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
   const resolveTabForProvider = (
-    provider?: "assemblyai" | "groq" | "offline-whisper" | "offline-moonshine"
+    provider?:
+      | "assemblyai"
+      | "groq"
+      | "offline-whisper"
+      | "offline-whisper-native"
+      | "offline-moonshine"
   ): TabType => {
-    if (provider === "offline-whisper" || provider === "offline-moonshine") {
+    if (
+      provider === "offline-whisper" ||
+      provider === "offline-whisper-native" ||
+      provider === "offline-moonshine"
+    ) {
       return "offline";
     }
     if (provider === "groq" || provider === "assemblyai") {
@@ -154,29 +175,57 @@ const TranscriptionProviderScreen: React.FC<
                   Fast cloud transcription with a generous free tier.
                 </p>
               </div>
-              <div
-                className={`onboarding-card ${
-                  selectedProvider === "offline-whisper" ? "selected" : ""
-                }`}
-                onClick={() => onSelectProvider("offline-whisper")}
-              >
-                <img
-                  src="/assets/onboarding/whisper.jpg"
-                  alt="Whisper"
-                  className="onboarding-card-icon"
-                />
-                <h3 className="onboarding-card-title">
-                  Whisper
-                  {selectedProvider === "offline-whisper" && (
-                    <FaCheck
-                      style={{ marginLeft: "8px", color: "#22c55e" }}
-                    />
-                  )}
-                </h3>
-                <p className="onboarding-card-text">
-                  Free offline transcription using Whisper models. Runs locally on your device.
-                </p>
-              </div>
+              {isMac && (
+                <div
+                  className={`onboarding-card ${
+                    selectedProvider === "offline-whisper-native" ? "selected" : ""
+                  }`}
+                  onClick={() => onSelectProvider("offline-whisper-native")}
+                >
+                  <img
+                    src="/assets/onboarding/whisper.jpg"
+                    alt="Whisper Native"
+                    className="onboarding-card-icon"
+                  />
+                  <h3 className="onboarding-card-title">
+                    Whisper Native (Mac)
+                    <span className="onboarding-card-tag">Fast · Metal GPU</span>
+                    {selectedProvider === "offline-whisper-native" && (
+                      <FaCheck
+                        style={{ marginLeft: "8px", color: "#22c55e" }}
+                      />
+                    )}
+                  </h3>
+                  <p className="onboarding-card-text">
+                    Native Whisper running on Apple Silicon with Metal acceleration.
+                  </p>
+                </div>
+              )}
+              {!isMac && (
+                <div
+                  className={`onboarding-card ${
+                    selectedProvider === "offline-whisper" ? "selected" : ""
+                  }`}
+                  onClick={() => onSelectProvider("offline-whisper")}
+                >
+                  <img
+                    src="/assets/onboarding/whisper.jpg"
+                    alt="Whisper"
+                    className="onboarding-card-icon"
+                  />
+                  <h3 className="onboarding-card-title">
+                    Whisper (Web)
+                    {selectedProvider === "offline-whisper" && (
+                      <FaCheck
+                        style={{ marginLeft: "8px", color: "#22c55e" }}
+                      />
+                    )}
+                  </h3>
+                  <p className="onboarding-card-text">
+                    Free offline transcription using Whisper models. Runs locally on your device.
+                  </p>
+                </div>
+              )}
               <div
                 className={`onboarding-card ${
                   selectedProvider === "offline-moonshine" ? "selected" : ""
@@ -205,30 +254,58 @@ const TranscriptionProviderScreen: React.FC<
 
           {activeTab === "offline" && (
             <>
-              <div
-                className={`onboarding-card ${
-                  selectedProvider === "offline-whisper" ? "selected" : ""
-                }`}
-                onClick={() => onSelectProvider("offline-whisper")}
-              >
-                <img
-                  src="/assets/onboarding/whisper.jpg"
-                  alt="Whisper"
-                  className="onboarding-card-icon"
-                />
-                <h3 className="onboarding-card-title">
-                  Whisper
-                  <span className="onboarding-card-tag">Recommended</span>
-                  {selectedProvider === "offline-whisper" && (
-                    <FaCheck
-                      style={{ marginLeft: "8px", color: "#22c55e" }}
-                    />
-                  )}
-                </h3>
-                <p className="onboarding-card-text">
-                  Local transcription using OpenAI Whisper models. No internet required after download.
-                </p>
-              </div>
+              {isMac && (
+                <div
+                  className={`onboarding-card ${
+                    selectedProvider === "offline-whisper-native" ? "selected" : ""
+                  }`}
+                  onClick={() => onSelectProvider("offline-whisper-native")}
+                >
+                  <img
+                    src="/assets/onboarding/whisper.jpg"
+                    alt="Whisper Native"
+                    className="onboarding-card-icon"
+                  />
+                  <h3 className="onboarding-card-title">
+                    Whisper Native (Mac)
+                    <span className="onboarding-card-tag">Fast · Metal GPU</span>
+                    {selectedProvider === "offline-whisper-native" && (
+                      <FaCheck
+                        style={{ marginLeft: "8px", color: "#22c55e" }}
+                      />
+                    )}
+                  </h3>
+                  <p className="onboarding-card-text">
+                    Native Whisper on Apple Silicon with Metal acceleration.
+                  </p>
+                </div>
+              )}
+              {!isMac && (
+                <div
+                  className={`onboarding-card ${
+                    selectedProvider === "offline-whisper" ? "selected" : ""
+                  }`}
+                  onClick={() => onSelectProvider("offline-whisper")}
+                >
+                  <img
+                    src="/assets/onboarding/whisper.jpg"
+                    alt="Whisper"
+                    className="onboarding-card-icon"
+                  />
+                  <h3 className="onboarding-card-title">
+                    Whisper (Web)
+                    <span className="onboarding-card-tag">Recommended</span>
+                    {selectedProvider === "offline-whisper" && (
+                      <FaCheck
+                        style={{ marginLeft: "8px", color: "#22c55e" }}
+                      />
+                    )}
+                  </h3>
+                  <p className="onboarding-card-text">
+                    Local transcription using OpenAI Whisper models. No internet required after download.
+                  </p>
+                </div>
+              )}
               <div
                 className={`onboarding-card ${
                   selectedProvider === "offline-moonshine" ? "selected" : ""

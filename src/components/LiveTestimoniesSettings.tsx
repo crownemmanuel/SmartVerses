@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FaDesktop, FaCheck, FaTimes, FaSpinner } from "react-icons/fa";
+import { FaDesktop, FaCheck, FaTimes, FaSpinner, FaDatabase, FaFolderOpen, FaUser, FaLink } from "react-icons/fa";
 import { FirebaseConfig, LiveTestimoniesSettings as LiveTestimoniesSettingsType, NameFormattingType, LiveTestimonyProPresenterConfig } from "../types/testimonies";
 import {
   saveFirebaseConfig,
@@ -14,6 +14,7 @@ import {
 } from "../services/propresenterService";
 import { ProPresenterConnection } from "../types/propresenter";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
+import { sectionStyle, sectionHeaderStyle } from "../utils/settingsSectionStyles";
 import "../App.css";
 
 const LiveTestimoniesSettings: React.FC = () => {
@@ -198,21 +199,22 @@ const LiveTestimoniesSettings: React.FC = () => {
   return (
     <div style={{ maxWidth: "800px" }}>
       <h2 style={{ marginBottom: "var(--spacing-4)" }}>Live Testimonies Settings</h2>
-
-      {/* Link to web app */}
-      <div
+      <p
         style={{
-          marginBottom: "var(--spacing-5)",
-          padding: "var(--spacing-3)",
-          backgroundColor: "var(--app-input-bg-color)",
-          borderRadius: "8px",
-          border: "1px solid var(--app-border-color)",
+          marginBottom: "var(--spacing-6)",
+          color: "var(--app-text-color-secondary)",
         }}
       >
-        <p style={{ margin: "0 0 var(--spacing-2) 0", fontWeight: 500 }}>
-          Web App Implementation
-        </p>
-        <p style={{ margin: "0 0 var(--spacing-2) 0", fontSize: "0.9em" }}>
+        Configure Firebase sync, output path, name formatting, and ProPresenter activation for live testimonies.
+      </p>
+
+      {/* Web App Implementation */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaLink />
+          <h3 style={{ margin: 0 }}>Web App Implementation</h3>
+        </div>
+        <p style={{ margin: "0 0 var(--spacing-2) 0", fontSize: "0.9em", color: "var(--app-text-color-secondary)" }}>
           To implement the web app side of Live Testimonies, visit:
         </p>
         <a
@@ -230,13 +232,14 @@ const LiveTestimoniesSettings: React.FC = () => {
       </div>
 
       {/* Firebase Configuration */}
-      <div style={{ marginBottom: "var(--spacing-5)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--spacing-3)" }}>
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaDatabase />
           <h3 style={{ margin: 0 }}>Firebase Configuration</h3>
           <button
             onClick={() => setIsImportModalOpen(true)}
-            className="secondary"
-            style={{ whiteSpace: "nowrap" }}
+            className="secondary btn-sm"
+            style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
           >
             Import Config
           </button>
@@ -340,9 +343,12 @@ const LiveTestimoniesSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* Output Configuration */}
-      <div style={{ marginBottom: "var(--spacing-5)" }}>
-        <h3 style={{ marginBottom: "var(--spacing-3)" }}>Live Testimony Output</h3>
+      {/* Live Testimony Output */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaFolderOpen />
+          <h3 style={{ margin: 0 }}>Live Testimony Output</h3>
+        </div>
         <p style={{ marginBottom: "var(--spacing-3)", fontSize: "0.9em", color: "var(--app-text-color-secondary)" }}>
           Configure where the live testimony name will be saved when you click the "Live" button.
         </p>
@@ -356,7 +362,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               type="text"
               value={outputPath}
               onChange={(e) => setOutputPath(e.target.value)}
-              placeholder="~/Documents/ProAssist/Templates"
+              placeholder="~/Documents/SmartVerses/Templates"
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
             <p style={{ marginTop: "var(--spacing-1)", fontSize: "0.85em", color: "var(--app-text-color-secondary)" }}>
@@ -382,10 +388,13 @@ const LiveTestimoniesSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* Name Formatting Configuration */}
-      <div style={{ marginBottom: "var(--spacing-5)" }}>
-        <h3 style={{ marginBottom: "var(--spacing-3)" }}>Name Formatting Logic</h3>
-        <p style={{ marginBottom: "var(--spacing-3)", fontSize: "0.9em", color: "var(--text-secondary)" }}>
+      {/* Name Formatting Logic */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaUser />
+          <h3 style={{ margin: 0 }}>Name Formatting Logic</h3>
+        </div>
+        <p style={{ marginBottom: "var(--spacing-3)", fontSize: "0.9em", color: "var(--app-text-color-secondary)" }}>
           Configure how names are formatted when copying or setting live. Default behavior formats names as "FirstName L." (e.g., "John D.") and removes common prefixes.
         </p>
 
@@ -554,11 +563,11 @@ const LiveTestimoniesSettings: React.FC = () => {
       </div>
 
       {/* ProPresenter Activation */}
-      <div style={{ marginBottom: "var(--spacing-5)" }}>
-        <h3 style={{ marginBottom: "var(--spacing-3)", display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
           <FaDesktop />
-          ProPresenter Activation
-        </h3>
+          <h3 style={{ margin: 0 }}>ProPresenter Activation</h3>
+        </div>
         <p style={{ marginBottom: "var(--spacing-3)", fontSize: "0.9em", color: "var(--app-text-color-secondary)" }}>
           Optionally trigger a ProPresenter presentation when a testimony goes live or when cleared.
           This is useful for showing a graphic overlay when testimonies are being given.

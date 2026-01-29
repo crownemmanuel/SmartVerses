@@ -51,7 +51,7 @@ mime_guess = "2"
 lazy_static = "1.4"
 
 # HTTP client for AssemblyAI API
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "stream"] }
 
 # MIDI support
 midir = "0.10"
@@ -61,6 +61,9 @@ fontdb = "0.23"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.15", features = ["metal"] }
 
 [[bin]]
 name = "proassist"

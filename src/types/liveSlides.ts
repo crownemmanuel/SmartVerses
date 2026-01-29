@@ -77,6 +77,7 @@ export interface WsTranscriptionStream {
   timestamp: number;
   engine: string;
   text: string;
+  audio_level?: number;
   segment?: {
     id: string;
     text: string;
@@ -151,6 +152,6 @@ export interface LiveSlidesProPresenterActivationRule {
 export const DEFAULT_LIVE_SLIDES_SETTINGS: LiveSlidesSettings = {
   serverPort: 9876,
   autoStartServer: false,
-  outputPath: "~/Documents/ProAssist/Templates/live slides",
+  outputPath: "~/Documents/SmartVerses/Templates/LiveSlides",
   outputFilePrefix: "live_slide_",
 };

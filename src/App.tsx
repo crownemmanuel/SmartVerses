@@ -52,6 +52,7 @@ import { setApiEnabled } from "./services/apiService";
 import UpdateNotification from "./components/UpdateNotification";
 import OfflineModelLoadingToast from "./components/OfflineModelLoadingToast";
 import { preloadOfflineModel } from "./services/offlineModelPreloadService";
+import { isModelDownloaded } from "./services/offlineModelService";
 import { loadSmartVersesSettings } from "./services/transcriptionService";
 
 // Global Chat Assistant imports
@@ -60,6 +61,38 @@ import GlobalChatDrawer from "./components/GlobalChatDrawer";
 import { Template, Playlist, Slide } from "./types";
 import { ScheduleItem } from "./types/propresenter";
 import { SetTimerParams } from "./types/globalChat";
+
+const FEATURE_ROUTE_ORDER: Array<{
+  path: string;
+  isEnabled: (features: EnabledFeatures) => boolean;
+}> = [
+  { path: "/", isEnabled: (features) => features.slides },
+  { path: "/stage-assist", isEnabled: (features) => features.timer },
+  { path: "/live-testimonies", isEnabled: (features) => features.liveTestimonies },
+  { path: "/smartverses", isEnabled: (features) => features.smartVerses },
+  { path: "/recorder", isEnabled: (features) => features.recorder },
+  { path: "/settings", isEnabled: () => true },
+  { path: "/help", isEnabled: () => true },
+];
+
+const FEATURE_ROUTE_MAP: Record<string, keyof EnabledFeatures> = {
+  "/": "slides",
+  "/stage-assist": "timer",
+  "/live-testimonies": "liveTestimonies",
+  "/smartverses": "smartVerses",
+  "/recorder": "recorder",
+};
+
+const getDefaultHomePath = (features: EnabledFeatures) => {
+  const match = FEATURE_ROUTE_ORDER.find((route) => route.isEnabled(features));
+  return match?.path ?? "/settings";
+};
+
+const isFeatureRouteDisabled = (path: string, features: EnabledFeatures) => {
+  const featureKey = FEATURE_ROUTE_MAP[path];
+  if (!featureKey) return false;
+  return !features[featureKey];
+};
 
 // Navigation component that uses useLocation
 function Navigation({
@@ -247,6 +280,7 @@ function AppContent({
 }) {
   const location = useLocation();
   const { schedule, startCountdown, startCountdownToTime, stopTimer: _stopStageTimer } = useStageAssist();
+  const navigate = useNavigate();
   const isNotepadPage = location.pathname.includes("/live-slides/notepad/");
 
   // Enabled features state
@@ -320,6 +354,16 @@ function AppContent({
       window.removeEventListener("features-updated", handleFeaturesUpdated as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (isNotepadPage || location.pathname === "/audience-display") return;
+    if (!isFeatureRouteDisabled(location.pathname, enabledFeaturesState)) return;
+
+    const nextPath = getDefaultHomePath(enabledFeaturesState);
+    if (nextPath === location.pathname) return;
+
+    navigate(nextPath, { replace: true });
+  }, [enabledFeaturesState, isNotepadPage, location.pathname, navigate]);
 
   useEffect(() => {
     let unlisten: null | (() => void) = null;
@@ -686,18 +730,16 @@ function App() {
 
     if (settings.transcriptionEngine === "offline-whisper") {
       modelId = settings.offlineWhisperModel || "onnx-community/whisper-base";
+    } else if (settings.transcriptionEngine === "offline-whisper-native") {
+      modelId = null;
     } else if (settings.transcriptionEngine === "offline-moonshine") {
       modelId =
         settings.offlineMoonshineModel || "onnx-community/moonshine-base-ONNX";
     }
 
-    if (!modelId) return;
+    if (!modelId || !isModelDownloaded(modelId)) return;
 
-    preloadOfflineModel({
-      modelId,
-      source: "startup",
-      force: true,
-    }).catch((error) => {
+    preloadOfflineModel({ modelId, source: "startup" }).catch((error) => {
       console.warn("[OfflineModel] Startup preload failed:", error);
     });
   }, [isMainWindow]);

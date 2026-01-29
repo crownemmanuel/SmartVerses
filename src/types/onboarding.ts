@@ -44,7 +44,12 @@ export interface OnboardingState {
   micConfigured: boolean;
 
   // Provider selections
-  transcriptionProvider?: "assemblyai" | "groq" | "offline-whisper" | "offline-moonshine";
+  transcriptionProvider?:
+    | "assemblyai"
+    | "groq"
+    | "offline-whisper"
+    | "offline-whisper-native"
+    | "offline-moonshine";
   paraphrasingProvider?: "openai" | "gemini" | "groq";
 
   // API Keys

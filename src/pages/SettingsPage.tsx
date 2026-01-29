@@ -24,6 +24,7 @@ import {
   FaToggleOn,
   FaUser,
   FaDesktop,
+  FaMicrophone,
 } from "react-icons/fa";
 import "../App.css"; // Ensure global styles are applied
 import {
@@ -36,7 +37,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { loadEnabledFeatures } from "../services/recorderService";
 import type { EnabledFeatures } from "../types/recorder";
 
-type SettingsView = "templates" | "aiConfiguration" | "liveTestimonies" | "liveSlides" | "smartVerses" | "display" | "recorder" | "network" | "proPresenter" | "features" | "midi" | "version";
+type SettingsView = "templates" | "aiConfiguration" | "liveTestimonies" | "liveSlides" | "smartVerses" | "transcription" | "display" | "recorder" | "network" | "proPresenter" | "features" | "midi" | "version";
 
 const SETTINGS_VIEWS: SettingsView[] = [
   "templates",
@@ -44,6 +45,7 @@ const SETTINGS_VIEWS: SettingsView[] = [
   "liveTestimonies",
   "liveSlides",
   "smartVerses",
+  "transcription",
   "display",
   "recorder",
   "network",
@@ -162,7 +164,7 @@ const SettingsPage: React.FC = () => {
       aiPrompt: "",
       aiProvider: undefined,
       aiModel: undefined,
-      outputPath: "~/Documents/ProAssist/Templates",
+      outputPath: "~/Documents/SmartVerses/Templates",
       outputFileNamePrefix: "new_template_slide_",
     };
     setTemplates((prev) => [...prev, newTemplate]);
@@ -324,6 +326,15 @@ const SettingsPage: React.FC = () => {
               SmartVerses
             </button>
           )}
+          {enabledFeatures.smartVerses && (
+            <button
+              onClick={() => setCurrentView("transcription")}
+              className={currentView === "transcription" ? "active" : ""}
+            >
+              <FaMicrophone />
+              Transcription
+            </button>
+          )}
           <button
             onClick={() => setCurrentView("display")}
             className={currentView === "display" ? "active" : ""}
@@ -428,7 +439,8 @@ const SettingsPage: React.FC = () => {
         {currentView === "aiConfiguration" && <AISettingsForm />}
         {currentView === "liveTestimonies" && <LiveTestimoniesSettings />}
         {currentView === "liveSlides" && <LiveSlidesSettings />}
-        {currentView === "smartVerses" && <SmartVersesSettings />}
+        {currentView === "smartVerses" && <SmartVersesSettings mode="smartVerses" />}
+        {currentView === "transcription" && <SmartVersesSettings mode="transcription" />}
         {currentView === "display" && <DisplaySettings />}
         {currentView === "recorder" && <RecorderSettings />}
         {currentView === "network" && <NetworkSettings />}

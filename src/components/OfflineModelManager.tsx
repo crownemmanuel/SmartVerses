@@ -29,6 +29,14 @@ import {
   ModelDownloadProgress,
 } from "../services/offlineModelService";
 import { preloadOfflineModel } from "../services/offlineModelPreloadService";
+import {
+  NATIVE_WHISPER_MODELS,
+  NativeWhisperModelInfo,
+  downloadNativeWhisperModel,
+  deleteNativeWhisperModel,
+  isNativeWhisperModelDownloaded,
+} from "../services/nativeWhisperModelService";
+import { isDevModeEnabled } from "../utils/devFlags";
 
 interface OfflineModelManagerProps {
   isOpen: boolean;
@@ -37,31 +45,96 @@ interface OfflineModelManagerProps {
   onModelDeleted?: (modelId: string) => void;
 }
 
+type ManagedModel = {
+  id: string;
+  name: string;
+  size: string;
+  description: string;
+  isDownloaded: boolean;
+};
+
+type NativeModelWithStatus = NativeWhisperModelInfo & {
+  isDownloaded: boolean;
+};
+
 const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
   isOpen,
   onClose,
   onModelDownloaded,
   onModelDeleted,
 }) => {
+  const isMac =
+    typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
+  const isDevMode = isDevModeEnabled();
   const [models, setModels] = useState<OfflineModelInfo[]>([]);
+  const [nativeModels, setNativeModels] = useState<NativeModelWithStatus[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
   const [downloadingModels, setDownloadingModels] = useState<Set<string>>(new Set());
+  const [deletingModels, setDeletingModels] = useState<Set<string>>(new Set());
   const [currentFile, setCurrentFile] = useState<Record<string, string>>({});
+  const [nativeDownloadProgress, setNativeDownloadProgress] = useState<
+    Record<string, number>
+  >({});
+  const [nativeDownloadingModels, setNativeDownloadingModels] = useState<Set<string>>(
+    new Set()
+  );
+  const [nativeDeletingModels, setNativeDeletingModels] = useState<Set<string>>(new Set());
+  const [nativeCurrentFile, setNativeCurrentFile] = useState<Record<string, string>>(
+    {}
+  );
   const [hasWebGPU, setHasWebGPU] = useState<boolean | null>(null);
   const [storageInfo, setStorageInfo] = useState<{ used: number; quota: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshModels = useCallback(() => {
+    const downloaded = getDownloadedModelIds();
+    const availableModels =
+      isMac && !isDevMode
+        ? AVAILABLE_OFFLINE_MODELS.filter((model) => model.type !== "whisper")
+        : AVAILABLE_OFFLINE_MODELS;
+    setModels(
+      availableModels.map((model) => ({
+        ...model,
+        isDownloaded: downloaded.includes(model.modelId),
+      }))
+    );
+  }, [isMac, isDevMode]);
+
+  const refreshNativeModels = useCallback(async () => {
+    if (!isMac) {
+      if (isDevMode) {
+        setNativeModels(
+          NATIVE_WHISPER_MODELS.map((model) => ({
+            ...model,
+            isDownloaded: false,
+          }))
+        );
+      } else {
+        setNativeModels([]);
+      }
+      return;
+    }
+
+    try {
+      const entries = await Promise.all(
+        NATIVE_WHISPER_MODELS.map(async (model) => ({
+          ...model,
+          isDownloaded: await isNativeWhisperModelDownloaded(model.fileName),
+        }))
+      );
+      setNativeModels(entries);
+    } catch (err) {
+      console.error("Failed to refresh native Whisper models:", err);
+    }
+  }, [isMac, isDevMode]);
 
   // Load models and check WebGPU support
   useEffect(() => {
     if (!isOpen) return;
 
     const loadData = async () => {
-      const downloaded = getDownloadedModelIds();
-      const modelsWithStatus = AVAILABLE_OFFLINE_MODELS.map((model) => ({
-        ...model,
-        isDownloaded: downloaded.includes(model.modelId),
-      }));
-      setModels(modelsWithStatus);
+      refreshModels();
+      await refreshNativeModels();
 
       const webgpuSupport = await supportsWebGPU();
       setHasWebGPU(webgpuSupport);
@@ -71,18 +144,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
     };
 
     loadData();
-  }, [isOpen]);
-
-  // Refresh models list
-  const refreshModels = useCallback(() => {
-    const downloaded = getDownloadedModelIds();
-    setModels(
-      AVAILABLE_OFFLINE_MODELS.map((model) => ({
-        ...model,
-        isDownloaded: downloaded.includes(model.modelId),
-      }))
-    );
-  }, []);
+  }, [isOpen, refreshModels, refreshNativeModels]);
 
   // Handle model download
   const handleDownload = useCallback(
@@ -145,6 +207,65 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
     [downloadingModels, refreshModels, onModelDownloaded]
   );
 
+  const handleNativeDownload = useCallback(
+    async (model: NativeModelWithStatus) => {
+      if (nativeDownloadingModels.has(model.fileName)) return;
+
+      setError(null);
+      setNativeDownloadingModels((prev) => new Set(prev).add(model.fileName));
+      setNativeDownloadProgress((prev) => ({ ...prev, [model.fileName]: 0 }));
+      setNativeCurrentFile((prev) => ({ ...prev, [model.fileName]: model.fileName }));
+
+      try {
+        await downloadNativeWhisperModel(model, {
+          onProgress: (progress) => {
+            const percent =
+              typeof progress.progress === "number"
+                ? progress.progress
+                : progress.total
+                ? (progress.downloaded / progress.total) * 100
+                : 0;
+            const clamped = Math.max(0, Math.min(100, percent));
+            setNativeDownloadProgress((prev) => ({
+              ...prev,
+              [model.fileName]: clamped,
+            }));
+            setNativeCurrentFile((prev) => ({
+              ...prev,
+              [model.fileName]: progress.file_name || model.fileName,
+            }));
+          },
+          onComplete: () => {
+            refreshNativeModels();
+            onModelDownloaded?.(model.fileName);
+          },
+          onError: (err: Error) => {
+            setError(`Failed to download ${model.name}: ${err.message}`);
+          },
+        });
+      } catch (err) {
+        console.error("Native download error:", err);
+      } finally {
+        setNativeDownloadingModels((prev) => {
+          const next = new Set(prev);
+          next.delete(model.fileName);
+          return next;
+        });
+        setNativeDownloadProgress((prev) => {
+          const next = { ...prev };
+          delete next[model.fileName];
+          return next;
+        });
+        setNativeCurrentFile((prev) => {
+          const next = { ...prev };
+          delete next[model.fileName];
+          return next;
+        });
+      }
+    },
+    [nativeDownloadingModels, refreshNativeModels, onModelDownloaded]
+  );
+
   // Handle model deletion
   const handleDelete = useCallback(
     async (model: OfflineModelInfo) => {
@@ -157,6 +278,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
       }
 
       setError(null);
+      setDeletingModels((prev) => new Set(prev).add(model.modelId));
 
       try {
         await deleteModel(model.modelId);
@@ -172,15 +294,57 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
             err instanceof Error ? err.message : "Unknown error"
           }`
         );
+      } finally {
+        setDeletingModels((prev) => {
+          const next = new Set(prev);
+          next.delete(model.modelId);
+          return next;
+        });
       }
     },
     [refreshModels, onModelDeleted]
+  );
+
+  const handleNativeDelete = useCallback(
+    async (model: NativeModelWithStatus) => {
+      if (
+        !confirm(
+          `Are you sure you want to delete "${model.name}"? This will remove the downloaded model file.`
+        )
+      ) {
+        return;
+      }
+
+      setError(null);
+      setNativeDeletingModels((prev) => new Set(prev).add(model.fileName));
+
+      try {
+        await deleteNativeWhisperModel(model.fileName);
+        refreshNativeModels();
+        onModelDeleted?.(model.fileName);
+      } catch (err) {
+        setError(
+          `Failed to delete ${model.name}: ${
+            err instanceof Error ? err.message : "Unknown error"
+          }`
+        );
+      } finally {
+        setNativeDeletingModels((prev) => {
+          const next = new Set(prev);
+          next.delete(model.fileName);
+          return next;
+        });
+      }
+    },
+    [refreshNativeModels, onModelDeleted]
   );
 
   if (!isOpen) return null;
 
   const whisperModels = models.filter((m) => m.type === "whisper");
   const moonshineModels = models.filter((m) => m.type === "moonshine");
+  const showNativeWhisperModels = isMac || isDevMode;
+  const showOfflineWhisperModels = !isMac || isDevMode;
 
   return (
     <div
@@ -362,21 +526,38 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
                   fontWeight: "normal",
                 }}
               >
-                (OpenAI Whisper - multilingual)
+                {isMac ? "(Native Whisper - macOS)" : "(OpenAI Whisper - multilingual)"}
               </span>
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-2)" }}>
-              {whisperModels.map((model) => (
-                <ModelCard
-                  key={model.id}
-                  model={model}
-                  isDownloading={downloadingModels.has(model.modelId)}
-                  progress={downloadProgress[model.modelId]}
-                  currentFile={currentFile[model.modelId]}
-                  onDownload={() => handleDownload(model)}
-                  onDelete={() => handleDelete(model)}
-                />
-              ))}
+              {showNativeWhisperModels &&
+                nativeModels.map((model) => (
+                  <ModelCard
+                    key={`native-${model.id}`}
+                    model={model}
+                    isDownloading={nativeDownloadingModels.has(model.fileName)}
+                    isDeleting={nativeDeletingModels.has(model.fileName)}
+                    progress={nativeDownloadProgress[model.fileName]}
+                    currentFile={nativeCurrentFile[model.fileName]}
+                    onDownload={() => handleNativeDownload(model)}
+                    onDelete={() => handleNativeDelete(model)}
+                    isActionDisabled={!isMac}
+                    disabledLabel="Mac only"
+                  />
+                ))}
+              {showOfflineWhisperModels &&
+                whisperModels.map((model) => (
+                  <ModelCard
+                    key={model.id}
+                    model={model}
+                    isDownloading={downloadingModels.has(model.modelId)}
+                    isDeleting={deletingModels.has(model.modelId)}
+                    progress={downloadProgress[model.modelId]}
+                    currentFile={currentFile[model.modelId]}
+                    onDownload={() => handleDownload(model)}
+                    onDelete={() => handleDelete(model)}
+                  />
+                ))}
             </div>
           </div>
 
@@ -407,6 +588,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
                   key={model.id}
                   model={model}
                   isDownloading={downloadingModels.has(model.modelId)}
+                  isDeleting={deletingModels.has(model.modelId)}
                   progress={downloadProgress[model.modelId]}
                   currentFile={currentFile[model.modelId]}
                   onDownload={() => handleDownload(model)}
@@ -442,8 +624,11 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
 // =============================================================================
 
 interface ModelCardProps {
-  model: OfflineModelInfo;
+  model: ManagedModel;
   isDownloading: boolean;
+  isDeleting: boolean;
+  isActionDisabled?: boolean;
+  disabledLabel?: string;
   progress?: number;
   currentFile?: string;
   onDownload: () => void;
@@ -453,6 +638,9 @@ interface ModelCardProps {
 const ModelCard: React.FC<ModelCardProps> = ({
   model,
   isDownloading,
+  isDeleting,
+  isActionDisabled = false,
+  disabledLabel = "Unavailable",
   progress,
   currentFile,
   onDownload,
@@ -498,7 +686,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
             >
               {model.size}
             </span>
-            {model.isDownloaded && (
+            {model.isDownloaded && !isDeleting && (
               <span
                 style={{
                   display: "flex",
@@ -510,6 +698,20 @@ const ModelCard: React.FC<ModelCardProps> = ({
               >
                 <FaCheck size={10} />
                 Downloaded
+              </span>
+            )}
+            {isDeleting && (
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "0.75em",
+                  color: "var(--warning)",
+                }}
+              >
+                <FaSpinner size={10} style={{ animation: "spin 1s linear infinite" }} />
+                Removing...
               </span>
             )}
           </div>
@@ -524,7 +726,35 @@ const ModelCard: React.FC<ModelCardProps> = ({
         </div>
 
         <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
-          {model.isDownloaded ? (
+          {isDeleting ? (
+            <button
+              className="secondary btn-sm"
+              disabled
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                color: "var(--warning)",
+              }}
+            >
+              <FaSpinner size={12} style={{ animation: "spin 1s linear infinite" }} />
+              Removing...
+            </button>
+          ) : isActionDisabled ? (
+            <button
+              className="secondary btn-sm"
+              disabled
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                color: "var(--app-text-color-secondary)",
+              }}
+            >
+              <FaTimes size={12} />
+              {disabledLabel}
+            </button>
+          ) : model.isDownloaded ? (
             <button
               onClick={onDelete}
               className="secondary btn-sm"

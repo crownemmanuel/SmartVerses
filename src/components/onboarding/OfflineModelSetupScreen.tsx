@@ -12,6 +12,12 @@ import {
   getDownloadedModelIds,
 } from "../../services/offlineModelService";
 import {
+  NATIVE_WHISPER_MODELS,
+  NativeWhisperDownloadProgress,
+  downloadNativeWhisperModel,
+  isNativeWhisperModelDownloaded,
+} from "../../services/nativeWhisperModelService";
+import {
   preloadOfflineModel,
   subscribeOfflineModelPreload,
   OfflineModelPreloadStatus,
@@ -24,6 +30,7 @@ import "./onboarding.css";
 
 interface OfflineModelSetupScreenProps {
   modelType: "whisper" | "moonshine";
+  whisperBackend?: "web" | "native";
   onNext: () => void;
   onBack: () => void;
   onSkip: () => void;
@@ -31,6 +38,7 @@ interface OfflineModelSetupScreenProps {
 
 const OfflineModelSetupScreen: React.FC<OfflineModelSetupScreenProps> = ({
   modelType,
+  whisperBackend = "web",
   onNext,
   onBack,
   onSkip,
@@ -43,8 +51,29 @@ const OfflineModelSetupScreen: React.FC<OfflineModelSetupScreenProps> = ({
   );
   const [downloadStatus, setDownloadStatus] =
     useState<OfflineModelPreloadStatus | null>(null);
+  const [nativeDownloaded, setNativeDownloaded] = useState<Record<string, boolean>>({});
+  const [nativeDownload, setNativeDownload] =
+    useState<NativeWhisperDownloadProgress | null>(null);
+  const [nativeDownloading, setNativeDownloading] = useState(false);
+  const [nativeDownloadError, setNativeDownloadError] = useState<string | null>(
+    null
+  );
 
-  const models = AVAILABLE_OFFLINE_MODELS.filter((m) => m.type === modelType);
+  const isNativeWhisper = modelType === "whisper" && whisperBackend === "native";
+
+  const models = isNativeWhisper
+    ? NATIVE_WHISPER_MODELS.map((model) => ({
+        id: model.id,
+        name: model.name,
+        type: "whisper" as const,
+        modelId: model.fileName,
+        size: model.size,
+        description: model.description,
+        isDownloaded: false,
+        supportsWebGPU: false,
+        supportsWASM: false,
+      }))
+    : AVAILABLE_OFFLINE_MODELS.filter((m) => m.type === modelType);
 
   // Set default selected model
   useEffect(() => {
@@ -62,49 +91,117 @@ const OfflineModelSetupScreen: React.FC<OfflineModelSetupScreenProps> = ({
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (!isNativeWhisper) return;
+
+    const refreshNativeDownloads = async () => {
+      try {
+        const entries = await Promise.all(
+          NATIVE_WHISPER_MODELS.map(async (model) => ({
+            fileName: model.fileName,
+            downloaded: await isNativeWhisperModelDownloaded(model.fileName),
+          }))
+        );
+        const next: Record<string, boolean> = {};
+        entries.forEach((entry) => {
+          next[entry.fileName] = entry.downloaded;
+        });
+        setNativeDownloaded(next);
+      } catch {
+        // ignore
+      }
+    };
+
+    refreshNativeDownloads();
+  }, [isNativeWhisper]);
+
   const handleDownload = async () => {
     if (!selectedModel) return;
 
     try {
-      await preloadOfflineModel({
-        modelId: selectedModel.modelId,
-        source: "manual",
-        force: true,
-        callbacks: {
+      if (isNativeWhisper) {
+        const nativeModel = NATIVE_WHISPER_MODELS.find(
+          (m) => m.fileName === selectedModel.modelId
+        );
+        if (!nativeModel) return;
+
+        setNativeDownloadError(null);
+        setNativeDownloading(true);
+        setNativeDownload(null);
+
+        await downloadNativeWhisperModel(nativeModel, {
+          onProgress: (progress) => {
+            setNativeDownload(progress);
+          },
           onComplete: () => {
-            setDownloadedIds(getDownloadedModelIds());
-            // Save to settings
+            setNativeDownloaded((prev) => ({
+              ...prev,
+              [nativeModel.fileName]: true,
+            }));
             const settings = loadSmartVersesSettings();
-            if (modelType === "whisper") {
-              settings.offlineWhisperModel = selectedModel.modelId;
-              settings.transcriptionEngine = "offline-whisper";
-            } else {
-              settings.offlineMoonshineModel = selectedModel.modelId;
-              settings.transcriptionEngine = "offline-moonshine";
-            }
+            settings.offlineWhisperNativeModel = nativeModel.fileName;
+            settings.transcriptionEngine = "offline-whisper-native";
+            settings.offlineLanguage = "en";
             saveSmartVersesSettings(settings);
           },
           onError: (error) => {
-            console.error("Failed to download model:", error);
+            setNativeDownloadError(error.message);
           },
-        },
-      });
+        });
+      } else {
+        await preloadOfflineModel({
+          modelId: selectedModel.modelId,
+          source: "manual",
+          force: true,
+          callbacks: {
+            onComplete: () => {
+              setDownloadedIds(getDownloadedModelIds());
+              // Save to settings
+              const settings = loadSmartVersesSettings();
+              if (modelType === "whisper") {
+                settings.offlineWhisperModel = selectedModel.modelId;
+                settings.transcriptionEngine = "offline-whisper";
+              } else {
+                settings.offlineMoonshineModel = selectedModel.modelId;
+                settings.transcriptionEngine = "offline-moonshine";
+              }
+              saveSmartVersesSettings(settings);
+            },
+            onError: (error) => {
+              console.error("Failed to download model:", error);
+            },
+          },
+        });
+      }
     } catch (error) {
       console.error("Failed to start download:", error);
+    } finally {
+      if (isNativeWhisper) {
+        setNativeDownloading(false);
+      }
     }
   };
 
-  const isDownloading =
-    downloadStatus &&
-    downloadStatus.modelId === selectedModel?.modelId &&
-    downloadStatus.phase !== "ready" &&
-    downloadStatus.phase !== "error";
+  const isDownloading = isNativeWhisper
+    ? nativeDownloading
+    : downloadStatus &&
+      downloadStatus.modelId === selectedModel?.modelId &&
+      downloadStatus.phase !== "ready" &&
+      downloadStatus.phase !== "error";
 
-  const isDownloaded = selectedModel
+  const isDownloaded = isNativeWhisper
+    ? !!(selectedModel && nativeDownloaded[selectedModel.modelId])
+    : selectedModel
     ? downloadedIds.includes(selectedModel.modelId)
     : false;
 
   const canProceed = isDownloaded || isDownloading;
+
+  const isModelDownloaded = (modelId: string): boolean => {
+    return isNativeWhisper
+      ? !!nativeDownloaded[modelId]
+      : downloadedIds.includes(modelId);
+  };
 
   return (
     <div className="onboarding-screen">
@@ -139,7 +236,7 @@ const OfflineModelSetupScreen: React.FC<OfflineModelSetupScreenProps> = ({
               />
               <h3 className="onboarding-card-title">
                 {model.name}
-                {downloadedIds.includes(model.modelId) && (
+                {isModelDownloaded(model.modelId) && (
                   <FaCheck
                     style={{ marginLeft: "8px", color: "var(--success)" }}
                   />
@@ -154,7 +251,7 @@ const OfflineModelSetupScreen: React.FC<OfflineModelSetupScreenProps> = ({
         </div>
 
         {/* Download Status */}
-        {isDownloading && downloadStatus && (
+        {isDownloading && downloadStatus && !isNativeWhisper && (
           <div className="onboarding-message onboarding-message-info">
             <div style={{ marginBottom: "8px" }}>
               <strong>Downloading {downloadStatus.modelName}...</strong>
@@ -193,9 +290,49 @@ const OfflineModelSetupScreen: React.FC<OfflineModelSetupScreenProps> = ({
           </div>
         )}
 
-        {downloadStatus && downloadStatus.phase === "error" && (
+        {isNativeWhisper && isDownloading && nativeDownload && (
+          <div className="onboarding-message onboarding-message-info">
+            <div style={{ marginBottom: "8px" }}>
+              <strong>Downloading native model...</strong>
+            </div>
+            <div
+              style={{
+                height: "6px",
+                background: "var(--surface-3)",
+                borderRadius: "4px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${Math.max(0, Math.min(100, nativeDownload.progress || 0))}%`,
+                  background: "var(--app-primary-color)",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+            <div
+              style={{
+                marginTop: "4px",
+                fontSize: "0.85rem",
+                textAlign: "right",
+              }}
+            >
+              {Math.max(0, Math.min(100, nativeDownload.progress || 0)).toFixed(1)}%
+            </div>
+          </div>
+        )}
+
+        {downloadStatus && downloadStatus.phase === "error" && !isNativeWhisper && (
           <div className="onboarding-message onboarding-message-error">
             Failed to download model: {downloadStatus.error || "Unknown error"}
+          </div>
+        )}
+
+        {nativeDownloadError && isNativeWhisper && (
+          <div className="onboarding-message onboarding-message-error">
+            Failed to download model: {nativeDownloadError}
           </div>
         )}
 

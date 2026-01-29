@@ -20,12 +20,13 @@ import {
 } from "../types/display";
 import DisplayLayoutEditorModal from "./DisplayLayoutEditorModal";
 import SlidesLayoutEditorModal from "./SlidesLayoutEditorModal";
+import { sectionStyle, sectionHeaderStyle } from "../utils/settingsSectionStyles";
 import {
   getLiveSlidesServerInfo,
   loadLiveSlidesSettings,
   startLiveSlidesServer,
 } from "../services/liveSlideService";
-import { FaCopy } from "react-icons/fa";
+import { FaCopy, FaDesktop, FaImage, FaFont, FaClock, FaThLarge } from "react-icons/fa";
 
 interface SystemFont {
   family: string;
@@ -76,6 +77,8 @@ const DisplaySettings: React.FC = () => {
     useRef<HTMLDivElement | null>(null),
   ];
   const [layoutPreviewTab, setLayoutPreviewTab] = useState<"scripture" | "slides">("scripture");
+  const [stylingTab, setStylingTab] = useState<"text" | "reference">("text");
+  const [backgroundMode, setBackgroundMode] = useState<"solid" | "image">("solid");
   const [systemFonts, setSystemFonts] = useState<SystemFont[]>([]);
   const [fontsLoading, setFontsLoading] = useState(true);
   const [serverInfo, setServerInfo] = useState<{ local_ip: string; server_port: number; server_running: boolean } | null>(null);
@@ -100,6 +103,12 @@ const DisplaySettings: React.FC = () => {
     setSettings(loaded);
     setSettingsLoaded(true);
   }, []);
+
+  // Sync background mode with loaded settings (e.g. saved image path)
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    setBackgroundMode(settings.backgroundImagePath ? "image" : "solid");
+  }, [settingsLoaded, settings.backgroundImagePath]);
 
   const loadMonitors = async () => {
     const list = await getAvailableMonitors();
@@ -563,17 +572,28 @@ const DisplaySettings: React.FC = () => {
   return (
     <div style={{ maxWidth: "900px" }}>
       <h2 style={{ marginBottom: "var(--spacing-4)" }}>Audience Display</h2>
-      <p style={{ color: "var(--app-text-color-secondary)" }}>
+      <p
+        style={{
+          marginBottom: "var(--spacing-6)",
+          color: "var(--app-text-color-secondary)",
+        }}
+      >
         Configure the second screen used to show scriptures and slides to the audience.
       </p>
 
-      <div style={{ marginTop: "var(--spacing-4)", display: "grid", gap: "18px" }}>
+      {/* Display & screen options */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaDesktop />
+          <h3 style={{ margin: 0 }}>Display & screen</h3>
+        </div>
+        <div style={{ display: "grid", gap: "var(--spacing-4)" }}>
         {osType === "windows" && (
         <div
           style={{
-            padding: "var(--spacing-4)",
-            backgroundColor: "var(--app-header-bg)",
-            borderRadius: "12px",
+            padding: "var(--spacing-3)",
+            backgroundColor: "var(--app-bg-color)",
+            borderRadius: "8px",
             border: "1px solid var(--app-border-color)",
             display: "grid",
             gap: "12px",
@@ -845,8 +865,8 @@ const DisplaySettings: React.FC = () => {
           )}
         </div>
 
-        <div className="form-group">
-          <label htmlFor="display-monitor">Display Monitor</label>
+          <div className="form-group">
+            <label htmlFor="display-monitor">Display Monitor</label>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             <select
               id="display-monitor"
@@ -885,51 +905,174 @@ const DisplaySettings: React.FC = () => {
           {monitors.length === 0 && (
             <p className="instruction-text">No additional monitors detected.</p>
           )}
+          </div>
+        </div>
+      </div>
+
+      {/* Background */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaImage />
+          <h3 style={{ margin: 0 }}>Background</h3>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "var(--spacing-4)" }}>
+          <button
+            type="button"
+            onClick={() => {
+              setBackgroundMode("solid");
+              setSettings((prev) => ({ ...prev, backgroundImagePath: "" }));
+            }}
+            className="secondary"
+            style={{
+              borderColor: backgroundMode === "solid" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: backgroundMode === "solid" ? "var(--app-primary-color)" : "transparent",
+              color: backgroundMode === "solid" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Use solid color
+          </button>
+          <button
+            type="button"
+            onClick={() => setBackgroundMode("image")}
+            className="secondary"
+            style={{
+              borderColor: backgroundMode === "image" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: backgroundMode === "image" ? "var(--app-primary-color)" : "transparent",
+              color: backgroundMode === "image" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Use background image
+          </button>
         </div>
 
-        <div className="form-group">
-          <label>Background</label>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "0.85rem" }}>Color</span>
-              <input
-                type="color"
-                value={settings.backgroundColor}
-                onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    backgroundColor: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <button
-              className="secondary"
-              onClick={handleSelectBackgroundImage}
-            >
-              Choose Background Image
-            </button>
-            {settings.backgroundImagePath && (
-              <button
-                className="secondary"
-                onClick={() =>
-                  setSettings((prev) => ({ ...prev, backgroundImagePath: "" }))
-                }
-              >
-                Clear Image
-              </button>
+        {backgroundMode === "solid" && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Background color</label>
+            <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "0.85rem" }}>Color</span>
+                <input
+                  type="color"
+                  value={settings.backgroundColor}
+                  onChange={(event) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      backgroundColor: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {backgroundMode === "image" && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            {!settings.backgroundImagePath ? (
+              <>
+                <label>Choose an image</label>
+                <button
+                  className="secondary"
+                  onClick={handleSelectBackgroundImage}
+                  style={{ marginTop: "8px" }}
+                >
+                  Choose Background Image
+                </button>
+              </>
+            ) : (
+              <>
+                <label>Background image</label>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "var(--spacing-3)",
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                    marginTop: "8px",
+                  }}
+                >
+                  {backgroundImageUrl && (
+                    <div
+                      style={{
+                        flexShrink: 0,
+                        width: "120px",
+                        height: "68px",
+                        borderRadius: "8px",
+                        overflow: "hidden",
+                        border: "1px solid var(--app-border-color)",
+                        backgroundColor: settings.backgroundColor,
+                      }}
+                    >
+                      <img
+                        src={backgroundImageUrl}
+                        alt="Background preview"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      className="secondary"
+                      onClick={handleSelectBackgroundImage}
+                    >
+                      Change Image
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() =>
+                        setSettings((prev) => ({ ...prev, backgroundImagePath: "" }))
+                      }
+                    >
+                      Clear Image
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
-          {settings.backgroundImagePath && (
-            <p className="instruction-text">
-              Using image: {settings.backgroundImagePath}
-            </p>
-          )}
+        )}
+      </div>
+
+      {/* Scripture styling (text + reference tabs) */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaFont />
+          <h3 style={{ margin: 0 }}>Scripture styling</h3>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "var(--spacing-4)" }}>
+          <button
+            type="button"
+            onClick={() => setStylingTab("text")}
+            className="secondary"
+            style={{
+              borderColor: stylingTab === "text" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: stylingTab === "text" ? "var(--app-primary-color)" : "transparent",
+              color: stylingTab === "text" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Scripture text
+          </button>
+          <button
+            type="button"
+            onClick={() => setStylingTab("reference")}
+            className="secondary"
+            style={{
+              borderColor: stylingTab === "reference" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: stylingTab === "reference" ? "var(--app-primary-color)" : "transparent",
+              color: stylingTab === "reference" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Scripture reference
+          </button>
         </div>
 
-        {/* Scripture Text Styling */}
-        <div className="form-group">
-          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Scripture Text Styling</label>
+        {stylingTab === "text" && (
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Font, color & effects</label>
           <div style={{ display: "grid", gap: "12px", padding: "12px", backgroundColor: "var(--app-header-bg)", borderRadius: "8px" }}>
             {/* Font Selection */}
             <div>
@@ -1197,10 +1340,11 @@ const DisplaySettings: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Scripture Reference Styling */}
-        <div className="form-group">
-          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Scripture Reference Styling</label>
+        {stylingTab === "reference" && (
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Font, color & effects</label>
           <div style={{ display: "grid", gap: "12px", padding: "12px", backgroundColor: "var(--app-header-bg)", borderRadius: "8px" }}>
             {/* Font Selection */}
             <div>
@@ -1468,9 +1612,80 @@ const DisplaySettings: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
+      </div>
 
-        <div className="form-group">
-          <label>Layout Preview</label>
+      {/* Timer on display */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaClock />
+          <h3 style={{ margin: 0 }}>Timer on display</h3>
+        </div>
+        <p
+          style={{
+            fontSize: "0.85rem",
+            color: "var(--app-text-color-secondary)",
+            marginBottom: "var(--spacing-4)",
+          }}
+        >
+          This will display the countdown timer on the audience screen whenever it is triggered from the Timer tab.
+        </p>
+        <label style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "var(--spacing-3)" }}>
+          <input
+            type="checkbox"
+            checked={settings.showTimer}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                showTimer: event.target.checked,
+              }))
+            }
+            style={{ width: "18px", height: "18px", cursor: "pointer" }}
+          />
+          <span style={{ fontWeight: 500 }}>Show timer</span>
+        </label>
+        <label style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ minWidth: "120px", fontSize: "0.9rem" }}>Timer font size</span>
+          <input
+            type="range"
+            min={16}
+            max={300}
+            step={2}
+            value={settings.timerFontSize}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                timerFontSize: Number(event.target.value),
+              }))
+            }
+            style={{ flex: 1, minWidth: "180px" }}
+          />
+          <input
+            type="number"
+            min={12}
+            max={300}
+            step={1}
+            value={settings.timerFontSize}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                timerFontSize: Number(event.target.value) || 0,
+              }))
+            }
+            style={{ width: "80px" }}
+          />
+          <span style={{ color: "var(--app-text-color-secondary)", fontSize: "0.85rem" }}>px</span>
+        </label>
+      </div>
+
+      {/* Layout & preview */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaThLarge />
+          <h3 style={{ margin: 0 }}>Layout & preview</h3>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Preview & edit layout</label>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
             <button
               onClick={() => setLayoutPreviewTab("scripture")}
@@ -1513,52 +1728,6 @@ const DisplaySettings: React.FC = () => {
               Slides layout preview
             </button>
           </div>
-          <label style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px" }}>
-            <input
-              type="checkbox"
-              checked={settings.showTimer}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  showTimer: event.target.checked,
-                }))
-              }
-              style={{ width: "18px", height: "18px", cursor: "pointer" }}
-            />
-            <span>Show timer</span>
-          </label>
-          <label style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "16px", flexWrap: "wrap" }}>
-            <span style={{ minWidth: "140px" }}>Timer font size</span>
-            <input
-              type="range"
-              min={16}
-              max={300}
-              step={2}
-              value={settings.timerFontSize}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  timerFontSize: Number(event.target.value),
-                }))
-              }
-              style={{ flex: 1, minWidth: "180px" }}
-            />
-            <input
-              type="number"
-              min={12}
-              max={300}
-              step={1}
-              value={settings.timerFontSize}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  timerFontSize: Number(event.target.value) || 0,
-                }))
-              }
-              style={{ width: "80px" }}
-            />
-            <span style={{ color: "var(--app-text-color-secondary)", fontSize: "0.85rem" }}>px</span>
-          </label>
           <div
             style={{
               position: "relative",

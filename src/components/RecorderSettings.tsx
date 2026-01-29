@@ -35,6 +35,7 @@ import {
   NamingPattern,
 } from "../types/recorder";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
+import { sectionStyle, sectionHeaderStyle } from "../utils/settingsSectionStyles";
 import "../App.css";
 
 const RecorderSettings: React.FC = () => {
@@ -122,23 +123,6 @@ const RecorderSettings: React.FC = () => {
   if (!settings) {
     return <div>Loading settings...</div>;
   }
-
-  const sectionStyle: React.CSSProperties = {
-    marginBottom: "var(--spacing-6)",
-    padding: "var(--spacing-4)",
-    backgroundColor: "var(--app-header-bg)",
-    borderRadius: "12px",
-    border: "1px solid var(--app-border-color)",
-  };
-
-  const sectionHeaderStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: "var(--spacing-2)",
-    marginBottom: "var(--spacing-4)",
-    paddingBottom: "var(--spacing-3)",
-    borderBottom: "1px solid var(--app-border-color)",
-  };
 
   const fieldStyle: React.CSSProperties = {
     marginBottom: "var(--spacing-4)",
@@ -432,7 +416,7 @@ const RecorderSettings: React.FC = () => {
             type="text"
             value={settings.outputBasePath}
             onChange={(e) => handleChange("outputBasePath", e.target.value)}
-            placeholder="~/Documents/ProAssist/Recordings"
+            placeholder="~/Documents/SmartVerses/Recordings"
             style={inputStyle}
           />
           <p style={helpTextStyle}>

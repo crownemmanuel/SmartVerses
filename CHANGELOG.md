@@ -2,6 +2,39 @@
 
 All notable changes to ProAssist will be documented in this file.
 
+## [0.7.0] - 2026-01-27
+
+### Added
+- **Onboarding Screen Workflow**: Complete onboarding screen implementation to guide new users through app setup
+- **Offline Model Preloading**: Added offline model preloading with progress UI for better user experience
+- **Offline Transcription Support**: Added offline Whisper transcription support with proper segmentation and memory management
+- **Audience Display Slides Support**: Added slides support for audience screen display with layout fallback logic
+- **OS-Aware Audience Display**: Implemented OS-aware audience display with dedicated Windows implementation and improved multi-monitor support
+- **Display Scripture Clearing**: Added automatic scripture clearing on app startup and window close
+
+### Fixed
+- **Offline Model WASM Loading**: Fixed offline model WASM loading in production builds with proper CSP configuration
+- **Memory Leak in Offline Transcription**: Fixed memory leak by properly terminating web workers in offline transcription services
+- **Duplicate Words in Whisper**: Fixed duplicate words issue in Whisper transcription
+- **Windows Window Positioning**: Fixed Windows window positioning using f64 for Tauri WebviewWindowBuilder API
+- **Timer Overlay Color**: Fixed timer overlay color in test window to show red on overrun
+- **Audience Display Text Visibility**: Fixed text not showing up in audience display
+- **TypeScript Build Errors**: Fixed TypeScript errors in transformersEnv configuration and missing RecordRTC import
+
+### Changed
+- **Light Mode Display**: Optimized light mode display for better visibility
+- **Settings Menu**: Hide disabled feature menu items in Settings page for cleaner UI
+- **Audience Display Font Size**: Updated audience display font size defaults and limits
+- **Default Template Output Paths**: Updated default template output paths
+- **Transformers.js Configuration**: Simplified transformersEnv configuration for production builds
+- **CSP Updates**: Added cdn.jsdelivr.net to CSP for transformers.js WASM files
+
+### Technical
+- Unified audience display page implementation
+- Removed unused Tauri commands: get_monitors and update_second_screen_number
+- Improved web worker management for offline transcription
+- Enhanced audience display with better OS detection and window management
+
 ## [0.6.9] - 2026-01-27
 
 ### Added

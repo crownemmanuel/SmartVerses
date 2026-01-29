@@ -1,4 +1,4 @@
-export const PROPRESENTER_TEMPLATE_DIR = "~/Documents/ProAssist/Templates/";
+export const PROPRESENTER_TEMPLATE_DIR = "~/Documents/SmartVerses/Templates/";
 export const PROPRESENTER_TEXT_FILE = "SmartVersesScriptureText.txt";
 export const PROPRESENTER_REF_FILE = "SmartVersesScriptureRef.txt";
 
