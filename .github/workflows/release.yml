@@ -28,7 +28,7 @@ jobs:
                   script: |
                       const tagName = context.ref.replace('refs/tags/', '');
                       const version = '${{ steps.get_version.outputs.VERSION }}';
-                      const releaseName = `ProAssist v${version}`;
+                      const releaseName = `SmartVerses v${version}`;
                       const releaseBody = `## What's New
 
                       See the [changelog](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CHANGELOG.md) for details.
@@ -45,9 +45,9 @@ jobs:
 
                       **Option 2**: Run in Terminal:
                       \`\`\`bash
-                      xattr -cr /path/to/proassist.app
+                      xattr -cr /path/to/SmartVerses.app
                       \`\`\`
-                      Replace \`/path/to/proassist.app\` with the actual path to the application after mounting the DMG.`;
+                      Replace \`/path/to/SmartVerses.app\` with the actual path to the application after mounting the DMG.`;
 
                       const release = await github.rest.repos.createRelease({
                         owner: context.repo.owner,

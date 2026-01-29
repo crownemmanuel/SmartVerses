@@ -1,7 +1,7 @@
-**ProAssist App - Functional Requirements Document**
+**SmartVerses App - Functional Requirements Document**
 
 **Overview:**
-ProAssist is a tool designed to simplify and standardize the creation of slides for ProPresenter. The app allows users to import text, apply templated logic (regex, JS, or AI), preview the resulting slides, and manage playlists. It includes a live slide sync feature with ProPresenter and supports flexible slide layouts.
+SmartVerses is a tool designed to simplify and standardize the creation of slides for ProPresenter. The app allows users to import text, apply templated logic (regex, JS, or AI), preview the resulting slides, and manage playlists. It includes a live slide sync feature with ProPresenter and supports flexible slide layouts.
 
 ---
 
@@ -123,4 +123,4 @@ ProAssist is a tool designed to simplify and standardize the creation of slides 
 ---
 
 **Summary:**
-ProAssist is a slide-authoring tool for ProPresenter that enables structured imports, custom templates, AI-enhanced text parsing, live slide sync, and layout-aware formatting. It simplifies the workflow for creating consistent presentation content across playlists and templates.
+SmartVerses is a slide-authoring tool for ProPresenter that enables structured imports, custom templates, AI-enhanced text parsing, live slide sync, and layout-aware formatting. It simplifies the workflow for creating consistent presentation content across playlists and templates.

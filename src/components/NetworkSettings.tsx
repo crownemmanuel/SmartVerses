@@ -742,7 +742,7 @@ const NetworkSettings: React.FC = () => {
               color: "var(--app-text-color-secondary)",
             }}
           >
-            Network Sync allows multiple ProAssist instances to share data. In
+            Network Sync allows multiple SmartVerses instances to share data. In
             Master mode, this device broadcasts changes to others. In Slave
             mode, it receives updates from a master. In Peer mode, all devices
             sync bidirectionally.

@@ -62,7 +62,7 @@ const StandaloneSetupScreen: React.FC<StandaloneSetupScreenProps> = ({
           Standalone Configuration
         </h1>
         <p className="onboarding-subtitle">
-          Configure how ProAssist displays content to your audience.
+          Configure how SmartVerses displays content to your audience.
         </p>
 
         {/* Enable Audience Screen Toggle */}

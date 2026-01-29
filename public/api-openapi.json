@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "ProAssist API v1",
+    "title": "SmartVerses API v1",
     "version": "1.0.0",
     "description": "HTTP API for controlling Scripture Go Live and countdown timers. Enable it in Network Settings."
   },

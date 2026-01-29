@@ -1,6 +1,6 @@
 /**
  * Screen: Usage Mode Selection
- * Asks how the user wants to use ProAssist (ProPresenter or Standalone)
+ * Asks how the user wants to use SmartVerses (ProPresenter or Standalone)
  */
 
 import React from "react";
@@ -25,9 +25,9 @@ const UsageModeScreen: React.FC<UsageModeScreenProps> = ({
   return (
     <div className="onboarding-screen">
       <div className="onboarding-content">
-        <h1 className="onboarding-title">How would you like to use ProAssist?</h1>
+        <h1 className="onboarding-title">How would you like to use SmartVerses?</h1>
         <p className="onboarding-subtitle">
-          Choose how ProAssist will integrate with your workflow.
+          Choose how SmartVerses will integrate with your workflow.
         </p>
 
         <div className="onboarding-cards" style={{ maxWidth: "900px", margin: "0 auto" }}>
@@ -41,7 +41,7 @@ const UsageModeScreen: React.FC<UsageModeScreenProps> = ({
             />
             <h3 className="onboarding-card-title">Connect to ProPresenter</h3>
             <p className="onboarding-card-text">
-              ProAssist will automatically trigger slides on your ProPresenter and interact with your
+              SmartVerses will automatically trigger slides on your ProPresenter and interact with your
               presentations.
             </p>
           </div>
@@ -56,7 +56,7 @@ const UsageModeScreen: React.FC<UsageModeScreenProps> = ({
             />
             <h3 className="onboarding-card-title">Use as Standalone</h3>
             <p className="onboarding-card-text">
-              Use ProAssist independently without ProPresenter integration.
+              Use SmartVerses independently without ProPresenter integration.
             </p>
           </div>
         </div>

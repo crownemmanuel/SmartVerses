@@ -5,7 +5,7 @@ import LogViewer from './LogViewer';
 import '../App.css';
 
 // Current app version - matches package.json and tauri.conf.json
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.7.1';
 
 const VersionSettings: React.FC = () => {
   const [currentVersion, setCurrentVersion] = useState<string>(APP_VERSION);
@@ -145,7 +145,7 @@ const VersionSettings: React.FC = () => {
       <div style={styles.section}>
         <h2 style={styles.title}>Updates</h2>
         <p style={styles.description}>
-          Check for updates to ensure you're running the latest version of ProAssist.
+          Check for updates to ensure you're running the latest version of SmartVerses.
         </p>
 
         <div style={styles.buttonContainer}>

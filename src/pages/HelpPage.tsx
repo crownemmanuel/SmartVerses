@@ -67,7 +67,7 @@ const HelpPage: React.FC = () => {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const sections: SectionData[] = [
-    { id: "overview", title: "What this app does", icon: <FaBook />, keywords: ["overview", "introduction", "what", "app", "does", "proassist"] },
+    { id: "overview", title: "What this app does", icon: <FaBook />, keywords: ["overview", "introduction", "what", "app", "does", "smartverses"] },
     { id: "quickstart", title: "Quick start", icon: <FaRocket />, keywords: ["quick", "start", "getting", "started", "beginner", "setup"] },
     { id: "templates", title: "Templates 101", icon: <FaCog />, keywords: ["templates", "layout", "output", "path", "prefix", "regex", "javascript", "ai"] },
     { id: "propresenter", title: "Connect to ProPresenter", icon: <FaDesktop />, keywords: ["propresenter", "linked", "text", "connect", "integration"] },
@@ -272,10 +272,10 @@ const HelpPage: React.FC = () => {
 
         <Section id="overview" title="What this app does" icon={<FaBook />} searchQuery={searchQuery} ref={(el) => (sectionRefs.current["overview"] = el)}>
           <p>
-            ProAssist is an intelligent bridge between your notes and ProPresenter. It simplifies importing slides by turning raw text into slide‑ready content, optionally using regex/JavaScript or AI‑powered processing.
+            SmartVerses is an intelligent bridge between your notes and ProPresenter. It simplifies importing slides by turning raw text into slide‑ready content, optionally using regex/JavaScript or AI‑powered processing.
           </p>
           <p>
-            When you click <strong>Go Live</strong>, ProAssist writes one line per file that ProPresenter reads via Linked Text—so going live is as simple as a single click.
+            When you click <strong>Go Live</strong>, SmartVerses writes one line per file that ProPresenter reads via Linked Text—so going live is as simple as a single click.
           </p>
         </Section>
 
@@ -322,7 +322,7 @@ const HelpPage: React.FC = () => {
               Open Onboarding Screen
             </button>
             <p style={{ marginTop: "12px", color: "var(--text-secondary-color)", fontSize: "0.9rem" }}>
-              Need to set up features like SmartVerses, transcription, or other ProAssist capabilities? Click above to restart the setup wizard.
+              Need to set up features like SmartVerses, transcription, or other SmartVerses capabilities? Click above to restart the setup wizard.
             </p>
           </div>
         </Section>
@@ -371,7 +371,7 @@ const HelpPage: React.FC = () => {
               </ul>
             </li>
             <li>
-              In ProAssist, click <strong>Go Live</strong> on a slide. The app writes the latest text to the files; ProPresenter will display the linked content instantly.
+              In SmartVerses, click <strong>Go Live</strong> on a slide. The app writes the latest text to the files; ProPresenter will display the linked content instantly.
             </li>
           </ol>
         </Section>
@@ -415,7 +415,7 @@ const HelpPage: React.FC = () => {
               Share the URL with team members - they can open it in any browser to edit slides in real-time
             </li>
             <li>
-              Changes made in the browser notepad instantly sync to ProAssist and update ProPresenter via Linked Text
+              Changes made in the browser notepad instantly sync to SmartVerses and update ProPresenter via Linked Text
             </li>
           </ol>
           <InfoBox type="tip">
@@ -479,7 +479,7 @@ const HelpPage: React.FC = () => {
 
         <Section id="recording" title="Video & Audio Recording" icon={<FaVideo />} searchQuery={searchQuery} ref={(el) => (sectionRefs.current["recording"] = el)}>
           <p>
-            ProAssist features professional-grade video and audio recording with <strong>crash-safe streaming technology</strong>. Record for hours without memory issues, and recover recordings even if the app crashes or power is lost.
+            SmartVerses features professional-grade video and audio recording with <strong>crash-safe streaming technology</strong>. Record for hours without memory issues, and recover recordings even if the app crashes or power is lost.
           </p>
           
           <h3 style={{ marginTop: "24px", marginBottom: "12px", fontSize: "1.25rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
@@ -569,7 +569,7 @@ const HelpPage: React.FC = () => {
             Crash Recovery & File Recovery
           </h3>
           <p>
-            ProAssist uses <strong>streaming recording technology</strong> that writes data directly to disk as it's captured. This means your recordings are safe even if:
+            SmartVerses uses <strong>streaming recording technology</strong> that writes data directly to disk as it's captured. This means your recordings are safe even if:
           </p>
           <ul style={{ paddingLeft: "24px", marginTop: "8px" }}>
             <li>The app crashes unexpectedly</li>
@@ -579,7 +579,7 @@ const HelpPage: React.FC = () => {
           </ul>
           
           <InfoBox type="tip">
-            <strong>How It Works:</strong> Unlike traditional recording apps that accumulate data in memory, ProAssist streams each chunk directly to disk. This means:
+            <strong>How It Works:</strong> Unlike traditional recording apps that accumulate data in memory, SmartVerses streams each chunk directly to disk. This means:
             <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
               <li>Video: Each 1-second chunk is written immediately</li>
               <li>MP3 Audio: WebM chunks streamed to temp file, converted after stop</li>
@@ -737,7 +737,7 @@ const HelpPage: React.FC = () => {
 
         <Section id="network" title="Network Sync" icon={<FaNetworkWired />} searchQuery={searchQuery} ref={(el) => (sectionRefs.current["network"] = el)}>
           <p>
-            Synchronize playlists and schedules across multiple ProAssist instances on your network.
+            Synchronize playlists and schedules across multiple SmartVerses instances on your network.
           </p>
           <ol style={{ paddingLeft: "24px" }}>
             <li>
@@ -839,7 +839,7 @@ const HelpPage: React.FC = () => {
 
         <Section id="advanced" title="Advanced ProPresenter Integration" icon={<FaDesktop />} searchQuery={searchQuery} ref={(el) => (sectionRefs.current["advanced"] = el)}>
           <p>
-            ProAssist offers extensive ProPresenter control beyond basic Linked Text.
+            SmartVerses offers extensive ProPresenter control beyond basic Linked Text.
           </p>
           <ol style={{ paddingLeft: "24px" }}>
             <li>
@@ -871,7 +871,7 @@ const HelpPage: React.FC = () => {
             <li>
               <strong>Timer Sync:</strong>
               <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
-                <li>ProAssist timers sync with ProPresenter countdown timers</li>
+                <li>SmartVerses timers sync with ProPresenter countdown timers</li>
                 <li>Timer displays in navigation bar when running</li>
                 <li>Automatic timer updates when sessions change</li>
               </ul>
@@ -889,7 +889,7 @@ const HelpPage: React.FC = () => {
 
         <Section id="import" title="Import Options" icon={<FaFileImport />} searchQuery={searchQuery} ref={(el) => (sectionRefs.current["import"] = el)}>
           <p>
-            Multiple ways to import content into ProAssist.
+            Multiple ways to import content into SmartVerses.
           </p>
           <ol style={{ paddingLeft: "24px" }}>
             <li>

@@ -107,7 +107,7 @@ function buildSystemPrompt(
   const currentPeriod = new Date().getHours() >= 12 ? "PM" : "AM";
 
   // Base actions available in all contexts
-  const basePrompt = `You are an AI assistant for ProAssist, a church presentation management application.
+  const basePrompt = `You are an AI assistant for SmartVerses, a church presentation management application.
 
 ## RESPONSE FORMAT
 You MUST respond with valid JSON in this format:

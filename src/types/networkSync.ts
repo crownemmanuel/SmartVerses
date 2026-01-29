@@ -1,4 +1,4 @@
-// Network Sync Types - for syncing data between ProAssist instances
+// Network Sync Types - for syncing data between SmartVerses instances
 
 import { Playlist, PlaylistItem } from "./index";
 import { ScheduleItem } from "./propresenter";

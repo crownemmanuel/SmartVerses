@@ -2,7 +2,7 @@
 
 **⚠️ MUST READ BEFORE CREATING A RELEASE**
 
-This document provides step-by-step instructions for creating a new release of ProAssist. Follow these steps carefully to ensure proper builds, signing, and auto-update functionality.
+This document provides step-by-step instructions for creating a new release of SmartVerses. Follow these steps carefully to ensure proper builds, signing, and auto-update functionality.
 
 ## Pre-Release Checklist
 
@@ -202,11 +202,11 @@ This error occurs when the private key format is incorrect or the password is mi
 
    ```bash
    # Generate new keys
-   npm run tauri signer generate -- -w ~/.tauri/proassist.key
+   npm run tauri signer generate -- -w ~/.tauri/smartverses.key
    # When prompted, either set a password or press Enter for no password
 
-   # Copy the FULL content of ~/.tauri/proassist.key to TAURI_SIGNING_PRIVATE_KEY
-   # Copy the FULL content of ~/.tauri/proassist.key.pub to tauri.conf.json
+   # Copy the FULL content of ~/.tauri/smartverses.key to TAURI_SIGNING_PRIVATE_KEY
+   # Copy the FULL content of ~/.tauri/smartverses.key.pub to tauri.conf.json
    ```
 
 4. **Verify Key Content**:
@@ -252,7 +252,7 @@ When creating a release, consider including:
 
 ---
 
-**Download**: [Get the latest version](https://github.com/crownemmanuel/proassist/releases/latest)
+**Download**: [Get the latest version](https://github.com/crownemmanuel/SmartVerses/releases/latest)
 ```
 
 ## Version History

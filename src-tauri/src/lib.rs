@@ -3699,7 +3699,7 @@ pub struct MidiDevice {
 fn list_midi_output_devices() -> Result<Vec<MidiDevice>, String> {
     use midir::MidiOutput;
     
-    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+    let midi_out = MidiOutput::new("SmartVerses MIDI Output")
         .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
     
     let ports = midi_out.ports();
@@ -3743,7 +3743,7 @@ fn send_midi_note(
         return Err("Velocity must be between 0 and 127".to_string());
     }
     
-    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+    let midi_out = MidiOutput::new("SmartVerses MIDI Output")
         .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
     
     let ports = midi_out.ports();
@@ -3757,7 +3757,7 @@ fn send_midi_note(
     let port = &ports[device_index];
     
     // Create connection
-    let mut conn_out = midi_out.connect(port, "proassist-midi-out")
+    let mut conn_out = midi_out.connect(port, "smartverses-midi-out")
         .map_err(|e| format!("Failed to connect to MIDI device: {}", e))?;
     
     // Send Note On message: 0x90 + channel (0-15), note (0-127), velocity (0-127)

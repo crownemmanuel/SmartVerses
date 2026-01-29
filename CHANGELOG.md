@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to ProAssist will be documented in this file.
+All notable changes to SmartVerses will be documented in this file.
+
+## [0.7.1] - 2026-01-29
+
+### Changed
+- Version bump to 0.7.1
 
 ## [0.7.0] - 2026-01-27
 
@@ -198,10 +203,10 @@ All notable changes to ProAssist will be documented in this file.
   - Auto-scroll checkbox repositioned to top right of transcription display area
   - Scripture refs and Key points checkboxes checked by default
   - Auto-scroll checkbox styling improved (no border/background, reduced padding)
-- **Favicon Updates**: Updated favicon to ProAssist icon across all pages
-  - Live Notepad page now uses ProAssist icon
-  - Remote timer page now uses ProAssist icon
-  - Browser transcription page now uses ProAssist icon
+- **Favicon Updates**: Updated favicon to SmartVerses icon across all pages
+  - Live Notepad page now uses SmartVerses icon
+  - Remote timer page now uses SmartVerses icon
+  - Browser transcription page now uses SmartVerses icon
 
 ## [0.5.5] - 2026-01-16
 
