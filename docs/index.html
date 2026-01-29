@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SmartVerses - AI-Powered Automation for ProPresenter or any Workflow</title>
+    <title>SmartVerses - AI That Listens to Your Service and Automatically Detects Verses - Works with ProPresenter or any Workflow</title>
     <meta
       name="description"
-      content="Transform your ProPresenter workflow with AI-powered automation, intelligent slide generation, and real-time collaboration."
+      content="AI-powered automation that listens to your service in real-time, automatically detects and extracts Bible verses (including paraphrased verses), extracts key points, and transforms your ProPresenter workflow with intelligent automation."
     />
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-SV17Y3FLX7"></script>
@@ -1856,7 +1856,7 @@
         <a href="#features">Features</a>
         <a href="#how-it-works">How It Works</a>
         <a href="#more-capabilities">More Capabilities</a>
-        <a href="https://github.com/crownemmanuel/proassist" target="_blank"
+        <a href="https://github.com/crownemmanuel/SmartVerses" target="_blank"
           >GitHub</a
         >
         <a href="#download" class="btn btn-primary">Download</a>
@@ -1880,11 +1880,15 @@
           </a>
           <!-- Heading -->
           <h1>
-            SmartVerses AI-Powered Automation for ProPresenter or any Workflow
+            AI That Listens to Your Service and Automatically Detects Verses
           </h1>
+          <!-- Subtitle -->
+          <p style="font-size: 2em; font-weight: 500; margin-top: 0.5rem; margin-bottom: 0; background: linear-gradient(135deg, #9333ea 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+            Works with ProPresenter or any workflow
+          </p>
           <!-- Subheading -->
           <p>
-            SmartVerses listens to your sermon or service in real time, using AI to detect scriptures when mentioned or paraphrased and display them live to your audience. One tool that does it all—AI-powered slides, live transcription, Bible verse detection, and real-time collaboration—right inside SmartVerses.
+            SmartVerses listens to your sermon or service in real-time, using AI to automatically detect, extract, and display Bible verses—including paraphrased verses—as you speak. Extract key points, get paraphrased verses, and transform your ProPresenter workflow with intelligent automation. Works with ProPresenter or any workflow. One tool that does it all—real-time verse detection, AI-powered slides, live transcription, and seamless collaboration—all happening automatically as you speak.
           </p>
           <!-- CTA Buttons -->
           <div class="hero-buttons">
@@ -1906,7 +1910,7 @@
               Get Started
             </a>
             <a
-              href="https://github.com/crownemmanuel/proassist"
+              href="https://github.com/crownemmanuel/SmartVerses"
               target="_blank"
               class="btn btn-secondary"
             >
@@ -2895,16 +2899,16 @@
             <span>SmartVerses</span>
           </a>
           <div class="footer-links">
-            <a href="https://github.com/crownemmanuel/proassist" target="_blank"
+            <a href="https://github.com/crownemmanuel/SmartVerses" target="_blank"
               >GitHub</a
             >
             <a
-              href="https://github.com/crownemmanuel/proassist/issues"
+              href="https://github.com/crownemmanuel/SmartVerses/issues"
               target="_blank"
               >Report Issues</a
             >
             <a
-              href="https://github.com/crownemmanuel/proassist/releases"
+              href="https://github.com/crownemmanuel/SmartVerses/releases"
               target="_blank"
               >All Releases</a
             >
@@ -3555,7 +3559,7 @@
         try {
           // First, try to fetch the latest release
           const latestResponse = await fetch(
-            "https://api.github.com/repos/crownemmanuel/proassist/releases/latest"
+            "https://api.github.com/repos/crownemmanuel/SmartVerses/releases/latest"
           );
           if (!latestResponse.ok) {
             throw new Error("Failed to fetch latest release");
@@ -3580,7 +3584,7 @@
               "Some platforms missing assets, fetching previous releases..."
             );
             const releasesResponse = await fetch(
-              "https://api.github.com/repos/crownemmanuel/proassist/releases?per_page=10"
+              "https://api.github.com/repos/crownemmanuel/SmartVerses/releases?per_page=10"
             );
             if (releasesResponse.ok) {
               allReleases = await releasesResponse.json();
@@ -3715,7 +3719,7 @@
           // Fallback to releases page if API fails
           try {
             const fallbackResponse = await fetch(
-              "https://api.github.com/repos/crownemmanuel/proassist/releases/latest"
+              "https://api.github.com/repos/crownemmanuel/SmartVerses/releases/latest"
             );
             if (fallbackResponse.ok) {
               const fallbackRelease = await fallbackResponse.json();
@@ -3743,7 +3747,7 @@
             console.error("Fallback also failed:", fallbackError);
             // Last resort - link to GitHub releases page
             const releasesUrl =
-              "https://github.com/crownemmanuel/proassist/releases";
+              "https://github.com/crownemmanuel/SmartVerses/releases";
             if (macLink) {
               macLink.href = releasesUrl;
               macLink.textContent = "View Releases";
