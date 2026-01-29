@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+default-run = "proassist"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -30,6 +31,9 @@ cpal = "0.15"
 base64 = "0.22"
 hound = "3.5"  # WAV file writing for native audio recording
 chrono = "0.4"  # Timestamp formatting for filenames
+log = "0.4"
+wry = "0.35"
+tao = "0.25"
 
 # WebSocket server for Live Slides
 tokio = { version = "1", features = ["full"] }
@@ -47,10 +51,20 @@ mime_guess = "2"
 lazy_static = "1.4"
 
 # HTTP client for AssemblyAI API
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "stream"] }
 
 # MIDI support
 midir = "0.10"
 
 # Font enumeration
 fontdb = "0.23"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-window-state = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.15", features = ["metal"] }
+
+[[bin]]
+name = "proassist"
+path = "src/main.rs"

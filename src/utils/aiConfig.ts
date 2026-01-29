@@ -9,6 +9,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   geminiConfig: undefined,
   groqConfig: undefined,
   defaultAIProvider: null,
+  defaultAIModel: undefined,
 };
 
 /**

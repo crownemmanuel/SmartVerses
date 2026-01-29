@@ -11,4 +11,5 @@ export const mockAppSettings: AppSettings = {
   openAIConfig: undefined, // Initially no keys
   geminiConfig: undefined,
   defaultAIProvider: null,
+  defaultAIModel: undefined,
 };

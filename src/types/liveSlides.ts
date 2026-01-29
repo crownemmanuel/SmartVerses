@@ -77,6 +77,7 @@ export interface WsTranscriptionStream {
   timestamp: number;
   engine: string;
   text: string;
+  audio_level?: number;
   segment?: {
     id: string;
     text: string;
@@ -87,6 +88,11 @@ export interface WsTranscriptionStream {
   key_points?: Array<{
     text: string;
     category: string;
+  }>;
+  paraphrased_verses?: Array<{
+    reference: string;
+    confidence: number;
+    matchedPhrase: string;
   }>;
 }
 
@@ -146,6 +152,6 @@ export interface LiveSlidesProPresenterActivationRule {
 export const DEFAULT_LIVE_SLIDES_SETTINGS: LiveSlidesSettings = {
   serverPort: 9876,
   autoStartServer: false,
-  outputPath: "/tmp/proassist/live_slides/",
+  outputPath: "~/Documents/SmartVerses/Templates/LiveSlides",
   outputFilePrefix: "live_slide_",
 };

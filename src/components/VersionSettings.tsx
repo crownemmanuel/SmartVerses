@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { checkForUpdates, clearSkippedVersion, downloadAndInstallUpdate, UpdateResult } from '../utils/updater';
+import { resetOnboardingState } from '../types/onboarding';
 import LogViewer from './LogViewer';
 import '../App.css';
 
 // Current app version - matches package.json and tauri.conf.json
-const APP_VERSION = '0.6.8';
+const APP_VERSION = '0.7.2';
 
 const VersionSettings: React.FC = () => {
   const [currentVersion, setCurrentVersion] = useState<string>(APP_VERSION);
@@ -144,7 +145,7 @@ const VersionSettings: React.FC = () => {
       <div style={styles.section}>
         <h2 style={styles.title}>Updates</h2>
         <p style={styles.description}>
-          Check for updates to ensure you're running the latest version of ProAssist.
+          Check for updates to ensure you're running the latest version of SmartVerses.
         </p>
 
         <div style={styles.buttonContainer}>
@@ -260,6 +261,19 @@ const VersionSettings: React.FC = () => {
             title="Shortcut: F12 (Windows/Linux) or Cmd+Opt+I (macOS)"
           >
             Open Inspector
+          </button>
+          <button
+            onClick={() => {
+              resetOnboardingState();
+              window.location.reload();
+            }}
+            style={{
+              ...styles.button,
+              backgroundColor: '#8b5cf6',
+              color: '#ffffff',
+            }}
+          >
+            Open Onboarding Screen
           </button>
         </div>
         {devtoolsError && (

@@ -37,7 +37,11 @@ export const generateSlidesFromText = async (
 
   // Use provider from template, fallback to appSettings default, then error if none
   const provider = template.aiProvider || appSettings.defaultAIProvider;
-  const modelName = template.aiModel; // Model must be specified in template if provider is
+  const modelName =
+    template.aiModel ||
+    (!template.aiProvider && provider === appSettings.defaultAIProvider
+      ? appSettings.defaultAIModel
+      : undefined);
 
   if (!provider) {
     console.error(

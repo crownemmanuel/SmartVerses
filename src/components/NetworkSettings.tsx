@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   NetworkSyncMode,
   NetworkSyncSettings,
@@ -23,6 +23,7 @@ import {
   LiveSlidesSettings as LiveSlidesSettingsType,
 } from "../types/liveSlides";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
+import { setApiEnabled } from "../services/apiService";
 import "../App.css";
 
 const NetworkSettings: React.FC = () => {
@@ -41,6 +42,12 @@ const NetworkSettings: React.FC = () => {
   }>({ text: "", type: "" });
   const [localIp, setLocalIp] = useState<string>("Loading...");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>("");
+  const [apiServerRunning, setApiServerRunning] = useState(false);
+  const [apiMessage, setApiMessage] = useState<{
+    text: string;
+    type: "success" | "error" | "";
+  }>({ text: "", type: "" });
   
   // Connection test state
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -158,6 +165,69 @@ const NetworkSettings: React.FC = () => {
       setWebServerStatusText("Stopped");
     }
   };
+  const refreshApiServerInfo = useCallback(async () => {
+    const fallbackHost =
+      localIp && !localIp.startsWith("Unable") && !localIp.startsWith("Loading")
+        ? localIp
+        : "localhost";
+    const fallbackPort = loadLiveSlidesSettings().serverPort;
+
+    try {
+      const info = await getLiveSlidesServerInfo();
+      const host = info.local_ip || fallbackHost;
+      const port = info.server_port || fallbackPort;
+      setApiBaseUrl(`http://${host}:${port}`);
+      setApiServerRunning(info.server_running);
+    } catch {
+      setApiBaseUrl(`http://${fallbackHost}:${fallbackPort}`);
+      setApiServerRunning(false);
+    }
+  }, [localIp]);
+
+  const ensureApiServerRunning = useCallback(async () => {
+    const settings = loadLiveSlidesSettings();
+    try {
+      const info = await getLiveSlidesServerInfo();
+      if (!info.server_running) {
+        try {
+          await startLiveSlidesServer(info.server_port || settings.serverPort);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.toLowerCase().includes("already running")) {
+            throw error;
+          }
+        }
+      }
+    } catch (error) {
+      try {
+        await startLiveSlidesServer(settings.serverPort);
+      } catch (startError) {
+        throw startError;
+      }
+    } finally {
+      await refreshApiServerInfo();
+    }
+  }, [refreshApiServerInfo]);
+
+  useEffect(() => {
+    refreshApiServerInfo();
+  }, [refreshApiServerInfo]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    setApiEnabled(syncSettings.apiEnabled).catch((error) => {
+      console.warn("[API] Failed to update API toggle:", error);
+    });
+  }, [settingsLoaded, syncSettings.apiEnabled]);
+
+  useEffect(() => {
+    if (!settingsLoaded || !syncSettings.apiEnabled) return;
+    ensureApiServerRunning().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setApiMessage({ text: message, type: "error" });
+      setTimeout(() => setApiMessage({ text: "", type: "" }), 4000);
+    });
+  }, [ensureApiServerRunning, settingsLoaded, syncSettings.apiEnabled]);
 
   const handleSyncSettingChange = (
     field: keyof NetworkSyncSettings,
@@ -196,6 +266,19 @@ const NetworkSettings: React.FC = () => {
     } finally {
       setIsTogglingWebServer(false);
     }
+  };
+
+  const handleApiToggle = (enabled: boolean) => {
+    setSyncSettings((prev) => {
+      const next = { ...prev, apiEnabled: enabled };
+      saveNetworkSyncSettings(next);
+      return next;
+    });
+    setApiMessage({
+      text: enabled ? "API enabled" : "API disabled",
+      type: "success",
+    });
+    setTimeout(() => setApiMessage({ text: "", type: "" }), 2000);
   };
 
   const handleSyncModeChange = (mode: NetworkSyncMode) => {
@@ -358,6 +441,45 @@ const NetworkSettings: React.FC = () => {
       setTimeout(() => {
         setConnectionTestResult({ status: "idle", message: "" });
       }, 5000);
+    }
+  };
+
+  const handleOpenApiDocs = async () => {
+    setApiMessage({ text: "", type: "" });
+
+    try {
+      if (syncSettings.apiEnabled) {
+        await ensureApiServerRunning();
+      } else {
+        await refreshApiServerInfo();
+      }
+
+      const fallbackHost =
+        localIp && !localIp.startsWith("Unable") && !localIp.startsWith("Loading")
+          ? localIp
+          : "localhost";
+      const fallbackPort = loadLiveSlidesSettings().serverPort;
+      const baseUrl =
+        apiBaseUrl || `http://${fallbackHost}:${fallbackPort}`;
+      const url = `${baseUrl}/api/docs`;
+
+      const opener = await import("@tauri-apps/plugin-opener");
+      await opener.openUrl(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setApiMessage({ text: message, type: "error" });
+      setTimeout(() => setApiMessage({ text: "", type: "" }), 4000);
+      try {
+        const fallbackHost =
+          localIp && !localIp.startsWith("Unable") && !localIp.startsWith("Loading")
+            ? localIp
+            : "localhost";
+        const fallbackPort = loadLiveSlidesSettings().serverPort;
+        const url = `${apiBaseUrl || `http://${fallbackHost}:${fallbackPort}`}/api/docs`;
+        window.open(url, "_blank", "noopener");
+      } catch {
+        // Ignore fallback errors
+      }
     }
   };
 
@@ -620,7 +742,7 @@ const NetworkSettings: React.FC = () => {
               color: "var(--app-text-color-secondary)",
             }}
           >
-            Network Sync allows multiple ProAssist instances to share data. In
+            Network Sync allows multiple SmartVerses instances to share data. In
             Master mode, this device broadcasts changes to others. In Slave
             mode, it receives updates from a master. In Peer mode, all devices
             sync bidirectionally.
@@ -1340,6 +1462,118 @@ const NetworkSettings: React.FC = () => {
             )}
           </div>
         )}
+      </div>
+
+      {/* HTTP API Section */}
+      <div
+        style={{
+          marginBottom: "var(--spacing-5)",
+          padding: "var(--spacing-4)",
+          backgroundColor: "var(--app-header-bg)",
+          borderRadius: "12px",
+          border: "1px solid var(--app-border-color)",
+        }}
+      >
+        <h3
+          style={{
+            marginTop: 0,
+            marginBottom: "var(--spacing-3)",
+            fontSize: "1.25rem",
+            fontWeight: 600,
+          }}
+        >
+          HTTP API (v1)
+        </h3>
+        <div
+          style={{
+            marginBottom: "var(--spacing-4)",
+            padding: "var(--spacing-3)",
+            backgroundColor: "var(--app-input-bg-color)",
+            borderRadius: "8px",
+            border: "1px solid var(--app-border-color)",
+          }}
+        >
+          <p style={{ margin: "0 0 var(--spacing-2) 0", fontWeight: 500 }}>
+            About the API
+          </p>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.9em",
+              color: "var(--app-text-color-secondary)",
+            }}
+          >
+            The API lets external systems trigger Scripture Go Live and start
+            countdown timers. It runs on the Live Slides web server.
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--spacing-2)",
+            marginBottom: "var(--spacing-3)",
+          }}
+        >
+          <input
+            type="checkbox"
+            id="enableApi"
+            checked={syncSettings.apiEnabled}
+            onChange={(e) => handleApiToggle(e.target.checked)}
+            style={{ width: "auto", margin: 0 }}
+          />
+          <label
+            htmlFor="enableApi"
+            style={{ margin: 0, cursor: "pointer", fontWeight: 500 }}
+          >
+            Enable API
+          </label>
+        </div>
+
+        <div
+          style={{
+            padding: "var(--spacing-3)",
+            backgroundColor: "var(--app-input-bg-color)",
+            borderRadius: "8px",
+            border: "1px solid var(--app-border-color)",
+            marginBottom: "var(--spacing-3)",
+            fontSize: "0.9em",
+          }}
+        >
+          <div style={{ marginBottom: "6px" }}>
+            Base URL:{" "}
+            <span style={{ fontWeight: 600 }}>
+              {apiBaseUrl || "http://localhost:9876"}
+            </span>
+          </div>
+          <div style={{ color: "var(--app-text-color-secondary)" }}>
+            Server status:{" "}
+            <span style={{ color: apiServerRunning ? "#22c55e" : "#9ca3af" }}>
+              {apiServerRunning ? "Running" : "Stopped"}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
+          <button
+            onClick={handleOpenApiDocs}
+            className="secondary"
+            disabled={!syncSettings.apiEnabled}
+          >
+            Open Documentation
+          </button>
+          {apiMessage.text && (
+            <span
+              style={{
+                color: apiMessage.type === "success" ? "#22c55e" : "#dc2626",
+                fontSize: "0.9em",
+              }}
+            >
+              {apiMessage.text}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

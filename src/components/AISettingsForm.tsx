@@ -3,7 +3,7 @@ import { AppSettings, AIProvider, AIProviderType, AIModelSetting } from "../type
 import { getAppSettings, saveAppSettings } from "../utils/aiConfig";
 import { fetchOpenAIModels, fetchGeminiModels, fetchGroqModels } from "../services/aiService";
 import { formatGroqModelLabel } from "../utils/groqModelLimits";
-import { FaSpinner, FaChevronDown, FaChevronUp, FaPlus, FaTrash, FaMagic, FaDownload } from "react-icons/fa";
+import { FaSpinner, FaChevronDown, FaChevronUp, FaPlus, FaTrash, FaMagic, FaDownload, FaKey, FaRobot } from "react-icons/fa";
 import {
   ProPresenterAITemplate,
   ProPresenterAITemplateUseCase,
@@ -19,6 +19,7 @@ import {
 } from "../services/propresenterService";
 import { ProPresenterConnection } from "../types/propresenter";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
+import { sectionStyle, sectionHeaderStyle } from "../utils/settingsSectionStyles";
 
 interface AISettingsFormProps {
   // Props if any, e.g., onSettingsChange callback if SettingsPage needs to react
@@ -35,6 +36,13 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
   const [groqKeyInput, setGroqKeyInput] = useState(
     appSettings.groqConfig?.apiKey || ""
   );
+
+  // Default provider model settings
+  const [defaultProviderModel, setDefaultProviderModel] = useState(
+    appSettings.defaultAIModel || ""
+  );
+  const [defaultProviderModels, setDefaultProviderModels] = useState<string[]>([]);
+  const [defaultProviderModelsLoading, setDefaultProviderModelsLoading] = useState(false);
 
   // Spell check model settings
   const [spellCheckProvider, setSpellCheckProvider] = useState<AIProviderType | "">(
@@ -90,6 +98,7 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
     setTimerAssistantModel(settings.timerAssistantModel?.model || "");
     setGlobalAssistantProvider(settings.globalAssistantModel?.provider || "");
     setGlobalAssistantModel(settings.globalAssistantModel?.model || "");
+    setDefaultProviderModel(settings.defaultAIModel || "");
     
     // Load ProPresenter AI Templates
     setPPAITemplates(loadProPresenterAITemplates());
@@ -130,6 +139,9 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
         geminiConfig: geminiKeyInput ? { apiKey: geminiKeyInput } : undefined,
         groqConfig: groqKeyInput ? { apiKey: groqKeyInput } : undefined,
         defaultAIProvider: appSettings.defaultAIProvider || undefined,
+        defaultAIModel: appSettings.defaultAIProvider
+          ? defaultProviderModel || undefined
+          : undefined,
         spellCheckModel: spellCheckSetting,
         timerAssistantModel: timerAssistantSetting,
         globalAssistantModel: globalAssistantSetting,
@@ -150,6 +162,7 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
       geminiKeyInput,
       groqKeyInput,
       appSettings.defaultAIProvider,
+      defaultProviderModel,
       spellCheckProvider,
       spellCheckModel,
       timerAssistantProvider,
@@ -160,6 +173,52 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
     ],
     { delayMs: 600, enabled: settingsLoaded, skipFirstRun: true }
   );
+
+  // Fetch models when default provider changes
+  useEffect(() => {
+    (async () => {
+      const provider = appSettings.defaultAIProvider;
+      if (!provider) {
+        setDefaultProviderModels([]);
+        setDefaultProviderModel("");
+        return;
+      }
+
+      setDefaultProviderModelsLoading(true);
+      try {
+        if (provider === "openai" && openAIKeyInput) {
+          const models = await fetchOpenAIModels(openAIKeyInput);
+          setDefaultProviderModels(models);
+          if (models.length > 0 && !models.includes(defaultProviderModel)) {
+            setDefaultProviderModel(models[0]);
+          }
+        } else if (provider === "gemini" && geminiKeyInput) {
+          const models = await fetchGeminiModels(geminiKeyInput);
+          setDefaultProviderModels(models);
+          if (models.length > 0 && !models.includes(defaultProviderModel)) {
+            setDefaultProviderModel(models[0]);
+          }
+        } else if (provider === "groq" && groqKeyInput) {
+          const models = await fetchGroqModels(groqKeyInput);
+          setDefaultProviderModels(models);
+          if (models.length > 0 && !models.includes(defaultProviderModel)) {
+            setDefaultProviderModel(models[0]);
+          }
+        } else {
+          setDefaultProviderModels([]);
+        }
+      } catch {
+        setDefaultProviderModels([]);
+      } finally {
+        setDefaultProviderModelsLoading(false);
+      }
+    })();
+  }, [
+    appSettings.defaultAIProvider,
+    openAIKeyInput,
+    geminiKeyInput,
+    groqKeyInput,
+  ]);
 
   // Fetch models when spell check provider changes
   useEffect(() => {
@@ -288,6 +347,8 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
       defaultAIProvider: provider,
     };
     setAppSettings(newSettings);
+    setDefaultProviderModel("");
+    setDefaultProviderModels([]);
   };
 
   const handleSpellCheckProviderChange = (provider: AIProviderType | "") => {
@@ -457,8 +518,13 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
   }, [enabledConnections, selectedConnectionId]);
 
   return (
-    <div className="settings-form-section">
-      <h3>AI Provider Configuration</h3>
+    <div>
+      {/* AI Provider Configuration */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaKey />
+          <h3 style={{ margin: 0 }}>AI Provider Configuration</h3>
+        </div>
       <div className="form-group">
         <label htmlFor="groq-key">Groq API Key (Recommended - Super Fast):</label>
         <input
@@ -556,23 +622,59 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
           </option>
         </select>
       </div>
+      <div className="form-group">
+        <label htmlFor="default-ai-model">Default AI Model:</label>
+        <div style={{ position: "relative" }}>
+          <select
+            id="default-ai-model"
+            value={defaultProviderModel}
+            onChange={(e) => setDefaultProviderModel(e.target.value)}
+            disabled={!appSettings.defaultAIProvider || defaultProviderModelsLoading}
+          >
+            {!appSettings.defaultAIProvider && (
+              <option value="">Select provider first</option>
+            )}
+            {defaultProviderModelsLoading && <option value="">Loading models...</option>}
+            {!defaultProviderModelsLoading &&
+              appSettings.defaultAIProvider &&
+              defaultProviderModels.length === 0 && (
+                <option value="">No models found</option>
+              )}
+            {defaultProviderModels.map((model) => (
+              <option key={model} value={model}>
+                {appSettings.defaultAIProvider === "groq"
+                  ? formatGroqModelLabel(model)
+                  : model}
+              </option>
+            ))}
+          </select>
+          {defaultProviderModelsLoading && (
+            <FaSpinner
+              style={{
+                position: "absolute",
+                right: "30px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                animation: "spin 1s linear infinite",
+                color: "#a855f7",
+              }}
+            />
+          )}
+        </div>
+      </div>
+      </div>
 
-      {/* AI Model Settings Section */}
-      <div
-        style={{
-          marginTop: "24px",
-          paddingTop: "20px",
-          borderTop: "1px solid var(--app-border-color)",
-        }}
-      >
-        <h4 style={{ marginBottom: "16px", color: "var(--app-text-color)" }}>
-          AI Model Settings
-        </h4>
+      {/* AI Model Settings */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaRobot />
+          <h3 style={{ margin: 0 }}>AI Model Settings</h3>
+        </div>
         <p
           style={{
             fontSize: "0.85em",
             color: "var(--app-text-color-secondary)",
-            marginBottom: "16px",
+            marginBottom: "var(--spacing-4)",
           }}
         >
           Configure which AI model to use for specific features. If not set, the default provider will be used.
@@ -1048,20 +1150,12 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
           </div>
         </div>
       </div>
+
       {saveStatus && (
         <p style={{ marginTop: "16px", fontSize: "0.85em", color: "var(--app-text-color-secondary)" }}>
           {saveStatus}
         </p>
       )}
-      <p
-        style={{
-          fontSize: "0.8em",
-          color: "var(--app-text-color-secondary)",
-          marginTop: "10px",
-        }}
-      >
-        Note: API keys are stored locally in your browser's storage.
-      </p>
 
       <style>{`
         @keyframes spin {

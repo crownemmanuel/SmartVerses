@@ -169,6 +169,28 @@ When adding external URL features:
 4. Add the required domain/URL pattern to that directive
 5. Rebuild and test again
 
+## Audience Display Implementation
+
+**CRITICAL: DUAL IMPLEMENTATION REQUIREMENT**
+
+The Audience Display feature has two distinct implementations based on the operating system. When making changes to the audience display logic, UI, or window management, **YOU MUST UPDATE BOTH IMPLEMENTATIONS** unless specifically instructed otherwise.
+
+1.  **Windows Implementation**:
+    *   **Settings Checkbox**: "Enable audience screen (Windows)" (controlled by `settings.windowAudienceScreen`)
+    *   **Mechanism**: Uses `invoke("open_dialog", { dialogWindow: "audience-test", ... })`
+    *   **Window Label**: `dialog-audience-test` (handled via `window_commands.rs`)
+    *   **Closing**: Uses `invoke("close_dialog", { dialogWindow: "audience-test" })`
+
+2.  **Mac Implementation**:
+    *   **Settings Checkbox**: "Enable audience screen (Mac)" (controlled by `settings.enabled`)
+    *   **Mechanism**: Uses `openDisplayWindow(settings)` (which calls `invoke("open_audience_display_window", ...)`)
+    *   **Window Label**: `audience-display` (standard Tauri multi-window)
+    *   **Closing**: Uses `closeDisplayWindow()` (frontend-driven)
+
+**Requirement**:
+*   If you change how the display opens, closes, or updates content, verify and apply changes to **BOTH** code paths in `src/components/DisplaySettings.tsx`, `src/services/displayService.ts`, and `src-tauri/src/window_commands.rs` (or relevant backend files).
+*   Ensure UI changes in `DisplaySettings.tsx` respect the OS-specific rendering logic (`osType` check).
+
 ## See Also
 
 - `RELEASE.md` - Complete release documentation

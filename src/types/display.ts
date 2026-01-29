@@ -10,6 +10,17 @@ export type DisplayLayout = {
   reference: DisplayLayoutRect;
 };
 
+export type DisplaySlides = {
+  lines: string[];
+};
+
+export type DisplayTimerState = {
+  isRunning: boolean;
+  timeLeft: number;
+  sessionName?: string;
+  isOverrun?: boolean;
+};
+
 export type TextShadow = {
   offsetX: number;
   offsetY: number;
@@ -30,8 +41,13 @@ export type FontStyle = {
   shadow?: TextShadow;
 };
 
+export type SlideLineStyle = Partial<FontStyle> & {
+  fontFamily?: string;
+};
+
 export type DisplaySettings = {
   enabled: boolean;
+  windowAudienceScreen: boolean;
   webEnabled: boolean;
   monitorIndex: number | null;
   backgroundColor: string;
@@ -41,6 +57,10 @@ export type DisplaySettings = {
   textStyle: FontStyle;
   referenceStyle: FontStyle;
   layout: DisplayLayout;
+  slidesLayout: DisplayLayoutRect[];
+  slidesLineStyles: SlideLineStyle[];
+  showTimer: boolean;
+  timerFontSize: number;
 };
 
 export type DisplayScripture = {
@@ -49,6 +69,9 @@ export type DisplayScripture = {
 };
 
 export const DISPLAY_SETTINGS_KEY = "proassist-display-settings";
+export const DISPLAY_SCRIPTURE_KEY = "proassist-display-scripture";
+export const DISPLAY_SLIDES_KEY = "proassist-display-slides";
+export const DISPLAY_TIMER_KEY = "proassist-display-timer";
 
 export const DEFAULT_DISPLAY_LAYOUT: DisplayLayout = {
   text: {
@@ -65,8 +88,24 @@ export const DEFAULT_DISPLAY_LAYOUT: DisplayLayout = {
   },
 };
 
+export const DEFAULT_SLIDES_LAYOUT: DisplayLayoutRect[] = [
+  {
+    x: 0.08,
+    y: 0.62,
+    width: 0.84,
+    height: 0.12,
+  },
+  {
+    x: 0.08,
+    y: 0.76,
+    width: 0.84,
+    height: 0.12,
+  },
+];
+
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   enabled: false,
+  windowAudienceScreen: false,
   webEnabled: false,
   monitorIndex: null,
   backgroundColor: "#000000",
@@ -84,4 +123,8 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
     italic: false,
   },
   layout: DEFAULT_DISPLAY_LAYOUT,
+  slidesLayout: DEFAULT_SLIDES_LAYOUT,
+  slidesLineStyles: [],
+  showTimer: false,
+  timerFontSize: 150,
 };

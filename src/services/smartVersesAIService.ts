@@ -36,6 +36,56 @@ interface AIBibleSearchResponse {
 // HELPER FUNCTIONS
 // =============================================================================
 
+const GROQ_RATE_LIMIT_EVENT = "ai-rate-limit";
+let groqRateLimitUntil = 0;
+let groqRateLimitMessage = "";
+let groqRateLimitDetail = "";
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  const nestedMessage =
+    (error as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+      ?.message;
+  if (nestedMessage) return nestedMessage;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function extractRetryAfterMs(message: string): number | null {
+  const match = message.match(/try again in (?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
+  if (!match) return null;
+  const minutes = match[1] ? Number(match[1]) : 0;
+  const seconds = match[2] ? Number(match[2]) : 0;
+  if (Number.isNaN(minutes) || Number.isNaN(seconds)) return null;
+  return (minutes * 60 + seconds) * 1000;
+}
+
+function emitGroqRateLimitStatus() {
+  if (typeof window === "undefined") return;
+  if (groqRateLimitUntil <= Date.now()) return;
+  window.dispatchEvent(
+    new CustomEvent(GROQ_RATE_LIMIT_EVENT, {
+      detail: {
+        provider: "groq",
+        until: groqRateLimitUntil,
+        message: groqRateLimitMessage,
+        detail: groqRateLimitDetail,
+      },
+    })
+  );
+}
+
+function markGroqRateLimit(untilMs: number, detail: string) {
+  groqRateLimitUntil = untilMs;
+  groqRateLimitMessage = "Groq limit — paraphrase & keywords paused";
+  groqRateLimitDetail = detail;
+  emitGroqRateLimitStatus();
+}
+
 /**
  * Get the appropriate LLM instance based on provider
  */
@@ -126,6 +176,7 @@ export async function analyzeTranscriptChunk(
     overrideModel?: string;
     minParaphraseConfidence?: number;
     maxParaphraseResults?: number;
+    minWords?: number;
   }
 ): Promise<TranscriptAnalysisResult> {
   const debugAI =
@@ -148,7 +199,7 @@ export async function analyzeTranscriptChunk(
   const wordCount = transcriptChunk.trim().split(/\s+/).length;
   // NOTE: In practice, many recognizable paraphrases are short (e.g., "For God so loved the world").
   // We keep a guard to control cost, but allow slightly shorter chunks.
-  const minWords = 6;
+  const minWords = Math.max(1, Math.floor(options?.minWords ?? 6));
   if (wordCount < minWords) {
     console.log(
       "⚠️ Skipping AI analysis - chunk too short:",
@@ -174,6 +225,16 @@ export async function analyzeTranscriptChunk(
   if (!apiKey) {
     console.error(`No API key configured for ${provider}`);
     return { paraphrasedVerses: [], keyPoints: [] };
+  }
+
+  const defaultModel =
+    provider === appSettings.defaultAIProvider ? appSettings.defaultAIModel : undefined;
+
+  if (provider === "groq") {
+    if (groqRateLimitUntil > Date.now()) {
+      emitGroqRateLimitStatus();
+      return { paraphrasedVerses: [], keyPoints: [] };
+    }
   }
 
   const keyPointInstructions =
@@ -261,7 +322,12 @@ ${extractKeyPoints ? "Extract any quotable key points." : ""}
 Return ONLY valid JSON, no other text.`;
 
   try {
-    const llm = getLLM(provider, apiKey, 0.7, options?.overrideModel);
+    const llm = getLLM(
+      provider,
+      apiKey,
+      0.7,
+      options?.overrideModel ?? defaultModel
+    );
     if (debugAI) {
       console.log("[SmartVerses][AI] provider:", provider);
       console.log("[SmartVerses][AI] systemPrompt chars:", systemPrompt.length);
@@ -308,6 +374,17 @@ Return ONLY valid JSON, no other text.`;
     console.error("Failed to parse AI response:", rawText);
     return { paraphrasedVerses: [], keyPoints: [] };
   } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    const isRateLimit =
+      /rate limit/i.test(errorMessage) ||
+      /rate_limit_exceeded/i.test(errorMessage) ||
+      /429/.test(errorMessage);
+
+    if (provider === "groq" && isRateLimit) {
+      const retryAfterMs = extractRetryAfterMs(errorMessage) ?? 60_000;
+      markGroqRateLimit(Date.now() + retryAfterMs, errorMessage);
+    }
+
     console.error("Error analyzing transcript:", error);
     return { paraphrasedVerses: [], keyPoints: [] };
   }
@@ -345,6 +422,16 @@ export async function searchBibleWithAI(
     return [];
   }
 
+  const defaultModel =
+    provider === appSettings.defaultAIProvider ? appSettings.defaultAIModel : undefined;
+
+  if (provider === "groq") {
+    if (groqRateLimitUntil > Date.now()) {
+      emitGroqRateLimitStatus();
+      return [];
+    }
+  }
+
   const systemPrompt = `You are an expert Bible verse finder. Your task is to find Bible verses from the user's query.
 
 INSTRUCTIONS:
@@ -375,7 +462,12 @@ RULES:
 - If no Bible verse can be identified, return: {"verses": []}`;
 
   try {
-    const llm = getLLM(provider as AIProviderType, apiKey, 0.3, overrideModel);
+    const llm = getLLM(
+      provider as AIProviderType,
+      apiKey,
+      0.3,
+      overrideModel ?? defaultModel
+    );
     const messages = [
       new SystemMessage(systemPrompt),
       new HumanMessage(query),
@@ -411,6 +503,8 @@ RULES:
               book: parsedRef[0].book,
               chapter: parsedRef[0].chapter,
               verse: parsedRef[0].startVerse,
+              // Extract highlights from AI response
+              highlight: verse.highlight && Array.isArray(verse.highlight) ? verse.highlight : undefined,
             });
           }
         }
@@ -423,6 +517,17 @@ RULES:
     console.error("Failed to parse AI search response:", rawText);
     return [];
   } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    const isRateLimit =
+      /rate limit/i.test(errorMessage) ||
+      /rate_limit_exceeded/i.test(errorMessage) ||
+      /429/.test(errorMessage);
+
+    if (provider === "groq" && isRateLimit) {
+      const retryAfterMs = extractRetryAfterMs(errorMessage) ?? 60_000;
+      markGroqRateLimit(Date.now() + retryAfterMs, errorMessage);
+    }
+
     console.error("Error in AI Bible search:", error);
     return [];
   }

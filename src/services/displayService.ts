@@ -5,12 +5,28 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   DEFAULT_DISPLAY_LAYOUT,
   DEFAULT_DISPLAY_SETTINGS,
+  DEFAULT_SLIDES_LAYOUT,
+  DISPLAY_SCRIPTURE_KEY,
+  DISPLAY_SLIDES_KEY,
   DISPLAY_SETTINGS_KEY,
+  DISPLAY_TIMER_KEY,
   DisplayScripture,
   DisplaySettings,
+  DisplaySlides,
+  DisplayTimerState,
+  DisplayLayoutRect,
+  SlideLineStyle,
 } from "../types/display";
 
 const DISPLAY_WINDOW_LABEL = "audience-display";
+const EMPTY_SCRIPTURE: DisplayScripture = { verseText: "", reference: "" };
+const EMPTY_SLIDES: DisplaySlides = { lines: [] };
+const DEFAULT_TIMER_STATE: DisplayTimerState = {
+  isRunning: false,
+  timeLeft: 0,
+  sessionName: "",
+  isOverrun: false,
+};
 
 let displayWindow: WebviewWindow | null = null;
 
@@ -24,6 +40,57 @@ function mergeLayout(
   };
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function normalizeRect(rect: DisplayLayoutRect): DisplayLayoutRect {
+  const width = clamp(rect.width, 0.05, 1);
+  const height = clamp(rect.height, 0.05, 1);
+  return {
+    x: clamp(rect.x, 0, 1 - width),
+    y: clamp(rect.y, 0, 1 - height),
+    width,
+    height,
+  };
+}
+
+function mergeSlidesLayout(
+  base: DisplayLayoutRect[],
+  incoming?: DisplayLayoutRect[]
+): DisplayLayoutRect[] {
+  if (!incoming || !Array.isArray(incoming)) {
+    return base.map((rect) => ({ ...rect }));
+  }
+
+  const next = incoming
+    .slice(0, 6)
+    .map((rect, index) => {
+      const fallback = base[index] || base[base.length - 1];
+      return normalizeRect({ ...fallback, ...rect });
+    });
+
+  while (next.length < 2) {
+    const fallback = base[next.length] || base[base.length - 1];
+    next.push({ ...fallback });
+  }
+
+  return next;
+}
+
+function normalizeSlideLineStyles(incoming: unknown): SlideLineStyle[] {
+  if (!Array.isArray(incoming)) {
+    return [];
+  }
+
+  return incoming.slice(0, 6).map((style) => {
+    if (style && typeof style === "object" && !Array.isArray(style)) {
+      return { ...(style as SlideLineStyle) };
+    }
+    return {};
+  });
+}
+
 export function loadDisplaySettings(): DisplaySettings {
   try {
     const stored = localStorage.getItem(DISPLAY_SETTINGS_KEY);
@@ -33,6 +100,8 @@ export function loadDisplaySettings(): DisplaySettings {
         ...DEFAULT_DISPLAY_SETTINGS,
         ...parsed,
         layout: mergeLayout(DEFAULT_DISPLAY_LAYOUT, parsed.layout),
+        slidesLayout: mergeSlidesLayout(DEFAULT_SLIDES_LAYOUT, parsed.slidesLayout),
+        slidesLineStyles: normalizeSlideLineStyles(parsed.slidesLineStyles),
       };
       
       // Backward compatibility: if textStyle/referenceStyle don't exist, create them
@@ -54,6 +123,15 @@ export function loadDisplaySettings(): DisplaySettings {
       // Backward compatibility: if webEnabled doesn't exist, default to false
       if (parsed.webEnabled === undefined) {
         settings.webEnabled = false;
+      }
+      if (parsed.windowAudienceScreen === undefined) {
+        settings.windowAudienceScreen = false;
+      }
+      if (parsed.showTimer === undefined) {
+        settings.showTimer = false;
+      }
+      if (typeof parsed.timerFontSize !== "number" || Number.isNaN(parsed.timerFontSize)) {
+        settings.timerFontSize = DEFAULT_DISPLAY_SETTINGS.timerFontSize;
       }
 
       // Guard against invalid values from older/local data
@@ -81,6 +159,108 @@ export function saveDisplaySettings(settings: DisplaySettings): void {
     void emit("display:settings", settings);
   } catch (error) {
     console.error("[Display] Failed to save display settings:", error);
+  }
+}
+
+export function loadDisplayScripture(): DisplayScripture {
+  try {
+    const stored = localStorage.getItem(DISPLAY_SCRIPTURE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Partial<DisplayScripture>;
+      return {
+        verseText: parsed.verseText ?? "",
+        reference: parsed.reference ?? "",
+      };
+    }
+  } catch (error) {
+    console.error("[Display] Failed to load display scripture:", error);
+  }
+  return EMPTY_SCRIPTURE;
+}
+
+export function saveDisplayScripture(payload: DisplayScripture): void {
+  try {
+    localStorage.setItem(DISPLAY_SCRIPTURE_KEY, JSON.stringify(payload));
+    void emit("display:scripture", payload);
+  } catch (error) {
+    console.error("[Display] Failed to save display scripture:", error);
+  }
+}
+
+export function clearDisplayScripture(): void {
+  try {
+    localStorage.setItem(DISPLAY_SCRIPTURE_KEY, JSON.stringify(EMPTY_SCRIPTURE));
+    void emit("display:scripture", EMPTY_SCRIPTURE);
+  } catch (error) {
+    console.error("[Display] Failed to clear display scripture:", error);
+  }
+}
+
+export function loadDisplaySlides(): DisplaySlides {
+  try {
+    const stored = localStorage.getItem(DISPLAY_SLIDES_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Partial<DisplaySlides>;
+      const lines = Array.isArray(parsed.lines) ? parsed.lines : [];
+      return { lines: lines.slice(0, 6) };
+    }
+  } catch (error) {
+    console.error("[Display] Failed to load display slides:", error);
+  }
+  return EMPTY_SLIDES;
+}
+
+export function saveDisplaySlides(payload: DisplaySlides): void {
+  try {
+    const normalized = {
+      lines: Array.isArray(payload.lines) ? payload.lines.slice(0, 6) : [],
+    };
+    localStorage.setItem(DISPLAY_SLIDES_KEY, JSON.stringify(normalized));
+    void emit("display:slides", normalized);
+  } catch (error) {
+    console.error("[Display] Failed to save display slides:", error);
+  }
+}
+
+export function clearDisplaySlides(): void {
+  try {
+    localStorage.setItem(DISPLAY_SLIDES_KEY, JSON.stringify(EMPTY_SLIDES));
+    void emit("display:slides", EMPTY_SLIDES);
+  } catch (error) {
+    console.error("[Display] Failed to clear display slides:", error);
+  }
+}
+
+export function loadDisplayTimerState(): DisplayTimerState {
+  try {
+    const stored = localStorage.getItem(DISPLAY_TIMER_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Partial<DisplayTimerState>;
+      return {
+        isRunning: parsed.isRunning ?? false,
+        timeLeft: typeof parsed.timeLeft === "number" ? parsed.timeLeft : 0,
+        sessionName: parsed.sessionName ?? "",
+        isOverrun: parsed.isOverrun ?? false,
+      };
+    }
+  } catch (error) {
+    console.error("[Display] Failed to load display timer state:", error);
+  }
+  return DEFAULT_TIMER_STATE;
+}
+
+export function saveDisplayTimerState(payload: DisplayTimerState): void {
+  try {
+    const normalized: DisplayTimerState = {
+      isRunning: !!payload.isRunning,
+      timeLeft: typeof payload.timeLeft === "number" ? payload.timeLeft : 0,
+      sessionName: payload.sessionName ?? "",
+      isOverrun: payload.isOverrun ?? false,
+    };
+    localStorage.setItem(DISPLAY_TIMER_KEY, JSON.stringify(normalized));
+    void emit("display:timer", normalized);
+  } catch (error) {
+    console.error("[Display] Failed to save display timer state:", error);
   }
 }
 
@@ -219,7 +399,10 @@ export async function sendScriptureToDisplay(
 ): Promise<void> {
   try {
     // Emit to local Tauri window (for native audience display window)
-    await emit("display:scripture", payload);
+    saveDisplayScripture(payload);
+    if (payload.verseText || payload.reference) {
+      clearDisplaySlides();
+    }
     
     // Also broadcast to web server if enabled
     const settings = loadDisplaySettings();
@@ -237,12 +420,14 @@ export async function sendScriptureToDisplay(
           // Replace file path with data URL for web compatibility
           backgroundImageDataUrl,
         };
+        const slides = loadDisplaySlides();
         
         // Convert settings to JSON value for Rust
         const settingsJson = JSON.parse(JSON.stringify(webSettings));
         await invoke("update_display_state", {
           verseText: payload.verseText,
           reference: payload.reference,
+          slides: slides.lines,
           settings: settingsJson,
         });
       } catch (error) {
@@ -251,5 +436,42 @@ export async function sendScriptureToDisplay(
     }
   } catch (error) {
     console.error("[Display] Failed to emit scripture:", error);
+  }
+}
+
+export async function sendSlidesToDisplay(lines: string[]): Promise<void> {
+  try {
+    const normalizedLines = Array.isArray(lines) ? lines.slice(0, 6) : [];
+    saveDisplaySlides({ lines: normalizedLines });
+    if (normalizedLines.some((line) => line.trim())) {
+      clearDisplayScripture();
+    }
+
+    const settings = loadDisplaySettings();
+    if (settings.webEnabled) {
+      try {
+        let backgroundImageDataUrl = "";
+        if (settings.backgroundImagePath) {
+          backgroundImageDataUrl = await loadImageAsDataUrl(settings.backgroundImagePath);
+        }
+
+        const webSettings = {
+          ...settings,
+          backgroundImageDataUrl,
+        };
+        const scripture = loadDisplayScripture();
+        const settingsJson = JSON.parse(JSON.stringify(webSettings));
+        await invoke("update_display_state", {
+          verseText: scripture.verseText,
+          reference: scripture.reference,
+          slides: normalizedLines,
+          settings: settingsJson,
+        });
+      } catch (error) {
+        console.error("[Display] Failed to update web display slides:", error);
+      }
+    }
+  } catch (error) {
+    console.error("[Display] Failed to emit slides:", error);
   }
 }

@@ -131,6 +131,7 @@ export interface AppSettings {
   geminiConfig?: AIServiceConfig; // Stores API key for Gemini
   groqConfig?: AIServiceConfig; // Stores API key for Groq
   defaultAIProvider?: AIProvider; // User's preferred default AI if multiple are configured
+  defaultAIModel?: string; // Model for the default AI provider
   // AI Model settings for specific features
   spellCheckModel?: AIModelSetting; // Provider and model for spell checking
   timerAssistantModel?: AIModelSetting; // Provider and model for timer AI assistant

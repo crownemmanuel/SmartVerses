@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { KeyPoint, TranscriptionSegment } from "../types/smartVerses";
+import { KeyPoint, ParaphrasedVerse, TranscriptionSegment } from "../types/smartVerses";
 
 export type TranscriptionStreamKind = "interim" | "final";
 
@@ -9,9 +9,11 @@ export interface TranscriptionStreamMessage {
   timestamp: number;
   engine: string;
   text: string;
+  audio_level?: number;
   segment?: TranscriptionSegment;
   scripture_references?: string[];
   key_points?: KeyPoint[];
+  paraphrased_verses?: ParaphrasedVerse[];
 }
 
 /**

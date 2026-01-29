@@ -107,6 +107,18 @@ export async function createLiveSlideSession(
   return await invoke<LiveSlideSession>("create_live_slide_session", { name });
 }
 
+export async function upsertLiveSlideSession(
+  sessionId: string,
+  name: string,
+  rawText: string
+): Promise<LiveSlideSession> {
+  return await invoke<LiveSlideSession>("upsert_live_slide_session", {
+    sessionId,
+    name,
+    rawText,
+  });
+}
+
 export async function deleteLiveSlideSession(sessionId: string): Promise<void> {
   return await invoke("delete_live_slide_session", { sessionId });
 }
@@ -128,6 +140,14 @@ export async function getLocalIp(): Promise<string> {
 // ============================================================================
 
 export type WsMessageHandler = (message: WsMessage) => void;
+export type WsConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
+
+export interface WsConnectionUpdate {
+  status: WsConnectionStatus;
+  code?: number;
+  reason?: string;
+  error?: unknown;
+}
 
 export class LiveSlidesWebSocket {
   private ws: WebSocket | null = null;
@@ -135,12 +155,17 @@ export class LiveSlidesWebSocket {
   private sessionId: string;
   private clientType: "notepad" | "viewer";
   private messageHandlers: Set<WsMessageHandler> = new Set();
+  private statusHandlers: Set<(status: WsConnectionUpdate) => void> = new Set();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pendingMessages: WsMessage[] = [];
   private connectPromise: Promise<void> | null = null;
   private intentionalClose = false;
+
+  private emitStatus(update: WsConnectionUpdate): void {
+    this.statusHandlers.forEach((handler) => handler(update));
+  }
 
   constructor(
     url: string,
@@ -156,12 +181,14 @@ export class LiveSlidesWebSocket {
     if (this.connectPromise) return this.connectPromise;
 
     this.intentionalClose = false;
+    this.emitStatus({ status: "connecting" });
     this.connectPromise = new Promise((resolve, reject) => {
       try {
         // Validate URL format
         if (!this.url.startsWith('ws://') && !this.url.startsWith('wss://')) {
           const error = new Error(`Invalid WebSocket URL: ${this.url}`);
           console.error('[WebSocket]', error);
+          this.emitStatus({ status: "error", error });
           this.connectPromise = null;
           reject(error);
           return;
@@ -173,6 +200,7 @@ export class LiveSlidesWebSocket {
         this.ws.onopen = () => {
           console.log('[WebSocket] Connected successfully to', this.url);
           this.reconnectAttempts = 0;
+          this.emitStatus({ status: "connected" });
 
           // Join the session
           const joinMsg: WsJoinSession = {
@@ -221,6 +249,7 @@ export class LiveSlidesWebSocket {
                            this.ws?.readyState === WebSocket.CLOSING ? 'CLOSING' :
                            this.ws?.readyState === WebSocket.CLOSED ? 'CLOSED' : 'UNKNOWN',
           });
+          this.emitStatus({ status: "error", error });
           this.connectPromise = null;
           reject(error);
         };
@@ -232,6 +261,11 @@ export class LiveSlidesWebSocket {
             wasClean: event.wasClean,
             url: this.url,
           });
+          this.emitStatus({
+            status: "disconnected",
+            code: event.code,
+            reason: event.reason,
+          });
           this.ws = null;
           this.connectPromise = null;
           if (!this.intentionalClose) {
@@ -240,6 +274,7 @@ export class LiveSlidesWebSocket {
         };
       } catch (e) {
         console.error('[WebSocket] Failed to create WebSocket:', e);
+        this.emitStatus({ status: "error", error: e });
         this.connectPromise = null;
         reject(e);
       }
@@ -312,6 +347,13 @@ export class LiveSlidesWebSocket {
     };
   }
 
+  onStatus(handler: (status: WsConnectionUpdate) => void): () => void {
+    this.statusHandlers.add(handler);
+    return () => {
+      this.statusHandlers.delete(handler);
+    };
+  }
+
   onSlidesUpdate(
     handler: (update: WsSlidesUpdate) => void
   ): () => void {
@@ -337,6 +379,28 @@ export class LiveSlidesWebSocket {
 export interface MasterSlidesResponse {
   sessions: LiveSlideSession[];
   server_running: boolean;
+}
+
+export interface RemoteTranscriptionPinRequest {
+  clientId: string;
+  label?: string;
+}
+
+export interface RemoteTranscriptionPinResponse {
+  status: "pinned";
+  clientId: string;
+  label?: string;
+  pinnedAt: number;
+}
+
+export interface PinnedTranscriptionClient {
+  clientId: string;
+  label?: string;
+  pinnedAt: number;
+}
+
+export interface PinnedTranscriptionListResponse {
+  pinned: PinnedTranscriptionClient[];
 }
 
 /**
@@ -365,6 +429,73 @@ export async function fetchSlidesFromMaster(
     return data as MasterSlidesResponse;
   } catch (error) {
     console.error("[LiveSlides] Failed to fetch from master:", error);
+    throw error;
+  }
+}
+
+export async function pinRemoteTranscriptionSource(
+  host: string,
+  port: number,
+  payload: RemoteTranscriptionPinRequest
+): Promise<RemoteTranscriptionPinResponse> {
+  const url = `http://${host}:${port}/api/transcription/pin`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `Pin request failed: ${response.status} ${response.statusText}${
+          text ? ` - ${text}` : ""
+        }`
+      );
+    }
+
+    const data = await response.json();
+    return data as RemoteTranscriptionPinResponse;
+  } catch (error) {
+    console.error("[LiveSlides] Failed to pin remote transcription:", error);
+    throw error;
+  }
+}
+
+/**
+ * Fetch the list of pinned transcription clients from the Live Slides server.
+ * Uses the same data that is written by POST /api/transcription/pin.
+ */
+export async function getPinnedTranscriptionSources(
+  host: string,
+  port: number
+): Promise<PinnedTranscriptionListResponse> {
+  const url = `http://${host}:${port}/api/transcription/pin`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `Failed to fetch pinned sources: ${response.status} ${response.statusText}${
+          text ? ` - ${text}` : ""
+        }`
+      );
+    }
+
+    const data = await response.json();
+    return data as PinnedTranscriptionListResponse;
+  } catch (error) {
+    console.error("[LiveSlides] Failed to fetch pinned transcription sources:", error);
     throw error;
   }
 }

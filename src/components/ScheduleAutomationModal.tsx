@@ -12,6 +12,7 @@ import {
   FaPlay,
   FaStop,
   FaMusic,
+  FaLink,
 } from "react-icons/fa";
 import {
   getEnabledConnections,
@@ -26,6 +27,7 @@ import {
   ProPresenterStageScreen,
   ProPresenterStageLayout,
   ProPresenterConnection,
+  HttpAutomationMethod,
 } from "../types/propresenter";
 import {
   loadSmartAutomations,
@@ -43,6 +45,17 @@ type RecordingAutomationType =
   | "startBothRecording"
   | "stopBothRecording";
 
+const RECORDING_AUTOMATION_TYPES: RecordingAutomationType[] = [
+  "startVideoRecording",
+  "stopVideoRecording",
+  "startAudioRecording",
+  "stopAudioRecording",
+  "startBothRecording",
+  "stopBothRecording",
+];
+
+const HTTP_METHODS: HttpAutomationMethod[] = ["GET", "POST", "PUT", "DELETE"];
+
 interface ScheduleAutomationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -51,7 +64,7 @@ interface ScheduleAutomationModalProps {
   sessionName: string;
 }
 
-type AutomationType = "slide" | "stageLayout" | "recording" | "midi";
+type AutomationType = "slide" | "stageLayout" | "recording" | "midi" | "http";
 
 const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
   isOpen,
@@ -106,6 +119,11 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
   const [midiNote, setMidiNote] = useState<number>(60);
   const [midiVelocity, setMidiVelocity] = useState<number>(127);
   const [isLoadingMidiDevices, setIsLoadingMidiDevices] = useState(false);
+
+  // HTTP automation state
+  const [httpMethod, setHttpMethod] = useState<HttpAutomationMethod>("POST");
+  const [httpUrl, setHttpUrl] = useState<string>("");
+  const [httpPayload, setHttpPayload] = useState<string>("");
 
   // Track if modal was just opened to prevent re-initialization
   const [hasInitialized, setHasInitialized] = useState(false);
@@ -202,21 +220,14 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
       const initialAutomations = currentAutomations || [];
       setSavedAutomations(initialAutomations);
 
-      // Recording automation types
-      const recordingTypes: RecordingAutomationType[] = [
-        "startVideoRecording",
-        "stopVideoRecording",
-        "startAudioRecording",
-        "stopAudioRecording",
-        "startBothRecording",
-        "stopBothRecording",
-      ];
-
-      // default to slide tab unless only stageLayout, recording, or midi exists
+      // default to slide tab unless only stageLayout, recording, midi, or http exists
       const hasSlide = initialAutomations.some((a) => a.type === "slide");
       const hasStage = initialAutomations.some((a) => a.type === "stageLayout");
-      const hasRecording = initialAutomations.some((a) => recordingTypes.includes(a.type as RecordingAutomationType));
+      const hasRecording = initialAutomations.some((a) =>
+        RECORDING_AUTOMATION_TYPES.includes(a.type as RecordingAutomationType)
+      );
       const hasMidi = initialAutomations.some((a) => a.type === "midi");
+      const hasHttp = initialAutomations.some((a) => a.type === "http");
       const initialType: AutomationType = hasSlide
         ? "slide"
         : hasStage
@@ -225,6 +236,8 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
         ? "recording"
         : hasMidi
         ? "midi"
+        : hasHttp
+        ? "http"
         : "slide";
       setAutomationType(initialType);
 
@@ -247,8 +260,8 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
       }
 
       // Initialize recording automation state
-      const existingRecording = initialAutomations.find((a) => 
-        recordingTypes.includes(a.type as RecordingAutomationType)
+      const existingRecording = initialAutomations.find((a) =>
+        RECORDING_AUTOMATION_TYPES.includes(a.type as RecordingAutomationType)
       );
       setSelectedRecordingAction(existingRecording?.type as RecordingAutomationType || null);
 
@@ -259,6 +272,21 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
         setMidiChannel(existingMidi.channel);
         setMidiNote(existingMidi.note);
         setMidiVelocity(existingMidi.velocity || 127);
+      }
+
+      const existingHttp = initialAutomations.find((a) => a.type === "http");
+      if (existingHttp?.type === "http") {
+        setHttpMethod(existingHttp.method);
+        setHttpUrl(existingHttp.url);
+        if (typeof existingHttp.payload === "string") {
+          setHttpPayload(existingHttp.payload);
+        } else {
+          setHttpPayload("");
+        }
+      } else {
+        setHttpMethod("POST");
+        setHttpUrl("");
+        setHttpPayload("");
       }
 
       setSuccess(false);
@@ -428,6 +456,8 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
       handleRemoveRecordingAutomation();
     } else if (automationType === "midi") {
       handleRemoveMidiAutomation();
+    } else if (automationType === "http") {
+      handleRemoveHttpAutomation();
     } else {
       setSavedAutomations((prev) =>
         prev.filter((a) => a.type !== automationType)
@@ -452,26 +482,31 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
         setSelectedLayoutIndex(ruleStage.layoutIndex);
       }
 
-      // Recording automation types
-      const recordingTypes: RecordingAutomationType[] = [
-        "startVideoRecording",
-        "stopVideoRecording",
-        "startAudioRecording",
-        "stopAudioRecording",
-        "startBothRecording",
-        "stopBothRecording",
-      ];
-
       const ruleRecording = ruleAutomations.find((a) => 
-        recordingTypes.includes(a.type as RecordingAutomationType)
+        RECORDING_AUTOMATION_TYPES.includes(a.type as RecordingAutomationType)
       );
       if (ruleRecording) {
         setSelectedRecordingAction(ruleRecording.type as RecordingAutomationType);
       }
 
+      const ruleMidi = ruleAutomations.find((a) => a.type === "midi");
+      if (ruleMidi?.type === "midi") {
+        setSelectedMidiDeviceId(ruleMidi.deviceId);
+        setMidiChannel(ruleMidi.channel);
+        setMidiNote(ruleMidi.note);
+        setMidiVelocity(ruleMidi.velocity || 127);
+      }
+
+      const ruleHttp = ruleAutomations.find((a) => a.type === "http");
+      if (ruleHttp?.type === "http") {
+        setHttpMethod(ruleHttp.method);
+        setHttpUrl(ruleHttp.url);
+        setHttpPayload(typeof ruleHttp.payload === "string" ? ruleHttp.payload : "");
+      }
+
       // keep current selected tab, but if it has nothing, switch to something that exists
       const hasSelectedType = automationType === "recording" 
-        ? ruleAutomations.some((a) => recordingTypes.includes(a.type as RecordingAutomationType))
+        ? ruleAutomations.some((a) => RECORDING_AUTOMATION_TYPES.includes(a.type as RecordingAutomationType))
         : ruleAutomations.some((a) => a.type === automationType);
       
       if (!hasSelectedType) {
@@ -479,8 +514,12 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
           ? "slide"
           : ruleAutomations.some((a) => a.type === "stageLayout")
           ? "stageLayout"
-          : ruleAutomations.some((a) => recordingTypes.includes(a.type as RecordingAutomationType))
+          : ruleAutomations.some((a) => RECORDING_AUTOMATION_TYPES.includes(a.type as RecordingAutomationType))
           ? "recording"
+          : ruleAutomations.some((a) => a.type === "midi")
+          ? "midi"
+          : ruleAutomations.some((a) => a.type === "http")
+          ? "http"
           : "slide";
         setAutomationType(nextType);
       }
@@ -516,21 +555,13 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
   const handleRecordingActionChange = (action: RecordingAutomationType) => {
     setSelectedRecordingAction(action);
     
-    // Recording automation types to filter out
-    const recordingTypes: RecordingAutomationType[] = [
-      "startVideoRecording",
-      "stopVideoRecording",
-      "startAudioRecording",
-      "stopAudioRecording",
-      "startBothRecording",
-      "stopBothRecording",
-    ];
-
     // Add the new recording automation
     const automation: ScheduleItemAutomation = { type: action };
     setSavedAutomations((prev) => {
       // Remove any existing recording automations
-      const others = prev.filter((a) => !recordingTypes.includes(a.type as RecordingAutomationType));
+      const others = prev.filter((a) =>
+        !RECORDING_AUTOMATION_TYPES.includes(a.type as RecordingAutomationType)
+      );
       return [...others, automation];
     });
     setSuccess(true);
@@ -538,15 +569,11 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
   };
 
   const handleRemoveRecordingAutomation = () => {
-    const recordingTypes: RecordingAutomationType[] = [
-      "startVideoRecording",
-      "stopVideoRecording",
-      "startAudioRecording",
-      "stopAudioRecording",
-      "startBothRecording",
-      "stopBothRecording",
-    ];
-    setSavedAutomations((prev) => prev.filter((a) => !recordingTypes.includes(a.type as RecordingAutomationType)));
+    setSavedAutomations((prev) =>
+      prev.filter(
+        (a) => !RECORDING_AUTOMATION_TYPES.includes(a.type as RecordingAutomationType)
+      )
+    );
     setSelectedRecordingAction(null);
     setSuccess(false);
   };
@@ -589,6 +616,48 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
     setSuccess(false);
   };
 
+  const handleSetHttpAutomation = () => {
+    const trimmedUrl = httpUrl.trim();
+    if (!trimmedUrl) {
+      setError("Please enter a URL for the HTTP call");
+      return;
+    }
+
+    const trimmedPayload = httpPayload.trim();
+    let payload: string | undefined;
+    if (trimmedPayload) {
+      try {
+        JSON.parse(trimmedPayload);
+        payload = trimmedPayload;
+      } catch {
+        setError("Invalid JSON payload. Please provide valid JSON.");
+        return;
+      }
+    }
+
+    const automation: ScheduleItemAutomation = {
+      type: "http",
+      method: httpMethod,
+      url: trimmedUrl,
+      payload,
+    };
+
+    setSavedAutomations((prev) => {
+      const others = prev.filter((a) => a.type !== "http");
+      return [...others, automation];
+    });
+    setSuccess(true);
+    setError(null);
+  };
+
+  const handleRemoveHttpAutomation = () => {
+    setSavedAutomations((prev) => prev.filter((a) => a.type !== "http"));
+    setHttpMethod("POST");
+    setHttpUrl("");
+    setHttpPayload("");
+    setSuccess(false);
+  };
+
   if (!isOpen) return null;
 
   const getAutomationTypeLabel = (automation: ScheduleItemAutomation) => {
@@ -602,6 +671,8 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
       } → ${automation.layoutName || `Layout ${automation.layoutIndex}`}`;
     } else if (automation.type === "midi") {
       return `MIDI: ${automation.deviceName || automation.deviceId} - Channel ${automation.channel}, Note ${automation.note}${automation.velocity !== undefined ? `, Velocity ${automation.velocity}` : ""}`;
+    } else if (automation.type === "http") {
+      return `HTTP: ${automation.method} ${automation.url}${automation.payload ? " (payload)" : ""}`;
     } else {
       // Recording automations
       const recordingLabels: Record<string, string> = {
@@ -791,6 +862,39 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
               <FaMusic />
               <span>MIDI Note</span>
             </label>
+            <label
+              style={{
+                flex: 1,
+                minWidth: "140px",
+                padding: "10px",
+                border: `2px solid ${
+                  automationType === "http"
+                    ? "var(--app-primary-color)"
+                    : "var(--app-border-color)"
+                }`,
+                borderRadius: "6px",
+                cursor: "pointer",
+                backgroundColor:
+                  automationType === "http"
+                    ? "rgba(59, 130, 246, 0.1)"
+                    : "transparent",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "0.9em",
+              }}
+            >
+              <input
+                type="radio"
+                name="automationType"
+                value="http"
+                checked={automationType === "http"}
+                onChange={() => handleTypeChange("http")}
+                style={{ width: "16px", height: "16px" }}
+              />
+              <FaLink />
+              <span>HTTP Call</span>
+            </label>
           </div>
         </div>
 
@@ -918,6 +1022,19 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
                 <strong>Tip:</strong> The MIDI note will be sent when this session starts
               </li>
             </ol>
+          ) : automationType === "http" ? (
+            <ol
+              style={{
+                margin: "0",
+                paddingLeft: "20px",
+                color: "var(--app-text-color-secondary)",
+              }}
+            >
+              <li>Select an HTTP method</li>
+              <li>Enter the URL to call</li>
+              <li>Paste an optional JSON payload</li>
+              <li>Click "Set HTTP Call" to save the automation</li>
+            </ol>
           ) : (
             <ol
               style={{
@@ -969,7 +1086,13 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
                 <div style={{ fontWeight: 600 }}>
                   {automationType === "slide"
                     ? "Slide captured!"
-                    : "Stage layout configured!"}
+                    : automationType === "stageLayout"
+                    ? "Stage layout configured!"
+                    : automationType === "midi"
+                    ? "MIDI note saved!"
+                    : automationType === "http"
+                    ? "HTTP call configured!"
+                    : "Recording automation saved!"}
                 </div>
                 <div
                   style={{ fontSize: "0.85em", marginTop: "4px", opacity: 0.9 }}
@@ -978,26 +1101,67 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
                     const current =
                       automationType === "slide"
                         ? savedAutomations.find((a) => a.type === "slide")
-                        : savedAutomations.find(
-                            (a) => a.type === "stageLayout"
+                        : automationType === "stageLayout"
+                        ? savedAutomations.find((a) => a.type === "stageLayout")
+                        : automationType === "midi"
+                        ? savedAutomations.find((a) => a.type === "midi")
+                        : automationType === "http"
+                        ? savedAutomations.find((a) => a.type === "http")
+                        : savedAutomations.find((a) =>
+                            RECORDING_AUTOMATION_TYPES.includes(
+                              a.type as RecordingAutomationType
+                            )
                           );
                     if (!current) return null;
-                    return current.type === "slide" ? (
-                      <>
-                        Presentation:{" "}
-                        {current.presentationName || current.presentationUuid}
-                        <br />
-                        Slide Index: {current.slideIndex}
-                      </>
-                    ) : (
-                      <>
-                        Screen:{" "}
-                        {current.screenName || `Screen ${current.screenIndex}`}
-                        <br />
-                        Layout:{" "}
-                        {current.layoutName || `Layout ${current.layoutIndex}`}
-                      </>
-                    );
+                    if (current.type === "slide") {
+                      return (
+                        <>
+                          Presentation:{" "}
+                          {current.presentationName || current.presentationUuid}
+                          <br />
+                          Slide Index: {current.slideIndex}
+                        </>
+                      );
+                    }
+                    if (current.type === "stageLayout") {
+                      return (
+                        <>
+                          Screen:{" "}
+                          {current.screenName || `Screen ${current.screenIndex}`}
+                          <br />
+                          Layout:{" "}
+                          {current.layoutName || `Layout ${current.layoutIndex}`}
+                        </>
+                      );
+                    }
+                    if (current.type === "midi") {
+                      return (
+                        <>
+                          Device: {current.deviceName || current.deviceId}
+                          <br />
+                          Channel: {current.channel}, Note: {current.note}
+                          {current.velocity !== undefined
+                            ? `, Velocity: ${current.velocity}`
+                            : ""}
+                        </>
+                      );
+                    }
+                    if (current.type === "http") {
+                      return (
+                        <>
+                          Method: {current.method}
+                          <br />
+                          URL: {current.url}
+                          {current.payload ? (
+                            <>
+                              <br />
+                              Payload: attached
+                            </>
+                          ) : null}
+                        </>
+                      );
+                    }
+                    return <>{getAutomationTypeLabel(current)}</>;
                   })()}
                 </div>
               </div>
@@ -1579,6 +1743,149 @@ const ScheduleAutomationModal: React.FC<ScheduleAutomationModalProps> = ({
               >
                 <FaTimes />
                 Remove MIDI Automation
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* HTTP Configuration */}
+        {automationType === "http" && (
+          <div
+            style={{
+              marginBottom: "12px",
+              padding: "10px",
+              backgroundColor: "var(--app-header-bg)",
+              border: "1px solid var(--app-border-color)",
+              borderRadius: "6px",
+            }}
+          >
+            <div style={{ marginBottom: "12px" }}>
+              <label
+                style={{
+                  fontSize: "0.85em",
+                  display: "block",
+                  marginBottom: "6px",
+                  color: "var(--app-text-color-secondary)",
+                }}
+              >
+                HTTP Method:
+              </label>
+              <select
+                value={httpMethod}
+                onChange={(e) => {
+                  setHttpMethod(e.target.value as HttpAutomationMethod);
+                  setSuccess(false);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "6px 8px",
+                  fontSize: "0.9em",
+                  backgroundColor: "var(--app-input-bg-color)",
+                  color: "var(--app-input-text-color)",
+                  border: "1px solid var(--app-border-color)",
+                  borderRadius: "4px",
+                }}
+              >
+                {HTTP_METHODS.map((method) => (
+                  <option key={method} value={method}>
+                    {method}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: "12px" }}>
+              <label
+                style={{
+                  fontSize: "0.85em",
+                  display: "block",
+                  marginBottom: "6px",
+                  color: "var(--app-text-color-secondary)",
+                }}
+              >
+                URL:
+              </label>
+              <input
+                type="text"
+                value={httpUrl}
+                onChange={(e) => {
+                  setHttpUrl(e.target.value);
+                  setSuccess(false);
+                  setError(null);
+                }}
+                placeholder="https://api.example.com/endpoint"
+                style={{
+                  width: "100%",
+                  padding: "6px 8px",
+                  fontSize: "0.9em",
+                  backgroundColor: "var(--app-input-bg-color)",
+                  color: "var(--app-input-text-color)",
+                  border: "1px solid var(--app-border-color)",
+                  borderRadius: "4px",
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "8px" }}>
+              <label
+                style={{
+                  fontSize: "0.85em",
+                  display: "block",
+                  marginBottom: "6px",
+                  color: "var(--app-text-color-secondary)",
+                }}
+              >
+                JSON Payload (optional):
+              </label>
+              <textarea
+                value={httpPayload}
+                onChange={(e) => {
+                  setHttpPayload(e.target.value);
+                  setSuccess(false);
+                  setError(null);
+                }}
+                rows={5}
+                placeholder='{"key": "value"}'
+                style={{
+                  width: "100%",
+                  padding: "6px 8px",
+                  fontSize: "0.9em",
+                  backgroundColor: "var(--app-input-bg-color)",
+                  color: "var(--app-input-text-color)",
+                  border: "1px solid var(--app-border-color)",
+                  borderRadius: "4px",
+                  fontFamily: "inherit",
+                }}
+              />
+              <div
+                style={{
+                  marginTop: "6px",
+                  fontSize: "0.8em",
+                  color: "var(--app-text-color-secondary)",
+                }}
+              >
+                Payload is sent for POST/PUT/DELETE and must be valid JSON.
+              </div>
+            </div>
+
+            <button
+              onClick={handleSetHttpAutomation}
+              disabled={!httpUrl.trim()}
+              className="secondary"
+              style={{ width: "100%", marginTop: "8px" }}
+            >
+              <FaCheck />
+              Set HTTP Call
+            </button>
+
+            {savedAutomations.some((a) => a.type === "http") && (
+              <button
+                onClick={handleRemoveHttpAutomation}
+                className="secondary"
+                style={{ width: "100%", marginTop: "8px", color: "#ef4444" }}
+              >
+                <FaTimes />
+                Remove HTTP Automation
               </button>
             )}
           </div>

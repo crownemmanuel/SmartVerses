@@ -10,6 +10,7 @@ import {
   getServices,
   isValidFirebaseConfig,
 } from "../services/firebaseService";
+import { sendSlidesToDisplay } from "../services/displayService";
 import { Testimony, LiveTestimony, ServiceType, FirebaseConfig } from "../types/testimonies";
 import { formatNameForCopy } from "../utils/nameUtils";
 import {
@@ -341,6 +342,12 @@ const MediaView: React.FC = () => {
         content: formattedName,
       });
 
+      try {
+        await sendSlidesToDisplay([formattedName]);
+      } catch (error) {
+        console.warn("[Display] Failed to update testimony on audience display:", error);
+      }
+
       // Trigger ProPresenter presentation if configured
       if (settings.proPresenterActivation) {
         const { presentationUuid, slideIndex, activationClicks } = settings.proPresenterActivation;
@@ -434,6 +441,12 @@ const MediaView: React.FC = () => {
           filePath,
           content: "",
         });
+      }
+
+      try {
+        await sendSlidesToDisplay([]);
+      } catch (error) {
+        console.warn("[Display] Failed to clear testimony on audience display:", error);
       }
 
       // Trigger ProPresenter take-off clicks if configured

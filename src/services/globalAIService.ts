@@ -107,7 +107,7 @@ function buildSystemPrompt(
   const currentPeriod = new Date().getHours() >= 12 ? "PM" : "AM";
 
   // Base actions available in all contexts
-  const basePrompt = `You are an AI assistant for ProAssist, a church presentation management application.
+  const basePrompt = `You are an AI assistant for SmartVerses, a church presentation management application.
 
 ## RESPONSE FORMAT
 You MUST respond with valid JSON in this format:
@@ -426,13 +426,13 @@ function getAIConfig(): AIConfig | null {
     
     if (provider === "openai" && appSettings.openAIConfig?.apiKey) {
       apiKey = appSettings.openAIConfig.apiKey;
-      model = "gpt-4o";
+      model = appSettings.defaultAIModel || "gpt-4o";
     } else if (provider === "gemini" && appSettings.geminiConfig?.apiKey) {
       apiKey = appSettings.geminiConfig.apiKey;
-      model = "gemini-1.5-flash-latest";
+      model = appSettings.defaultAIModel || "gemini-1.5-flash-latest";
     } else if (provider === "groq" && appSettings.groqConfig?.apiKey) {
       apiKey = appSettings.groqConfig.apiKey;
-      model = "llama-3.3-70b-versatile";
+      model = appSettings.defaultAIModel || "llama-3.3-70b-versatile";
     }
     
     if (apiKey) {

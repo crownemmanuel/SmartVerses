@@ -1,8 +1,8 @@
-# ProAssist
+# SmartVerses
 
-**AI-powered automation bridge for ProPresenter and file-based presentation software**
+**AI-powered standalone presentation software with optional ProPresenter integration**
 
-ProAssist is a desktop application that adds intelligent automation, AI-powered content processing, and seamless integration to ProPresenter and any presentation software that supports file-based text linking. Transform raw text into beautifully formatted slides with custom templates, AI assistance, and real-time synchronization.
+SmartVerses is a desktop application for creating and managing presentations with intelligent automation and AI-powered content processing. Use it as a standalone presentation tool, or integrate it with ProPresenter and other presentation software that supports file-based text linking. Transform raw text into beautifully formatted slides with custom templates, AI assistance, and real-time synchronization.
 
 ## 🎯 Features
 
@@ -23,9 +23,10 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
 - **Customizable Output**: Configure output paths, file naming, and layout options
 - **Visual Templates**: Color-coded templates with custom icons
 
-### 🔄 Real-Time ProPresenter Integration
+### 🔄 ProPresenter Integration (Optional)
 
 - **File-Based Linking**: Seamless integration via ProPresenter's Linked Text feature
+- **ProPresenter API**: Direct integration with ProPresenter's API for advanced control
 - **Live Slide Sync**: Instantly update ProPresenter slides with "Go Live" functionality
 - **Multi-File Support**: Write to up to 6 text files per template for complex layouts
 - **Auto-Scripture Support**: Automatic Bible verse lookup and formatting
@@ -35,7 +36,7 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
 - **WebSocket-Based System**: Built-in WebSocket server for real-time slide updates
 - **Browser-Based Notepad**: Open a notepad in any browser to edit slides live
 - **Multi-Device Support**: Share notepad URLs with team members on the same network
-- **Live Editing**: Type content in the notepad and see slides update instantly in ProAssist
+- **Live Editing**: Type content in the notepad and see slides update instantly in SmartVerses
 - **Session Management**: Create multiple Live Slides sessions for different presentations
 - **Smart Parsing**: Automatically converts text into slides (blank lines = new slides, tabs = sub-items)
 - **Color-Coded Slides**: Visual indicators show slide boundaries and hierarchy
@@ -51,7 +52,7 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
 
 - **Dark/Light Themes**: Comfortable viewing in any environment
 - **Intuitive Interface**: Clean, organized layout for efficient workflow
-- **Real-Time Preview**: See slides before sending to ProPresenter
+- **Real-Time Preview**: See slides before exporting or sending to ProPresenter
 - **Auto-Updates**: Automatic update notifications and installation
 
 ## 🚀 Getting Started
@@ -60,7 +61,7 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
 
 - **Node.js** (v18 or higher)
 - **Rust** (latest stable)
-- **ProPresenter** (any version with Linked Text support)
+- **ProPresenter** (optional, any version with Linked Text support - only needed for ProPresenter integration)
 - **AI API Keys** (optional, for AI features):
   - OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
   - Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
@@ -70,8 +71,8 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/crownemmanuel/proassist.git
-   cd proassist
+   git clone https://github.com/crownemmanuel/SmartVerses.git
+   cd SmartVerses
    ```
 
 2. **Install dependencies**:
@@ -83,7 +84,7 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
 3. **Run in development mode**:
 
    ```bash
-   npm run dev
+   npm run tauri dev
    ```
 
 4. **Build for production**:
@@ -96,11 +97,23 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
    npm run build:windows
    ```
 
-## 📖 ProPresenter Setup Guide
+## 📖 Using SmartVerses
+
+SmartVerses can be used as a standalone presentation tool for creating, managing, and previewing slides. You can also optionally integrate it with ProPresenter for live presentation workflows.
+
+### Standalone Usage
+
+1. **Import Content**: Click **Import** and paste text or upload a file
+2. **Select Template**: Choose a template to format your content
+3. **Preview Slides**: Review the generated slides in real-time
+4. **Save to Playlist**: Organize slides into playlists
+5. **Export**: Download playlists as formatted text files or use the "Go Live" feature to send to ProPresenter (if integrated)
+
+## 📖 ProPresenter Integration Setup (Optional)
 
 ### Step 1: Configure Template Output Path
 
-1. Open ProAssist and go to **Settings** → **Templates**
+1. Open SmartVerses and go to **Settings** → **Templates**
 2. Create or edit a template
 3. Set the **Output Path** to a folder accessible by ProPresenter (e.g., `C:\ProPresenter\LinkedText\` on Windows or `/Users/YourName/Documents/ProPresenter/LinkedText/` on macOS)
 4. Set the **Output File Name Prefix** (e.g., `slide` will create `slide1.txt`, `slide2.txt`, etc.)
@@ -119,7 +132,7 @@ ProAssist is a desktop application that adds intelligent automation, AI-powered 
      - Third line → `prefix3.txt`
      - (Continue for up to 6 lines)
 
-### Step 3: Use ProAssist
+### Step 3: Use SmartVerses with ProPresenter
 
 1. **Import Content**: Click **Import** and paste text or upload a file
 2. **Select Template**: Choose a template with your configured output path
@@ -140,7 +153,7 @@ Live Slides enables real-time collaboration for presentations. Perfect for live 
 
 1. **Start the WebSocket Server**:
 
-   - Go to **Live Slides** page in ProAssist
+   - Go to **Live Slides** page in SmartVerses
    - Click **Start** to launch the WebSocket server
    - Note the server address (e.g., `192.168.1.100:9876`)
 
@@ -159,9 +172,9 @@ Live Slides enables real-time collaboration for presentations. Perfect for live 
 
    - Type content in the notepad (blank lines create new slides)
    - Use Tab to create sub-items (indented lines)
-   - Changes appear instantly in ProAssist's Live Preview
+   - Changes appear instantly in SmartVerses's Live Preview
 
-5. **Send to ProPresenter**:
+5. **Send to ProPresenter** (if integrated):
    - Import Live Slides sessions into playlists
    - Use **Go Live** to send slides to ProPresenter
    - Slides update automatically as content changes in the notepad
@@ -177,7 +190,7 @@ Live Slides enables real-time collaboration for presentations. Perfect for live 
 ### Project Structure
 
 ```
-proassist/
+SmartVerses/
 ├── src/                    # Frontend React/TypeScript code
 │   ├── components/         # React components
 │   ├── pages/             # Page components
@@ -201,9 +214,8 @@ proassist/
 
 ### Available Scripts
 
-- `npm run dev` - Start development server
-- `npm run build` - Build frontend
 - `npm run tauri dev` - Run Tauri app in development
+- `npm run build` - Build frontend
 - `npm run build:mac` - Build macOS app
 - `npm run build:windows` - Build Windows app
 
@@ -213,7 +225,7 @@ We welcome contributions! Here's how you can help:
 
 ### Reporting Issues
 
-- Check existing [Issues](https://github.com/crownemmanuel/proassist/issues) first
+- Check existing [Issues](https://github.com/crownemmanuel/SmartVerses/issues) first
 - Use clear, descriptive titles
 - Include steps to reproduce bugs
 - Add screenshots for UI issues
@@ -231,7 +243,7 @@ We welcome contributions! Here's how you can help:
    - Update documentation as needed
 4. **Test your changes**:
    ```bash
-   npm run dev
+   npm run tauri dev
    npm run build
    ```
 5. **Commit your changes**:
@@ -257,13 +269,14 @@ We welcome contributions! Here's how you can help:
 Before submitting:
 
 - Test on both macOS and Windows if possible
-- Verify ProPresenter integration works
+- Verify standalone functionality works
+- Verify ProPresenter integration works (if applicable)
 - Check that AI features work with both providers
 - Ensure no console errors or warnings
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -276,8 +289,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Documentation**:
   - [Auto-Update Integration Guide](./AUTO_UPDATE_INTEGRATION.md) - Setting up auto-updates
   - [Release Instructions](./RELEASE.md) - How to create new releases
-- **Issues**: [GitHub Issues](https://github.com/crownemmanuel/proassist/issues)
-- **Releases**: [GitHub Releases](https://github.com/crownemmanuel/proassist/releases)
+- **Issues**: [GitHub Issues](https://github.com/crownemmanuel/SmartVerses/issues)
+- **Releases**: [GitHub Releases](https://github.com/crownemmanuel/SmartVerses/releases)
 
 ---
 

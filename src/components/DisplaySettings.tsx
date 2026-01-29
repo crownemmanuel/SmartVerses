@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { Monitor } from "@tauri-apps/api/window";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
 import { useAutoFontSize } from "../hooks/useAutoFontSize";
@@ -13,16 +15,20 @@ import {
 } from "../services/displayService";
 import {
   DEFAULT_DISPLAY_SETTINGS,
+  DEFAULT_SLIDES_LAYOUT,
   DisplayLayout,
   DisplaySettings as DisplaySettingsType,
 } from "../types/display";
 import DisplayLayoutEditorModal from "./DisplayLayoutEditorModal";
+import SlidesLayoutEditorModal from "./SlidesLayoutEditorModal";
+import MonitorSelectDropdown from "./MonitorSelectDropdown";
+import { sectionStyle, sectionHeaderStyle } from "../utils/settingsSectionStyles";
 import {
   getLiveSlidesServerInfo,
   loadLiveSlidesSettings,
   startLiveSlidesServer,
 } from "../services/liveSlideService";
-import { FaCopy } from "react-icons/fa";
+import { FaCopy, FaDesktop, FaImage, FaFont, FaClock, FaThLarge } from "react-icons/fa";
 
 interface SystemFont {
   family: string;
@@ -32,6 +38,14 @@ interface SystemFont {
 const SAMPLE_TEXT =
   "For God so loved the world that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.";
 const SAMPLE_REFERENCE = "John 3:16";
+const SAMPLE_SLIDE_LINES = [
+  "Line 1 sample text",
+  "Line 2 sample text",
+  "Line 3 sample text",
+  "Line 4 sample text",
+  "Line 5 sample text",
+  "Line 6 sample text",
+];
 
 const DisplaySettings: React.FC = () => {
   const [settings, setSettings] = useState<DisplaySettingsType>(
@@ -40,6 +54,7 @@ const DisplaySettings: React.FC = () => {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
+  const [slidesLayoutEditorOpen, setSlidesLayoutEditorOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string>("");
@@ -47,11 +62,43 @@ const DisplaySettings: React.FC = () => {
   const previewTextContentRef = useRef<HTMLDivElement | null>(null);
   const previewReferenceBoxRef = useRef<HTMLDivElement | null>(null);
   const previewReferenceContentRef = useRef<HTMLDivElement | null>(null);
+  const slideLineBoxRefs = [
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+  ];
+  const slideLineContentRefs = [
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+    useRef<HTMLDivElement | null>(null),
+  ];
+  const [layoutPreviewTab, setLayoutPreviewTab] = useState<"scripture" | "slides">("scripture");
+  const [stylingTab, setStylingTab] = useState<"text" | "reference">("text");
+  const [backgroundMode, setBackgroundMode] = useState<"solid" | "image">("solid");
   const [systemFonts, setSystemFonts] = useState<SystemFont[]>([]);
   const [fontsLoading, setFontsLoading] = useState(true);
   const [serverInfo, setServerInfo] = useState<{ local_ip: string; server_port: number; server_running: boolean } | null>(null);
   const [urlCopied, setUrlCopied] = useState(false);
   const [isStartingServer, setIsStartingServer] = useState(false);
+  const [testWindowStatus, setTestWindowStatus] = useState<string>("");
+  const [osType, setOsType] = useState<"windows" | "mac" | "linux" | "unknown">("unknown");
+
+  useEffect(() => {
+    const userAgent = navigator.userAgent;
+    if (userAgent.indexOf("Win") !== -1) {
+      setOsType("windows");
+    } else if (userAgent.indexOf("Mac") !== -1) {
+      setOsType("mac");
+    } else if (userAgent.indexOf("Linux") !== -1) {
+      setOsType("linux");
+    }
+  }, []);
 
   useEffect(() => {
     const loaded = loadDisplaySettings();
@@ -59,19 +106,18 @@ const DisplaySettings: React.FC = () => {
     setSettingsLoaded(true);
   }, []);
 
+  // Sync background mode with loaded settings (e.g. saved image path)
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    setBackgroundMode(settings.backgroundImagePath ? "image" : "solid");
+  }, [settingsLoaded, settings.backgroundImagePath]);
+
   const loadMonitors = async () => {
     const list = await getAvailableMonitors();
+    console.log(`[Display] Loaded ${list.length} monitors`);
     setMonitors(list);
-    if (list.length > 0) {
-      setSettings((prev) => {
-        const monitorIndex =
-          prev.monitorIndex != null && prev.monitorIndex < list.length
-            ? prev.monitorIndex
-            : 0;
-        if (monitorIndex === prev.monitorIndex) return prev;
-        return { ...prev, monitorIndex };
-      });
-    }
+    // Note: Don't auto-reset monitorIndex to 0 here - let the auto-start effect handle validation
+    // This prevents race conditions where monitors are detected in different order at startup
   };
 
   useEffect(() => {
@@ -126,17 +172,48 @@ const DisplaySettings: React.FC = () => {
     { delayMs: 400, enabled: settingsLoaded, skipFirstRun: true }
   );
 
+  // Track if we've attempted initial monitor detection
+  const [monitorsInitialized, setMonitorsInitialized] = useState(false);
+
+  // Retry monitor detection if we don't have enough monitors for the saved index
   useEffect(() => {
-    if (!settingsLoaded) return;
+    if (!settingsLoaded || monitors.length === 0) return;
+
+    const savedIndex = settings.monitorIndex;
+    const needsMoreMonitors = savedIndex !== null && savedIndex >= monitors.length;
+
+    if (needsMoreMonitors && !monitorsInitialized) {
+      // Wait a bit and retry monitor detection - secondary monitors might take longer
+      console.log(`[Display] Saved monitor index ${savedIndex} but only ${monitors.length} monitors detected, retrying...`);
+      const timer = setTimeout(() => {
+        void loadMonitors().then(() => setMonitorsInitialized(true));
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setMonitorsInitialized(true);
+    }
+  }, [settingsLoaded, monitors.length, settings.monitorIndex, monitorsInitialized]);
+
+  useEffect(() => {
+    if (!settingsLoaded || !monitorsInitialized) return;
     if (settings.enabled) {
-      // Check if a monitor is selected
-      if (settings.monitorIndex === null && monitors.length > 0) {
+      // Wait for monitors to be detected before opening window
+      if (monitors.length === 0) {
+        console.log("[Display] Waiting for monitors to be detected...");
+        return;
+      }
+
+      // Check if monitor index is valid
+      const currentIndex = settings.monitorIndex;
+      if (currentIndex === null || currentIndex >= monitors.length) {
         // Auto-select first secondary monitor or primary if only one monitor
         const defaultIndex = monitors.length > 1 ? 1 : 0;
+        console.log(`[Display] Invalid monitor index ${currentIndex} (have ${monitors.length} monitors), auto-selecting ${defaultIndex}`);
         setSettings((prev) => ({ ...prev, monitorIndex: defaultIndex }));
-        return; // Will retry on next render with monitorIndex set
+        return; // Will retry on next render with valid monitorIndex
       }
-      
+
+      console.log(`[Display] Opening audience window on monitor ${currentIndex}`);
       openDisplayWindow(settings)
         .then(() => {
           setErrorMessage("");
@@ -154,7 +231,34 @@ const DisplaySettings: React.FC = () => {
       });
       setErrorMessage("");
     }
-  }, [settings.enabled, settings.monitorIndex, settingsLoaded, monitors.length]);
+  }, [settings.enabled, settings.monitorIndex, settingsLoaded, monitors.length, monitorsInitialized]);
+
+  // Listen for display window closed event (when user clicks close button on audience screen)
+  useEffect(() => {
+    const setupListener = async () => {
+      const unlisten = await listen<{ isDialogWindow: boolean; windowLabel: string }>(
+        "display:window-closed",
+        (event) => {
+          console.log("[Display] Window closed by user:", event.payload);
+          const { isDialogWindow } = event.payload;
+
+          if (isDialogWindow) {
+            // Windows uses dialog windows - uncheck windowAudienceScreen
+            setSettings((prev) => ({ ...prev, windowAudienceScreen: false }));
+          } else {
+            // Mac uses regular display window - uncheck enabled
+            setSettings((prev) => ({ ...prev, enabled: false }));
+          }
+        }
+      );
+      return unlisten;
+    };
+
+    const unlistenPromise = setupListener();
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(console.warn);
+    };
+  }, []);
 
   // Load background image asynchronously
   useEffect(() => {
@@ -165,16 +269,9 @@ const DisplaySettings: React.FC = () => {
       }
 
       try {
-        // First try convertFileSrc (works for most cases)
-        const convertedUrl = convertFileSrc(settings.backgroundImagePath);
-        // Verify it's actually a URL and not the raw path
-        if (convertedUrl && (convertedUrl.startsWith("http://") || convertedUrl.startsWith("https://") || convertedUrl.startsWith("tauri://"))) {
-          setBackgroundImageUrl(convertedUrl);
-          return;
-        }
-        
-        // Fallback: Read file as base64 and convert to data URL
-        console.log("[Display] convertFileSrc returned non-URL, trying base64 fallback for:", settings.backgroundImagePath);
+        // Use read_file_as_base64 as primary method for robustness
+        // convertFileSrc can have issues with asset protocol configuration or CSP
+        console.log("[Display] Loading background image via base64:", settings.backgroundImagePath);
         const base64 = await invoke<string>("read_file_as_base64", {
           filePath: settings.backgroundImagePath,
         });
@@ -194,7 +291,18 @@ const DisplaySettings: React.FC = () => {
         setBackgroundImageUrl(dataUrl);
       } catch (error) {
         console.error("[Display] Failed to load background image:", error);
-        setBackgroundImageUrl("");
+        
+        // Fallback to convertFileSrc if base64 fails
+        try {
+          const convertedUrl = convertFileSrc(settings.backgroundImagePath);
+          if (convertedUrl && (convertedUrl.startsWith("http://") || convertedUrl.startsWith("https://") || convertedUrl.startsWith("tauri://"))) {
+             setBackgroundImageUrl(convertedUrl);
+          } else {
+             setBackgroundImageUrl("");
+          }
+        } catch (e) {
+           setBackgroundImageUrl("");
+        }
       }
     };
 
@@ -230,13 +338,31 @@ const DisplaySettings: React.FC = () => {
         value: settings.referenceFont,
       });
     }
+
+    settings.slidesLineStyles?.forEach((style) => {
+      if (style?.fontFamily && !systemFontFamilies.has(style.fontFamily)) {
+        options.push({
+          label: `Custom: ${style.fontFamily}`,
+          value: style.fontFamily,
+        });
+        systemFontFamilies.add(style.fontFamily);
+      }
+    });
     
     return options;
-  }, [systemFonts, settings.textFont, settings.referenceFont]);
+  }, [systemFonts, settings.textFont, settings.referenceFont, settings.slidesLineStyles]);
 
   const handleUpdateLayout = (layout: DisplayLayout) => {
     setSettings((prev) => ({ ...prev, layout }));
     setLayoutEditorOpen(false);
+  };
+
+  const handleUpdateSlidesLayout = (
+    slidesLayout: DisplayLayout["text"][],
+    slidesLineStyles: DisplaySettingsType["slidesLineStyles"]
+  ) => {
+    setSettings((prev) => ({ ...prev, slidesLayout, slidesLineStyles }));
+    setSlidesLayoutEditorOpen(false);
   };
 
   const handleSelectBackgroundImage = async () => {
@@ -259,13 +385,74 @@ const DisplaySettings: React.FC = () => {
     }
   };
 
-  const rectStyle = (rect: DisplayLayout["text"]): React.CSSProperties => ({
+  useEffect(() => {
+    if (!settingsLoaded || !monitorsInitialized) return;
+
+    const manageAudienceWindow = async () => {
+      if (settings.windowAudienceScreen) {
+        // Wait for monitors to be detected before opening window
+        if (monitors.length === 0) {
+          console.log("[Display] Windows: Waiting for monitors to be detected...");
+          return;
+        }
+
+        try {
+          // Check if monitor index is valid
+          let currentMonitorIndex = settings.monitorIndex;
+          if (currentMonitorIndex === null || currentMonitorIndex >= monitors.length) {
+            const defaultIndex = monitors.length > 1 ? 1 : 0;
+            console.log(`[Display] Windows: Invalid monitor index ${currentMonitorIndex} (have ${monitors.length} monitors), auto-selecting ${defaultIndex}`);
+            currentMonitorIndex = defaultIndex;
+            // Update settings so it persists
+            setSettings((prev) => ({ ...prev, monitorIndex: defaultIndex }));
+          }
+
+          console.log(`[Display] Windows: Opening audience window on monitor ${currentMonitorIndex}`);
+          setTestWindowStatus("Opening audience window...");
+          await invoke("open_dialog", {
+            dialogWindow: "audience-test",
+            monitorIndex: currentMonitorIndex,
+          });
+          setTestWindowStatus("Audience window opened.");
+          setTimeout(() => setTestWindowStatus(""), 3000);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setTestWindowStatus(`Failed to open window: ${message}`);
+          console.error("[Display] Failed to open audience window:", error);
+          // Revert checkbox if it fails
+          setSettings((prev) => ({ ...prev, windowAudienceScreen: false }));
+        }
+      } else {
+        try {
+          await invoke("close_dialog", { dialogWindow: "audience-test" });
+          setTestWindowStatus("Audience window closed.");
+          setTimeout(() => setTestWindowStatus(""), 2000);
+        } catch (error) {
+          console.warn("[Display] Failed to close audience window:", error);
+          // Fallback to JS API if command fails (though command is preferred)
+          try {
+            const w = await WebviewWindow.getByLabel("dialog-audience-test");
+            if (w) await w.close();
+          } catch (e) { /* ignore */ }
+        }
+      }
+    };
+
+    void manageAudienceWindow();
+  }, [settings.windowAudienceScreen, settingsLoaded, monitors.length, monitorsInitialized]); // Intentionally omitting monitorIndex to avoid re-opening on change for now
+
+  const rectStyle = (rect: { x: number; y: number; width: number; height: number }): React.CSSProperties => ({
     position: "absolute",
     left: `${rect.x * 100}%`,
     top: `${rect.y * 100}%`,
     width: `${rect.width * 100}%`,
     height: `${rect.height * 100}%`,
   });
+
+  const getSlideRect = (index: number) =>
+    settings.slidesLayout[index] ||
+    DEFAULT_SLIDES_LAYOUT[index] ||
+    DEFAULT_SLIDES_LAYOUT[DEFAULT_SLIDES_LAYOUT.length - 1];
 
   // Auto font size for preview
   const previewTextFontSize = useAutoFontSize(
@@ -296,6 +483,117 @@ const DisplaySettings: React.FC = () => {
     { minFontSize: 8, maxFontSize: 36 }
   );
 
+  const slideLineFontSizes = [
+    useAutoFontSize(
+      slideLineBoxRefs[0],
+      slideLineContentRefs[0],
+      [
+        SAMPLE_SLIDE_LINES[0],
+        settings.textFont,
+        settings.slidesLineStyles?.[0]?.fontFamily,
+        settings.textStyle.bold,
+        settings.textStyle.italic,
+        settings.slidesLineStyles?.[0]?.bold,
+        settings.slidesLineStyles?.[0]?.italic,
+        getSlideRect(0).x,
+        getSlideRect(0).y,
+        getSlideRect(0).width,
+        getSlideRect(0).height,
+      ],
+      { minFontSize: 8, maxFontSize: 300 }
+    ),
+    useAutoFontSize(
+      slideLineBoxRefs[1],
+      slideLineContentRefs[1],
+      [
+        SAMPLE_SLIDE_LINES[1],
+        settings.textFont,
+        settings.slidesLineStyles?.[1]?.fontFamily,
+        settings.textStyle.bold,
+        settings.textStyle.italic,
+        settings.slidesLineStyles?.[1]?.bold,
+        settings.slidesLineStyles?.[1]?.italic,
+        getSlideRect(1).x,
+        getSlideRect(1).y,
+        getSlideRect(1).width,
+        getSlideRect(1).height,
+      ],
+      { minFontSize: 8, maxFontSize: 300 }
+    ),
+    useAutoFontSize(
+      slideLineBoxRefs[2],
+      slideLineContentRefs[2],
+      [
+        SAMPLE_SLIDE_LINES[2],
+        settings.textFont,
+        settings.slidesLineStyles?.[2]?.fontFamily,
+        settings.textStyle.bold,
+        settings.textStyle.italic,
+        settings.slidesLineStyles?.[2]?.bold,
+        settings.slidesLineStyles?.[2]?.italic,
+        getSlideRect(2).x,
+        getSlideRect(2).y,
+        getSlideRect(2).width,
+        getSlideRect(2).height,
+      ],
+      { minFontSize: 8, maxFontSize: 300 }
+    ),
+    useAutoFontSize(
+      slideLineBoxRefs[3],
+      slideLineContentRefs[3],
+      [
+        SAMPLE_SLIDE_LINES[3],
+        settings.textFont,
+        settings.slidesLineStyles?.[3]?.fontFamily,
+        settings.textStyle.bold,
+        settings.textStyle.italic,
+        settings.slidesLineStyles?.[3]?.bold,
+        settings.slidesLineStyles?.[3]?.italic,
+        getSlideRect(3).x,
+        getSlideRect(3).y,
+        getSlideRect(3).width,
+        getSlideRect(3).height,
+      ],
+      { minFontSize: 8, maxFontSize: 300 }
+    ),
+    useAutoFontSize(
+      slideLineBoxRefs[4],
+      slideLineContentRefs[4],
+      [
+        SAMPLE_SLIDE_LINES[4],
+        settings.textFont,
+        settings.slidesLineStyles?.[4]?.fontFamily,
+        settings.textStyle.bold,
+        settings.textStyle.italic,
+        settings.slidesLineStyles?.[4]?.bold,
+        settings.slidesLineStyles?.[4]?.italic,
+        getSlideRect(4).x,
+        getSlideRect(4).y,
+        getSlideRect(4).width,
+        getSlideRect(4).height,
+      ],
+      { minFontSize: 8, maxFontSize: 300 }
+    ),
+    useAutoFontSize(
+      slideLineBoxRefs[5],
+      slideLineContentRefs[5],
+      [
+        SAMPLE_SLIDE_LINES[5],
+        settings.textFont,
+        settings.slidesLineStyles?.[5]?.fontFamily,
+        settings.textStyle.bold,
+        settings.textStyle.italic,
+        settings.slidesLineStyles?.[5]?.bold,
+        settings.slidesLineStyles?.[5]?.italic,
+        getSlideRect(5).x,
+        getSlideRect(5).y,
+        getSlideRect(5).width,
+        getSlideRect(5).height,
+      ],
+      { minFontSize: 8, maxFontSize: 300 }
+    ),
+  ];
+
   const getFontStyle = (style: DisplaySettingsType["textStyle"]): React.CSSProperties => {
     const css: React.CSSProperties = {
       color: style.color,
@@ -318,14 +616,101 @@ const DisplaySettings: React.FC = () => {
     return css;
   };
 
+  const getSlideLineStyle = (index: number): DisplaySettingsType["textStyle"] => {
+    const override = settings.slidesLineStyles?.[index];
+    return {
+      color: override?.color ?? settings.textStyle.color,
+      bold: override?.bold ?? settings.textStyle.bold,
+      italic: override?.italic ?? settings.textStyle.italic,
+      stroke: override?.stroke ?? settings.textStyle.stroke,
+      shadow: override?.shadow ?? settings.textStyle.shadow,
+    };
+  };
+
+  const getSlideLineFontFamily = (index: number) =>
+    settings.slidesLineStyles?.[index]?.fontFamily || settings.textFont;
+
   return (
     <div style={{ maxWidth: "900px" }}>
       <h2 style={{ marginBottom: "var(--spacing-4)" }}>Audience Display</h2>
-      <p style={{ color: "var(--app-text-color-secondary)" }}>
-        Configure the second screen used to show scriptures to the audience (support for slides coming soon).
+      <p
+        style={{
+          marginBottom: "var(--spacing-6)",
+          color: "var(--app-text-color-secondary)",
+        }}
+      >
+        Configure the second screen used to show scriptures and slides to the audience.
       </p>
 
-      <div style={{ marginTop: "var(--spacing-4)", display: "grid", gap: "18px" }}>
+      {/* Display & screen options */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaDesktop />
+          <h3 style={{ margin: 0 }}>Display & screen</h3>
+        </div>
+        <div style={{ display: "grid", gap: "var(--spacing-4)" }}>
+        {osType === "windows" && (
+        <div
+          style={{
+            padding: "var(--spacing-3)",
+            backgroundColor: "var(--app-bg-color)",
+            borderRadius: "8px",
+            border: "1px solid var(--app-border-color)",
+            display: "grid",
+            gap: "12px",
+          }}
+        >
+          <label style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={settings.windowAudienceScreen}
+              onChange={(event) => {
+                const newEnabled = event.target.checked;
+                setSettings((prev) => ({
+                  ...prev,
+                  windowAudienceScreen: newEnabled,
+                }));
+              }}
+              style={{ width: "18px", height: "18px", cursor: "pointer" }}
+            />
+            <div>
+              <div style={{ fontWeight: 600 }}>Enable audience screen (Windows)</div>
+              <div style={{ fontSize: "0.85rem", color: "var(--app-text-color-secondary)" }}>
+                Opens a second audience window on the selected monitor.
+              </div>
+            </div>
+          </label>
+
+          {testWindowStatus && (
+            <div
+              style={{
+                marginTop: "10px",
+                fontSize: "0.85rem",
+                color: testWindowStatus.startsWith("Failed")
+                  ? "#ef4444"
+                  : testWindowStatus.startsWith("Audience window opened")
+                  ? "#22c55e"
+                  : "var(--app-text-color-secondary)",
+                fontWeight: testWindowStatus.startsWith("Failed") ? 600 : 400,
+                padding: "8px",
+                backgroundColor: testWindowStatus.startsWith("Failed")
+                  ? "rgba(239, 68, 68, 0.1)"
+                  : testWindowStatus.startsWith("Audience window opened")
+                  ? "rgba(34, 197, 94, 0.1)"
+                  : "transparent",
+                borderRadius: "6px",
+                border: testWindowStatus.startsWith("Failed")
+                  ? "1px solid rgba(239, 68, 68, 0.3)"
+                  : "none",
+              }}
+            >
+              {testWindowStatus}
+            </div>
+          )}
+        </div>
+        )}
+
+        {osType === "mac" && (
         <div
           style={{
             padding: "var(--spacing-4)",
@@ -365,9 +750,9 @@ const DisplaySettings: React.FC = () => {
               style={{ width: "18px", height: "18px", cursor: "pointer" }}
             />
             <div>
-              <div style={{ fontWeight: 600 }}>Enable audience screen</div>
+              <div style={{ fontWeight: 600 }}>Enable audience screen (Mac)</div>
               <div style={{ fontSize: "0.85rem", color: "var(--app-text-color-secondary)" }}>
-                Opens a borderless fullscreen window on the selected monitor.
+                Opens a second audience window on the selected monitor.
                 {monitors.length === 0 && (
                   <span style={{ color: "#ef4444", marginLeft: "8px" }}>
                     (No monitors detected)
@@ -377,6 +762,50 @@ const DisplaySettings: React.FC = () => {
             </div>
           </label>
         </div>
+        )}
+
+        {/* Fallback for Linux or detection failure: Show both or Mac logic as default? Let's show Mac style if unknown/Linux for now as it's the more standard implementation, but maybe hide both if unsure? User requested logic based on OS. I will assume if unknown we might want to default to showing one or both. For now I will strictly follow OS detection. If unknown, maybe show Mac version as it uses standard Tauri multiwindow. Or better, just show both if unknown so they can pick. I'll stick to strict separation for now as requested. */}
+        {osType !== "windows" && osType !== "mac" && (
+           <div
+           style={{
+             padding: "var(--spacing-4)",
+             backgroundColor: "var(--app-header-bg)",
+             borderRadius: "12px",
+             border: "1px solid var(--app-border-color)",
+             display: "flex",
+             alignItems: "center",
+             gap: "12px",
+           }}
+         >
+           <label style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+             <input
+               type="checkbox"
+               checked={settings.enabled}
+               onChange={(event) => {
+                  /* Standard implementation logic */
+                  const newEnabled = event.target.checked;
+                  if (newEnabled && monitors.length === 0) {
+                    setErrorMessage("No monitors detected.");
+                    return;
+                  }
+                  if (newEnabled && settings.monitorIndex === null && monitors.length > 0) {
+                     const defaultIndex = monitors.length > 1 ? 1 : 0;
+                     setSettings((prev) => ({ ...prev, enabled: newEnabled, monitorIndex: defaultIndex }));
+                  } else {
+                     setSettings((prev) => ({ ...prev, enabled: newEnabled }));
+                  }
+               }}
+               style={{ width: "18px", height: "18px", cursor: "pointer" }}
+             />
+             <div>
+               <div style={{ fontWeight: 600 }}>Enable audience screen</div>
+               <div style={{ fontSize: "0.85rem", color: "var(--app-text-color-secondary)" }}>
+                 Opens a second audience window on the selected monitor.
+               </div>
+             </div>
+           </label>
+         </div>
+        )}
 
         <div
           style={{
@@ -497,85 +926,187 @@ const DisplaySettings: React.FC = () => {
           )}
         </div>
 
-        <div className="form-group">
-          <label htmlFor="display-monitor">Display Monitor</label>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <select
-              id="display-monitor"
-              value={settings.monitorIndex ?? ""}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  monitorIndex: event.target.value
-                    ? parseInt(event.target.value, 10)
-                    : null,
-                }))
+          <div className="form-group">
+            <label htmlFor="display-monitor">Display Monitor</label>
+            <MonitorSelectDropdown
+              monitors={monitors}
+              selectedIndex={settings.monitorIndex}
+              onSelect={(index) =>
+                setSettings((prev) => ({ ...prev, monitorIndex: index }))
               }
-              className="select-css"
-              style={{ flex: 1 }}
-            >
-              <option value="" disabled>
-                Select a monitor
-              </option>
-              {monitors.map((monitor, index) => (
-                <option key={`${monitor.name || "monitor"}-${index}`} value={index}>
-                  {monitor.name || `Monitor ${index + 1}`} ({monitor.size.width}x
-                  {monitor.size.height})
-                </option>
-              ))}
-            </select>
-            <button className="secondary" onClick={() => void loadMonitors()}>
-              Refresh
-            </button>
-          </div>
-          {monitors.length === 0 && (
-            <p className="instruction-text">No additional monitors detected.</p>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label>Background</label>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "0.85rem" }}>Color</span>
-              <input
-                type="color"
-                value={settings.backgroundColor}
-                onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    backgroundColor: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <button
-              className="secondary"
-              onClick={handleSelectBackgroundImage}
-            >
-              Choose Background Image
-            </button>
-            {settings.backgroundImagePath && (
-              <button
-                className="secondary"
-                onClick={() =>
-                  setSettings((prev) => ({ ...prev, backgroundImagePath: "" }))
-                }
-              >
-                Clear Image
-              </button>
+              onRefresh={() => void loadMonitors()}
+            />
+            {monitors.length === 0 && (
+              <p className="instruction-text">No additional monitors detected.</p>
             )}
           </div>
-          {settings.backgroundImagePath && (
-            <p className="instruction-text">
-              Using image: {settings.backgroundImagePath}
-            </p>
-          )}
+        </div>
+      </div>
+
+      {/* Background */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaImage />
+          <h3 style={{ margin: 0 }}>Background</h3>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "var(--spacing-4)" }}>
+          <button
+            type="button"
+            onClick={() => {
+              setBackgroundMode("solid");
+              setSettings((prev) => ({ ...prev, backgroundImagePath: "" }));
+            }}
+            className="secondary"
+            style={{
+              borderColor: backgroundMode === "solid" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: backgroundMode === "solid" ? "var(--app-primary-color)" : "transparent",
+              color: backgroundMode === "solid" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Use solid color
+          </button>
+          <button
+            type="button"
+            onClick={() => setBackgroundMode("image")}
+            className="secondary"
+            style={{
+              borderColor: backgroundMode === "image" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: backgroundMode === "image" ? "var(--app-primary-color)" : "transparent",
+              color: backgroundMode === "image" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Use background image
+          </button>
         </div>
 
-        {/* Scripture Text Styling */}
-        <div className="form-group">
-          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Scripture Text Styling</label>
+        {backgroundMode === "solid" && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Background color</label>
+            <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "0.85rem" }}>Color</span>
+                <input
+                  type="color"
+                  value={settings.backgroundColor}
+                  onChange={(event) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      backgroundColor: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {backgroundMode === "image" && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            {!settings.backgroundImagePath ? (
+              <>
+                <label>Choose an image</label>
+                <button
+                  className="secondary"
+                  onClick={handleSelectBackgroundImage}
+                  style={{ marginTop: "8px" }}
+                >
+                  Choose Background Image
+                </button>
+              </>
+            ) : (
+              <>
+                <label>Background image</label>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "var(--spacing-3)",
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                    marginTop: "8px",
+                  }}
+                >
+                  {backgroundImageUrl && (
+                    <div
+                      style={{
+                        flexShrink: 0,
+                        width: "120px",
+                        height: "68px",
+                        borderRadius: "8px",
+                        overflow: "hidden",
+                        border: "1px solid var(--app-border-color)",
+                        backgroundColor: settings.backgroundColor,
+                      }}
+                    >
+                      <img
+                        src={backgroundImageUrl}
+                        alt="Background preview"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      className="secondary"
+                      onClick={handleSelectBackgroundImage}
+                    >
+                      Change Image
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() =>
+                        setSettings((prev) => ({ ...prev, backgroundImagePath: "" }))
+                      }
+                    >
+                      Clear Image
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Scripture styling (text + reference tabs) */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaFont />
+          <h3 style={{ margin: 0 }}>Scripture styling</h3>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "var(--spacing-4)" }}>
+          <button
+            type="button"
+            onClick={() => setStylingTab("text")}
+            className="secondary"
+            style={{
+              borderColor: stylingTab === "text" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: stylingTab === "text" ? "var(--app-primary-color)" : "transparent",
+              color: stylingTab === "text" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Scripture text
+          </button>
+          <button
+            type="button"
+            onClick={() => setStylingTab("reference")}
+            className="secondary"
+            style={{
+              borderColor: stylingTab === "reference" ? "var(--app-primary-color)" : "var(--app-border-color)",
+              backgroundColor: stylingTab === "reference" ? "var(--app-primary-color)" : "transparent",
+              color: stylingTab === "reference" ? "#ffffff" : "var(--app-text-color)",
+            }}
+          >
+            Scripture reference
+          </button>
+        </div>
+
+        {stylingTab === "text" && (
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Font, color & effects</label>
           <div style={{ display: "grid", gap: "12px", padding: "12px", backgroundColor: "var(--app-header-bg)", borderRadius: "8px" }}>
             {/* Font Selection */}
             <div>
@@ -843,10 +1374,11 @@ const DisplaySettings: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Scripture Reference Styling */}
-        <div className="form-group">
-          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Scripture Reference Styling</label>
+        {stylingTab === "reference" && (
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={{ fontWeight: 600, marginBottom: "12px" }}>Font, color & effects</label>
           <div style={{ display: "grid", gap: "12px", padding: "12px", backgroundColor: "var(--app-header-bg)", borderRadius: "8px" }}>
             {/* Font Selection */}
             <div>
@@ -1114,9 +1646,122 @@ const DisplaySettings: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
+      </div>
 
-        <div className="form-group">
-          <label>Layout Preview</label>
+      {/* Timer on display */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaClock />
+          <h3 style={{ margin: 0 }}>Timer on display</h3>
+        </div>
+        <p
+          style={{
+            fontSize: "0.85rem",
+            color: "var(--app-text-color-secondary)",
+            marginBottom: "var(--spacing-4)",
+          }}
+        >
+          This will display the countdown timer on the audience screen whenever it is triggered from the Timer tab.
+        </p>
+        <label style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "var(--spacing-3)" }}>
+          <input
+            type="checkbox"
+            checked={settings.showTimer}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                showTimer: event.target.checked,
+              }))
+            }
+            style={{ width: "18px", height: "18px", cursor: "pointer" }}
+          />
+          <span style={{ fontWeight: 500 }}>Show timer</span>
+        </label>
+        <label style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ minWidth: "120px", fontSize: "0.9rem" }}>Timer font size</span>
+          <input
+            type="range"
+            min={16}
+            max={300}
+            step={2}
+            value={settings.timerFontSize}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                timerFontSize: Number(event.target.value),
+              }))
+            }
+            style={{ flex: 1, minWidth: "180px" }}
+          />
+          <input
+            type="number"
+            min={12}
+            max={300}
+            step={1}
+            value={settings.timerFontSize}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                timerFontSize: Number(event.target.value) || 0,
+              }))
+            }
+            style={{ width: "80px" }}
+          />
+          <span style={{ color: "var(--app-text-color-secondary)", fontSize: "0.85rem" }}>px</span>
+        </label>
+      </div>
+
+      {/* Layout & preview */}
+      <div style={sectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <FaThLarge />
+          <h3 style={{ margin: 0 }}>Layout & preview</h3>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Preview & edit layout</label>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
+            <button
+              onClick={() => setLayoutPreviewTab("scripture")}
+              className="secondary"
+              style={{
+                borderColor:
+                  layoutPreviewTab === "scripture"
+                    ? "var(--app-primary-color)"
+                    : "var(--app-border-color)",
+                backgroundColor:
+                  layoutPreviewTab === "scripture"
+                    ? "var(--app-primary-color)"
+                    : "transparent",
+                color:
+                  layoutPreviewTab === "scripture"
+                    ? "#ffffff"
+                    : "var(--app-text-color)",
+              }}
+            >
+              Scripture layout preview
+            </button>
+            <button
+              onClick={() => setLayoutPreviewTab("slides")}
+              className="secondary"
+              style={{
+                borderColor:
+                  layoutPreviewTab === "slides"
+                    ? "var(--app-primary-color)"
+                    : "var(--app-border-color)",
+                backgroundColor:
+                  layoutPreviewTab === "slides"
+                    ? "var(--app-primary-color)"
+                    : "transparent",
+                color:
+                  layoutPreviewTab === "slides"
+                    ? "#ffffff"
+                    : "var(--app-text-color)",
+              }}
+            >
+              Slides layout preview
+            </button>
+          </div>
           <div
             style={{
               position: "relative",
@@ -1134,67 +1779,107 @@ const DisplaySettings: React.FC = () => {
               overflow: "hidden",
             }}
           >
-            <div
-              ref={previewTextBoxRef}
-              style={{
-                ...rectStyle(settings.layout.text),
-                border: "1px dashed rgba(99, 102, 241, 0.7)",
-                padding: "6px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                ref={previewTextContentRef}
-                style={{
-                  ...getFontStyle(settings.textStyle),
-                  fontFamily: settings.textFont,
-                  fontSize: `${previewTextFontSize}px`,
-                  lineHeight: 1.2,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  width: "100%",
-                }}
-              >
-                {SAMPLE_TEXT}
-              </div>
-            </div>
-            <div
-              ref={previewReferenceBoxRef}
-              style={{
-                ...rectStyle(settings.layout.reference),
-                border: "1px dashed rgba(34, 197, 94, 0.7)",
-                padding: "4px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                ref={previewReferenceContentRef}
-                style={{
-                  ...getFontStyle(settings.referenceStyle),
-                  fontFamily: settings.referenceFont,
-                  fontSize: `${previewReferenceFontSize}px`,
-                  lineHeight: 1.1,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  width: "100%",
-                }}
-              >
-                {SAMPLE_REFERENCE}
-              </div>
-            </div>
+            {layoutPreviewTab === "scripture" ? (
+              <>
+                <div
+                  ref={previewTextBoxRef}
+                  style={{
+                    ...rectStyle(settings.layout.text),
+                    border: "1px dashed rgba(99, 102, 241, 0.7)",
+                    padding: "6px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    ref={previewTextContentRef}
+                    style={{
+                      ...getFontStyle(settings.textStyle),
+                      fontFamily: settings.textFont,
+                      fontSize: `${previewTextFontSize}px`,
+                      lineHeight: 1.2,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      width: "100%",
+                    }}
+                  >
+                    {SAMPLE_TEXT}
+                  </div>
+                </div>
+                <div
+                  ref={previewReferenceBoxRef}
+                  style={{
+                    ...rectStyle(settings.layout.reference),
+                    border: "1px dashed rgba(34, 197, 94, 0.7)",
+                    padding: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    ref={previewReferenceContentRef}
+                    style={{
+                      ...getFontStyle(settings.referenceStyle),
+                      fontFamily: settings.referenceFont,
+                      fontSize: `${previewReferenceFontSize}px`,
+                      lineHeight: 1.1,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      width: "100%",
+                    }}
+                  >
+                    {SAMPLE_REFERENCE}
+                  </div>
+                </div>
+              </>
+            ) : (
+              settings.slidesLayout.slice(0, 6).map((rect, index) => (
+                <div
+                  key={`slide-preview-${index}`}
+                  ref={slideLineBoxRefs[index]}
+                  style={{
+                    ...rectStyle(rect),
+                    border: "1px dashed rgba(99, 102, 241, 0.7)",
+                    padding: "6px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    ref={slideLineContentRefs[index]}
+                    style={{
+                      ...getFontStyle(getSlideLineStyle(index)),
+                      fontFamily: getSlideLineFontFamily(index),
+                      fontSize: `${slideLineFontSizes[index]}px`,
+                      lineHeight: 1.2,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      width: "100%",
+                    }}
+                  >
+                    {SAMPLE_SLIDE_LINES[index] || `Line ${index + 1}`}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
           <div style={{ marginTop: "10px" }}>
             <button
               className="secondary"
-              onClick={() => setLayoutEditorOpen(true)}
+              onClick={() =>
+                layoutPreviewTab === "scripture"
+                  ? setLayoutEditorOpen(true)
+                  : setSlidesLayoutEditorOpen(true)
+              }
             >
               Edit Layout
             </button>
@@ -1244,6 +1929,18 @@ const DisplaySettings: React.FC = () => {
         referenceFont={settings.referenceFont}
         textStyle={settings.textStyle}
         referenceStyle={settings.referenceStyle}
+      />
+      <SlidesLayoutEditorModal
+        isOpen={slidesLayoutEditorOpen}
+        onClose={() => setSlidesLayoutEditorOpen(false)}
+        onSave={handleUpdateSlidesLayout}
+        initialLayout={settings.slidesLayout}
+        initialLineStyles={settings.slidesLineStyles}
+        backgroundColor={settings.backgroundColor}
+        backgroundImagePath={settings.backgroundImagePath}
+        textFont={settings.textFont}
+        textStyle={settings.textStyle}
+        fontOptions={fontOptions}
       />
     </div>
   );

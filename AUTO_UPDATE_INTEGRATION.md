@@ -1,6 +1,6 @@
-# Auto-Update Integration Guide for ProAssist
+# Auto-Update Integration Guide for SmartVerses
 
-This document explains how to set up and use the auto-update feature for ProAssist. The app uses Tauri's built-in updater plugin with GitHub Releases as the update server.
+This document explains how to set up and use the auto-update feature for SmartVerses. The app uses Tauri's built-in updater plugin with GitHub Releases as the update server.
 
 ## Overview
 
@@ -20,13 +20,13 @@ Tauri requires signed updates for security. Generate your signing keys by runnin
 
 ```bash
 # From the project root
-npm run tauri signer generate -- -w ~/.tauri/proassist.key
+npm run tauri signer generate -- -w ~/.tauri/smartverses.key
 ```
 
 This creates two files in `~/.tauri/`:
 
-- `proassist.key` - **Private key** (KEEP THIS SECRET! Never commit to git!)
-- `proassist.key.pub` - **Public key** (This goes in tauri.conf.json)
+- `smartverses.key` - **Private key** (KEEP THIS SECRET! Never commit to git!)
+- `smartverses.key.pub` - **Public key** (This goes in tauri.conf.json)
 
 When prompted, enter a password for the private key (or press Enter for no password).
 
@@ -40,7 +40,7 @@ After generating keys, update `src-tauri/tauri.conf.json`:
     "updater": {
       "pubkey": "PASTE_YOUR_PUBLIC_KEY_HERE",
       "endpoints": [
-        "https://github.com/YOUR_USERNAME/proassist/releases/latest/download/latest.json"
+        "https://github.com/YOUR_USERNAME/SmartVerses/releases/latest/download/latest.json"
       ]
     }
   }
@@ -49,7 +49,7 @@ After generating keys, update `src-tauri/tauri.conf.json`:
 
 Replace:
 
-- `PASTE_YOUR_PUBLIC_KEY_HERE` with the content of `~/.tauri/proassist.key.pub`
+- `PASTE_YOUR_PUBLIC_KEY_HERE` with the content of `~/.tauri/smartverses.key.pub`
 - `YOUR_USERNAME` with your GitHub username or organization name
 
 ### 3. Configure GitHub Secrets
@@ -58,7 +58,7 @@ Go to your GitHub repository → Settings → Secrets and variables → Actions,
 
 | Secret Name                          | Value                                  |
 | ------------------------------------ | -------------------------------------- |
-| `TAURI_SIGNING_PRIVATE_KEY`          | Content of `~/.tauri/proassist.key`    |
+| `TAURI_SIGNING_PRIVATE_KEY`          | Content of `~/.tauri/smartverses.key`  |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password you set (leave empty if none) |
 
 ## How to Release an Update
@@ -223,7 +223,7 @@ This error indicates the private key format is incorrect:
 ## File Structure
 
 ```
-proassist/
+SmartVerses/
 ├── .github/
 │   └── workflows/
 │       └── release.yml          # GitHub Actions workflow
@@ -245,7 +245,7 @@ proassist/
 
 ## Quick Start Checklist
 
-- [ ] Generate signing keys: `npm run tauri signer generate -- -w ~/.tauri/proassist.key`
+- [ ] Generate signing keys: `npm run tauri signer generate -- -w ~/.tauri/smartverses.key`
 - [ ] Copy public key to `tauri.conf.json` plugins.updater.pubkey
 - [ ] Update GitHub username in `tauri.conf.json` endpoints URL
 - [ ] Add `TAURI_SIGNING_PRIVATE_KEY` to GitHub Secrets

@@ -98,6 +98,8 @@ export type Period = "AM" | "PM";
 
 export type TimeAdjustmentMode = "NONE" | "EARLY_END" | "OVERRUN" | "BOTH";
 
+export type HttpAutomationMethod = "GET" | "POST" | "PUT" | "DELETE";
+
 // AI Schedule parsing response
 export interface AIScheduleResponse {
   action: "none" | "SetCountDown" | "CountDownToTime" | "UpdateSchedule";
@@ -153,6 +155,12 @@ export type ScheduleItemAutomation =
       channel: number; // 1-16
       note: number; // 0-127
       velocity?: number; // 0-127 (default: 127)
+    }
+  | {
+      type: "http";
+      method: HttpAutomationMethod;
+      url: string;
+      payload?: string; // JSON payload as string (validated before save)
     };
 
 // Smart automation rule - trigger based on session name matching

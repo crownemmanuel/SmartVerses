@@ -73,7 +73,9 @@ function getAIConfig(
   } else if (preferredProvider) {
     provider = preferredProvider;
     model =
-      preferredProvider === "openai"
+      preferredProvider === appSettings.defaultAIProvider && appSettings.defaultAIModel
+        ? appSettings.defaultAIModel
+        : preferredProvider === "openai"
         ? "gpt-4o"
         : preferredProvider === "groq"
         ? "llama-3.3-70b-versatile"
@@ -81,11 +83,12 @@ function getAIConfig(
   } else {
     provider = appSettings.defaultAIProvider || null;
     model =
-      provider === "openai"
+      appSettings.defaultAIModel ||
+      (provider === "openai"
         ? "gpt-4o"
         : provider === "groq"
         ? "llama-3.3-70b-versatile"
-        : "gemini-1.5-flash-latest";
+        : "gemini-1.5-flash-latest");
   }
 
   if (!provider) {

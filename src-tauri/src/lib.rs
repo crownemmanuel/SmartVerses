@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
+use tokio::io::AsyncWriteExt;
 use futures_util::{SinkExt, StreamExt};
+use warp::http::StatusCode;
+use warp::Reply;
 use warp::Filter;
 use warp::ws::{Message as WarpWsMessage, WebSocket};
 use rust_embed::RustEmbed;
@@ -13,7 +16,10 @@ use cpal::traits::StreamTrait;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use base64::Engine;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
+
+mod window_commands;
+use window_commands::{open_dialog, close_dialog};
 
 // ============================================================================
 // Embedded Frontend Assets
@@ -98,7 +104,39 @@ pub struct DisplayScripture {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisplayState {
     pub scripture: DisplayScripture,
+    pub slides: Vec<String>,
     pub settings: serde_json::Value, // DisplaySettings as JSON
+}
+
+// ============================================================================
+// Types for HTTP API v1
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiScriptureGoLiveRequest {
+    pub reference: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTimerStartRequest {
+    pub seconds: Option<f64>,
+    pub minutes: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTranscriptionPinRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PinnedTranscriptionClient {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    pub label: Option<String>,
+    #[serde(rename = "pinnedAt")]
+    pub pinned_at: u64,
 }
 
 // ============================================================================
@@ -223,6 +261,7 @@ pub enum WsMessage {
     #[serde(rename = "display_update")]
     DisplayUpdate { 
         scripture: DisplayScripture,
+        slides: Vec<String>,
         settings: serde_json::Value,
     },
     #[serde(rename = "error")]
@@ -235,10 +274,12 @@ struct ServerState {
     schedule: RwLock<ScheduleState>,
     timer_state: RwLock<TimerState>,
     display_state: RwLock<DisplayState>,
+    pinned_transcription_clients: RwLock<HashMap<String, PinnedTranscriptionClient>>,
     broadcast_tx: broadcast::Sender<String>,
     running: RwLock<bool>,
     port: RwLock<u16>,
     shutdown_tx: RwLock<Option<tokio::sync::oneshot::Sender<()>>>,
+    api_enabled: RwLock<bool>,
 }
 
 // Global state for the Network Sync server
@@ -275,12 +316,15 @@ lazy_static::lazy_static! {
                 verse_text: String::new(),
                 reference: String::new(),
             },
+            slides: Vec::new(),
             settings: serde_json::json!({}),
         }),
+        pinned_transcription_clients: RwLock::new(HashMap::new()),
         broadcast_tx: broadcast::channel(100).0,
         running: RwLock::new(false),
         port: RwLock::new(9876),
         shutdown_tx: RwLock::new(None),
+        api_enabled: RwLock::new(false),
     });
     
     static ref SYNC_SERVER_STATE: Arc<SyncServerState> = Arc::new(SyncServerState {
@@ -543,6 +587,7 @@ async fn handle_ws_connection(ws: WebSocket, state: Arc<ServerState>) {
                             let display_state = state.display_state.read().await;
                             let update = WsMessage::DisplayUpdate {
                                 scripture: display_state.scripture.clone(),
+                                slides: display_state.slides.clone(),
                                 settings: display_state.settings.clone(),
                             };
                             if let Ok(json) = serde_json::to_string(&update) {
@@ -574,6 +619,17 @@ fn serve_embedded_file(path: &str) -> Option<(Vec<u8>, String)> {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
         return Some((content.data.to_vec(), mime.to_string()));
     }
+
+    // In dev, fall back to serving from /public when dist isn't built yet.
+    if cfg!(debug_assertions) && !path.contains("..") {
+        let public_path = std::path::Path::new("../public").join(path);
+        if public_path.exists() {
+            if let Ok(data) = std::fs::read(&public_path) {
+                let mime = mime_guess::from_path(&public_path).first_or_octet_stream();
+                return Some((data, mime.to_string()));
+            }
+        }
+    }
     
     // For SPA routing, return index.html for non-file paths
     if !path.contains('.') || path.ends_with('/') {
@@ -585,11 +641,15 @@ fn serve_embedded_file(path: &str) -> Option<(Vec<u8>, String)> {
     None
 }
 
+fn json_response(value: serde_json::Value, status: StatusCode) -> warp::reply::Response {
+    warp::reply::with_status(warp::reply::json(&value), status).into_response()
+}
+
 // ============================================================================
 // Combined HTTP + WebSocket Server
 // ============================================================================
 
-async fn run_combined_server(port: u16) -> Result<(), String> {
+async fn run_combined_server(port: u16, app: tauri::AppHandle) -> Result<(), String> {
     let state = SERVER_STATE.clone();
     
     // Create shutdown channel
@@ -637,6 +697,230 @@ async fn run_combined_server(port: u16) -> Result<(), String> {
                     "server_running": true,
                 });
                 Ok::<_, warp::Rejection>(warp::reply::json(&response))
+            }
+        });
+
+    // API: Remote transcription pin — GET list pinned clients, POST pin a client
+    let transcription_pin_list_state = state.clone();
+    let transcription_pin_list_route = warp::path("api")
+        .and(warp::path("transcription"))
+        .and(warp::path("pin"))
+        .and(warp::path::end())
+        .and(warp::get())
+        .and_then(move || {
+            let state_clone = transcription_pin_list_state.clone();
+            async move {
+                let pinned_clients = state_clone.pinned_transcription_clients.read().await;
+                let list: Vec<&PinnedTranscriptionClient> = pinned_clients.values().collect();
+                let response = serde_json::json!({ "pinned": list });
+                Ok::<_, warp::Rejection>(warp::reply::json(&response))
+            }
+        });
+
+    let transcription_pin_post_state = state.clone();
+    let transcription_pin_post_route = warp::path("api")
+        .and(warp::path("transcription"))
+        .and(warp::path("pin"))
+        .and(warp::path::end())
+        .and(warp::post())
+        .and(warp::body::json())
+        .and_then(move |body: ApiTranscriptionPinRequest| {
+            let state_clone = transcription_pin_post_state.clone();
+            async move {
+                let client_id = body.client_id.trim().to_string();
+                if client_id.is_empty() {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "client_id_required" }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                let pinned_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+                let pinned = PinnedTranscriptionClient {
+                    client_id: client_id.clone(),
+                    label: body.label.clone(),
+                    pinned_at,
+                };
+
+                {
+                    let mut pinned_clients = state_clone.pinned_transcription_clients.write().await;
+                    pinned_clients.insert(client_id.clone(), pinned.clone());
+                }
+
+                Ok::<_, warp::Rejection>(json_response(
+                    serde_json::json!({
+                        "status": "pinned",
+                        "clientId": pinned.client_id,
+                        "label": pinned.label,
+                        "pinnedAt": pinned.pinned_at,
+                    }),
+                    StatusCode::OK,
+                ))
+            }
+        });
+
+    let transcription_pin_route = transcription_pin_list_route.or(transcription_pin_post_route);
+
+    // API v1: Scripture go-live
+    let api_app = app.clone();
+    let api_scripture_state = state.clone();
+    let api_scripture_route = warp::path("api")
+        .and(warp::path("v1"))
+        .and(warp::path("scripture"))
+        .and(warp::path("go-live"))
+        .and(warp::path::end())
+        .and(warp::post())
+        .and(warp::body::json())
+        .and_then(move |body: ApiScriptureGoLiveRequest| {
+            let state_clone = api_scripture_state.clone();
+            let app_clone = api_app.clone();
+            async move {
+                if !*state_clone.api_enabled.read().await {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "api_disabled" }),
+                        StatusCode::FORBIDDEN,
+                    ));
+                }
+
+                let reference = body.reference.trim().to_string();
+                if reference.is_empty() {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "reference_required" }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                if let Err(err) = app_clone.emit(
+                    "api-scripture-go-live",
+                    serde_json::json!({ "reference": reference }),
+                ) {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({
+                            "error": "emit_failed",
+                            "detail": err.to_string()
+                        }),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ));
+                }
+
+                Ok::<_, warp::Rejection>(json_response(
+                    serde_json::json!({
+                        "status": "queued",
+                        "reference": reference
+                    }),
+                    StatusCode::OK,
+                ))
+            }
+        });
+
+    // API v1: Timer start
+    let api_timer_state = state.clone();
+    let api_timer_app = app.clone();
+    let api_timer_route = warp::path("api")
+        .and(warp::path("v1"))
+        .and(warp::path("timer"))
+        .and(warp::path("start"))
+        .and(warp::path::end())
+        .and(warp::post())
+        .and(warp::body::json())
+        .and_then(move |body: ApiTimerStartRequest| {
+            let state_clone = api_timer_state.clone();
+            let app_clone = api_timer_app.clone();
+            async move {
+                if !*state_clone.api_enabled.read().await {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "api_disabled" }),
+                        StatusCode::FORBIDDEN,
+                    ));
+                }
+
+                let raw_seconds = body
+                    .seconds
+                    .or_else(|| body.minutes.map(|m| m * 60.0))
+                    .unwrap_or(0.0);
+
+                if !raw_seconds.is_finite() || raw_seconds <= 0.0 {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "seconds_required" }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                let seconds = raw_seconds.floor() as i64;
+                if seconds <= 0 {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({ "error": "seconds_required" }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                if let Err(err) = app_clone.emit(
+                    "api-timer-start",
+                    serde_json::json!({ "seconds": seconds }),
+                ) {
+                    return Ok::<_, warp::Rejection>(json_response(
+                        serde_json::json!({
+                            "error": "emit_failed",
+                            "detail": err.to_string()
+                        }),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ));
+                }
+
+                Ok::<_, warp::Rejection>(json_response(
+                    serde_json::json!({
+                        "status": "queued",
+                        "seconds": seconds
+                    }),
+                    StatusCode::OK,
+                ))
+            }
+        });
+
+    // API docs route - serve api-docs.html
+    let api_docs_route = warp::path("api")
+        .and(warp::path("docs"))
+        .and(warp::path::end())
+        .map(|| {
+            match serve_embedded_file("api-docs.html") {
+                Some((content, _)) => {
+                    warp::http::Response::builder()
+                        .header("Content-Type", "text/html")
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(content)
+                        .unwrap()
+                }
+                None => {
+                    warp::http::Response::builder()
+                        .status(404)
+                        .body(b"API docs not found".to_vec())
+                        .unwrap()
+                }
+            }
+        });
+
+    // API OpenAPI spec
+    let api_openapi_route = warp::path("api")
+        .and(warp::path("openapi.json"))
+        .and(warp::path::end())
+        .map(|| {
+            match serve_embedded_file("api-openapi.json") {
+                Some((content, mime)) => {
+                    warp::http::Response::builder()
+                        .header("Content-Type", mime)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(content)
+                        .unwrap()
+                }
+                None => {
+                    warp::http::Response::builder()
+                        .status(404)
+                        .body(b"OpenAPI spec not found".to_vec())
+                        .unwrap()
+                }
             }
         });
     
@@ -767,6 +1051,11 @@ async fn run_combined_server(port: u16) -> Result<(), String> {
     let routes = ws_route
         .or(schedule_api_route)
         .or(live_slides_api_route)
+        .or(transcription_pin_route)
+        .or(api_scripture_route)
+        .or(api_timer_route)
+        .or(api_docs_route)
+        .or(api_openapi_route)
         .or(schedule_view_route)
         .or(live_slides_landing_route)
         .or(display_route)
@@ -1178,6 +1467,124 @@ fn open_audience_display_window(
 }
 
 // ============================================================================
+// Monitor Identify Window (for identifying monitors in settings)
+// ============================================================================
+
+#[tauri::command]
+fn show_monitor_identify_window(
+    app_handle: tauri::AppHandle,
+    monitor_index: usize,
+) -> Result<(), String> {
+    use tauri::{Manager, WebviewWindowBuilder};
+
+    const WINDOW_LABEL: &str = "monitor-identify";
+
+    // Close existing identify window if it exists (prevents duplicates)
+    if let Some(existing_window) = app_handle.get_webview_window(WINDOW_LABEL) {
+        let _ = existing_window.close();
+        // Small delay to ensure window is fully closed before creating new one
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    // Get the target monitor
+    let monitors = app_handle
+        .available_monitors()
+        .map_err(|e| format!("Failed to get monitors: {:?}", e))?;
+
+    let monitor = monitors
+        .get(monitor_index)
+        .ok_or_else(|| format!("Monitor index {} not found", monitor_index))?;
+
+    let pos = monitor.position();
+    let size = monitor.size();
+    let scale = monitor.scale_factor();
+
+    println!(
+        "[Identify] Opening on monitor {}: pos=({},{}), size={}x{}, scale={}",
+        monitor_index, pos.x, pos.y, size.width, size.height, scale
+    );
+
+    // Calculate position and size - platform-specific coordinate handling
+    #[cfg(target_os = "windows")]
+    let (x, y, width, height) = (
+        pos.x as f64,
+        pos.y as f64,
+        size.width as f64,
+        size.height as f64,
+    );
+
+    #[cfg(not(target_os = "windows"))]
+    let (x, y, width, height) = (
+        pos.x as f64 / scale,
+        pos.y as f64 / scale,
+        size.width as f64 / scale,
+        size.height as f64 / scale,
+    );
+
+    // Build the identify window
+    #[allow(unused_variables)]
+    let window = WebviewWindowBuilder::new(
+        &app_handle,
+        WINDOW_LABEL,
+        tauri::WebviewUrl::App("/monitor-identify".into()),
+    )
+    .title("Monitor Identify")
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .inner_size(width, height)
+    .position(x, y)
+    .visible(true)
+    .focused(false) // Don't steal focus from main window
+    .build()
+    .map_err(|e| format!("Failed to create identify window: {:?}", e))?;
+
+    // Ensure fullscreen coverage on the monitor (Windows needs explicit repositioning)
+    #[cfg(target_os = "windows")]
+    {
+        if let Err(e) = window.set_position(tauri::Position::Physical(
+            tauri::PhysicalPosition::new(pos.x, pos.y),
+        )) {
+            eprintln!("[Identify] Failed to set window position: {:?}", e);
+        }
+        if let Err(e) = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            size.width,
+            size.height,
+        ))) {
+            eprintln!("[Identify] Failed to set window size: {:?}", e);
+        }
+    }
+
+    println!("[Identify] Window shown on monitor {}", monitor_index);
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_monitor_identify_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    const WINDOW_LABEL: &str = "monitor-identify";
+
+    if let Some(window) = app_handle.get_webview_window(WINDOW_LABEL) {
+        window
+            .close()
+            .map_err(|e| format!("Failed to close identify window: {:?}", e))?;
+        println!("[Identify] Window hidden");
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Audience Display Test Window (Fresh Flow)
+// ============================================================================
+
+
+
+
+
+
+// ============================================================================
 // Font Enumeration
 // ============================================================================
 
@@ -1565,6 +1972,359 @@ fn start_native_audio_stream(app: tauri::AppHandle, device_id: Option<String>) -
     });
 
     Ok(())
+}
+
+// ============================================================================
+// Mac Native Whisper (Metal)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AsrSegment {
+    pub start_ms: u32,
+    pub end_ms: u32,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AsrResult {
+    pub full_text: String,
+    pub new_segments: Vec<AsrSegment>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeWhisperDownloadProgress {
+    pub file_name: String,
+    pub downloaded: u64,
+    pub total: Option<u64>,
+    pub progress: Option<f32>,
+}
+
+#[tauri::command]
+async fn download_native_whisper_model(
+    app: tauri::AppHandle,
+    url: String,
+    file_name: String,
+) -> Result<String, String> {
+    let base_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir_failed:{}", e))?;
+    let safe_name = std::path::Path::new(&file_name)
+        .file_name()
+        .ok_or_else(|| "invalid_file_name".to_string())?
+        .to_string_lossy()
+        .to_string();
+    let model_dir = base_dir.join("models").join("whisper");
+    std::fs::create_dir_all(&model_dir)
+        .map_err(|e| format!("create_model_dir_failed:{}", e))?;
+    let path = model_dir.join(&safe_name);
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("download_failed:{}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("download_failed_status:{}", response.status()));
+    }
+
+    let total = response.content_length();
+    let mut downloaded: u64 = 0;
+    let mut file = tokio::fs::File::create(&path)
+        .await
+        .map_err(|e| format!("create_model_file_failed:{}", e))?;
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("download_chunk_failed:{}", e))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("write_failed:{}", e))?;
+        downloaded = downloaded.saturating_add(chunk.len() as u64);
+        let progress = total.map(|t| (downloaded as f32 / t as f32) * 100.0);
+        let _ = app.emit(
+            "native_whisper_model_download_progress",
+            NativeWhisperDownloadProgress {
+                file_name: safe_name.clone(),
+                downloaded,
+                total,
+                progress,
+            },
+        );
+    }
+
+    file.flush()
+        .await
+        .map_err(|e| format!("flush_failed:{}", e))?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn native_whisper_model_exists(
+    app: tauri::AppHandle,
+    file_name: String,
+) -> Result<bool, String> {
+    let base_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir_failed:{}", e))?;
+    let safe_name = std::path::Path::new(&file_name)
+        .file_name()
+        .ok_or_else(|| "invalid_file_name".to_string())?
+        .to_string_lossy()
+        .to_string();
+    let path = base_dir.join("models").join("whisper").join(&safe_name);
+    Ok(path.exists())
+}
+
+#[cfg(target_os = "macos")]
+mod mac_native_asr {
+    use super::{AsrResult, AsrSegment};
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    use whisper_rs::{
+        install_logging_hooks, FullParams, SamplingStrategy, WhisperContext,
+        WhisperContextParameters, WhisperState,
+    };
+
+    const SAMPLE_RATE: u32 = 16_000;
+
+    struct MacAsrModel {
+        _ctx: WhisperContext,
+        state: WhisperState,
+        language: String,
+    }
+
+    struct MacAsrRuntime {
+        buffer: VecDeque<f32>,
+        window_samples: usize,
+        step_samples: usize,
+        max_buffer_samples: usize,
+        last_decode: Instant,
+        total_samples: u64,
+        last_emitted_end_ms: u64,
+    }
+
+    impl MacAsrRuntime {
+        fn new(window_ms: u32, step_ms: u32) -> Self {
+            let window_samples = (SAMPLE_RATE as usize * window_ms as usize) / 1000;
+            let step_samples = (SAMPLE_RATE as usize * step_ms as usize) / 1000;
+            let max_buffer_samples = window_samples + step_samples;
+            Self {
+                buffer: VecDeque::with_capacity(max_buffer_samples),
+                window_samples,
+                step_samples,
+                max_buffer_samples,
+                last_decode: Instant::now(),
+                total_samples: 0,
+                last_emitted_end_ms: 0,
+            }
+        }
+
+        fn reset(&mut self) {
+            self.buffer.clear();
+            self.total_samples = 0;
+            self.last_emitted_end_ms = 0;
+            self.last_decode = Instant::now();
+        }
+    }
+
+    lazy_static::lazy_static! {
+        static ref MAC_ASR_MODEL: Mutex<Option<MacAsrModel>> = Mutex::new(None);
+        static ref MAC_ASR_RUNTIME: Mutex<MacAsrRuntime> = Mutex::new(MacAsrRuntime::new(6000, 500));
+    }
+
+    pub fn asr_init_impl(
+        model_path: String,
+        language: String,
+        window_ms: u32,
+        step_ms: u32,
+    ) -> Result<(), String> {
+        install_logging_hooks();
+        let params = WhisperContextParameters {
+            use_gpu: true,
+            ..Default::default()
+        };
+        let ctx = WhisperContext::new_with_params(&model_path, params)
+            .map_err(|e| format!("whisper_init_failed:{}", e))?;
+        let state = ctx
+            .create_state()
+            .map_err(|e| format!("whisper_state_failed:{}", e))?;
+
+        let mut model_guard = MAC_ASR_MODEL.lock().map_err(|_| "lock_failed".to_string())?;
+        *model_guard = Some(MacAsrModel { _ctx: ctx, state, language });
+
+        let mut runtime_guard = MAC_ASR_RUNTIME.lock().map_err(|_| "lock_failed".to_string())?;
+        *runtime_guard = MacAsrRuntime::new(window_ms, step_ms);
+        Ok(())
+    }
+
+    pub fn asr_push_audio_impl(pcm_chunk: Vec<i16>) -> Result<(), String> {
+        let mut runtime = MAC_ASR_RUNTIME.lock().map_err(|_| "lock_failed".to_string())?;
+        for sample in pcm_chunk {
+            let f = sample as f32 / 32768.0;
+            runtime.buffer.push_back(f);
+            runtime.total_samples = runtime.total_samples.saturating_add(1);
+            if runtime.buffer.len() > runtime.max_buffer_samples {
+                runtime.buffer.pop_front();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn asr_poll_impl() -> Result<AsrResult, String> {
+        let (audio, window_start_ms, last_emitted_end_ms) = {
+            let mut runtime = MAC_ASR_RUNTIME.lock().map_err(|_| "lock_failed".to_string())?;
+            if runtime.buffer.len() < runtime.window_samples {
+                return Ok(AsrResult { full_text: String::new(), new_segments: Vec::new() });
+            }
+            let step_ms = (runtime.step_samples as u64 * 1000) / SAMPLE_RATE as u64;
+            if runtime.last_decode.elapsed() < Duration::from_millis(step_ms) {
+                return Ok(AsrResult { full_text: String::new(), new_segments: Vec::new() });
+            }
+            runtime.last_decode = Instant::now();
+            let window_start_samples = runtime.total_samples.saturating_sub(runtime.window_samples as u64);
+            let window_start_ms = (window_start_samples * 1000) / SAMPLE_RATE as u64;
+            let audio: Vec<f32> = runtime
+                .buffer
+                .iter()
+                .skip(runtime.buffer.len().saturating_sub(runtime.window_samples))
+                .copied()
+                .collect();
+            (audio, window_start_ms, runtime.last_emitted_end_ms)
+        };
+
+        let mut model_guard = MAC_ASR_MODEL.lock().map_err(|_| "lock_failed".to_string())?;
+        let model = model_guard.as_mut().ok_or_else(|| "model_not_initialized".to_string())?;
+
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+        params.set_debug_mode(false);
+        if !model.language.is_empty() {
+            params.set_language(Some(&model.language));
+        }
+        let threads = std::thread::available_parallelism()
+            .map(|v| v.get() as i32)
+            .unwrap_or(4);
+        params.set_n_threads(threads);
+
+        model
+            .state
+            .full(params, &audio[..])
+            .map_err(|e| format!("whisper_decode_failed:{}", e))?;
+
+        let num_segments = model.state.full_n_segments() as i32;
+        let mut full_text_parts: Vec<String> = Vec::new();
+        let mut new_segments: Vec<AsrSegment> = Vec::new();
+        let mut max_end_ms = last_emitted_end_ms;
+
+        for i in 0..num_segments {
+            let segment = match model.state.get_segment(i) {
+                Some(seg) => seg,
+                None => continue,
+            };
+            let text = segment.to_str().unwrap_or("").trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            let t0 = segment.start_timestamp() as u64;
+            let t1 = segment.end_timestamp() as u64;
+            let start_ms = window_start_ms + (t0 * 10);
+            let end_ms = window_start_ms + (t1 * 10);
+            full_text_parts.push(text.clone());
+
+            if end_ms > last_emitted_end_ms {
+                new_segments.push(AsrSegment {
+                    start_ms: start_ms as u32,
+                    end_ms: end_ms as u32,
+                    text,
+                });
+            }
+            if end_ms > max_end_ms {
+                max_end_ms = end_ms;
+            }
+        }
+
+        {
+            let mut runtime = MAC_ASR_RUNTIME.lock().map_err(|_| "lock_failed".to_string())?;
+            runtime.last_emitted_end_ms = max_end_ms;
+        }
+
+        Ok(AsrResult {
+            full_text: full_text_parts.join(" ").trim().to_string(),
+            new_segments,
+        })
+    }
+
+    pub fn asr_reset_impl() -> Result<(), String> {
+        let mut runtime = MAC_ASR_RUNTIME.lock().map_err(|_| "lock_failed".to_string())?;
+        runtime.reset();
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn asr_init(
+    model_path: String,
+    language: Option<String>,
+    window_ms: Option<u32>,
+    step_ms: Option<u32>,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let language = language.unwrap_or_else(|| "en".to_string());
+        let window_ms = window_ms.unwrap_or(6000);
+        let step_ms = step_ms.unwrap_or(500);
+        return mac_native_asr::asr_init_impl(model_path, language, window_ms, step_ms);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = model_path;
+        let _ = language;
+        let _ = window_ms;
+        let _ = step_ms;
+        Err("mac_native_asr_not_supported".to_string())
+    }
+}
+
+#[tauri::command]
+fn asr_push_audio(pcm_chunk: Vec<i16>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return mac_native_asr::asr_push_audio_impl(pcm_chunk);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pcm_chunk;
+        Err("mac_native_asr_not_supported".to_string())
+    }
+}
+
+#[tauri::command]
+fn asr_poll() -> Result<AsrResult, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return mac_native_asr::asr_poll_impl();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("mac_native_asr_not_supported".to_string())
+    }
+}
+
+#[tauri::command]
+fn asr_reset() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return mac_native_asr::asr_reset_impl();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("mac_native_asr_not_supported".to_string())
+    }
 }
 
 // ============================================================================
@@ -2607,7 +3367,7 @@ fn ensure_output_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn start_live_slides_server(port: u16) -> Result<String, String> {
+async fn start_live_slides_server(app: tauri::AppHandle, port: u16) -> Result<String, String> {
     let state = SERVER_STATE.clone();
     
     // Check if already running
@@ -2620,8 +3380,9 @@ async fn start_live_slides_server(port: u16) -> Result<String, String> {
     
     // Start combined HTTP + WebSocket server in background
     let port_clone = port;
+    let app_handle = app.clone();
     tokio::spawn(async move {
-        if let Err(e) = run_combined_server(port_clone).await {
+        if let Err(e) = run_combined_server(port_clone, app_handle).await {
             eprintln!("Server error: {}", e);
         }
         // Mark as not running when server stops
@@ -2683,6 +3444,59 @@ async fn create_live_slide_session(name: String) -> Result<LiveSlideSession, Str
 }
 
 #[tauri::command]
+async fn upsert_live_slide_session(
+    session_id: String,
+    name: String,
+    raw_text: String,
+) -> Result<LiveSlideSession, String> {
+    let state = SERVER_STATE.clone();
+
+    let slides = parse_notepad_text(&raw_text);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let mut sessions = state.sessions.write().await;
+    let created_at = sessions
+        .get(&session_id)
+        .map(|s| s.created_at)
+        .unwrap_or(now);
+    let is_new = !sessions.contains_key(&session_id);
+
+    let session = LiveSlideSession {
+        id: session_id.clone(),
+        name,
+        slides: slides.clone(),
+        raw_text: raw_text.clone(),
+        created_at,
+    };
+
+    sessions.insert(session_id.clone(), session.clone());
+    drop(sessions);
+
+    if is_new {
+        let msg = WsMessage::SessionCreated {
+            session: session.clone(),
+        };
+        if let Ok(json) = serde_json::to_string(&msg) {
+            let _ = state.broadcast_tx.send(json);
+        }
+    }
+
+    let update = WsMessage::SlidesUpdate {
+        session_id,
+        slides,
+        raw_text,
+    };
+    if let Ok(json) = serde_json::to_string(&update) {
+        let _ = state.broadcast_tx.send(json);
+    }
+
+    Ok(session)
+}
+
+#[tauri::command]
 async fn delete_live_slide_session(session_id: String) -> Result<(), String> {
     let state = SERVER_STATE.clone();
     
@@ -2722,6 +3536,13 @@ async fn get_live_slides_server_info() -> Result<LiveSlidesState, String> {
         server_port: port,
         local_ip,
     })
+}
+
+#[tauri::command]
+async fn set_api_enabled(enabled: bool) -> Result<(), String> {
+    let state = SERVER_STATE.clone();
+    *state.api_enabled.write().await = enabled;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2798,6 +3619,7 @@ async fn update_timer_state(
 async fn update_display_state(
     verse_text: String,
     reference: String,
+    slides: Vec<String>,
     settings: serde_json::Value,
 ) -> Result<(), String> {
     let state = SERVER_STATE.clone();
@@ -2809,6 +3631,7 @@ async fn update_display_state(
             verse_text: verse_text.clone(),
             reference: reference.clone(),
         };
+        display_state.slides = slides.clone();
         display_state.settings = settings.clone();
     }
     
@@ -2818,6 +3641,7 @@ async fn update_display_state(
             verse_text,
             reference,
         },
+        slides,
         settings,
     };
     if let Ok(json) = serde_json::to_string(&update) {
@@ -2984,7 +3808,7 @@ pub struct MidiDevice {
 fn list_midi_output_devices() -> Result<Vec<MidiDevice>, String> {
     use midir::MidiOutput;
     
-    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+    let midi_out = MidiOutput::new("SmartVerses MIDI Output")
         .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
     
     let ports = midi_out.ports();
@@ -3028,7 +3852,7 @@ fn send_midi_note(
         return Err("Velocity must be between 0 and 127".to_string());
     }
     
-    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+    let midi_out = MidiOutput::new("SmartVerses MIDI Output")
         .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
     
     let ports = midi_out.ports();
@@ -3042,7 +3866,7 @@ fn send_midi_note(
     let port = &ports[device_index];
     
     // Create connection
-    let mut conn_out = midi_out.connect(port, "proassist-midi-out")
+    let mut conn_out = midi_out.connect(port, "smartverses-midi-out")
         .map_err(|e| format!("Failed to connect to MIDI device: {}", e))?;
     
     // Send Note On message: 0x90 + channel (0-15), note (0-127), velocity (0-127)
@@ -3071,11 +3895,18 @@ fn send_midi_note(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_window_state::Builder::new().build());
+    }
+
+    builder
         .setup(|app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -3086,10 +3917,21 @@ pub fn run() {
             toggle_devtools,
             get_available_monitors_safe,
             open_audience_display_window,
+            show_monitor_identify_window,
+            hide_monitor_identify_window,
+            open_dialog,
+            close_dialog,
             get_available_system_fonts,
             list_native_audio_input_devices,
             start_native_audio_stream,
             stop_native_audio_stream,
+            // Mac native Whisper (Metal)
+            download_native_whisper_model,
+            native_whisper_model_exists,
+            asr_init,
+            asr_push_audio,
+            asr_poll,
+            asr_reset,
             // Native audio recording commands
             start_native_audio_recording,
             stop_native_audio_recording,
@@ -3121,9 +3963,11 @@ pub fn run() {
             start_live_slides_server,
             stop_live_slides_server,
             create_live_slide_session,
+            upsert_live_slide_session,
             delete_live_slide_session,
             get_live_slide_sessions,
             get_live_slides_server_info,
+            set_api_enabled,
             get_local_ip,
             update_schedule,
             update_timer_state,

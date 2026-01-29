@@ -1,26 +1,33 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main and audience windows",
-  "windows": ["main", "audience-display"],
+  "description": "Capability for the main window",
+  "windows": ["main", "audience-display", "dialog-*"],
   "permissions": [
     "core:default",
-    "core:window:allow-create",
     "core:window:allow-close",
-    "core:webview:allow-internal-toggle-devtools",
+    "core:window:allow-set-focus",
+    "core:window:allow-maximize",
+    "core:window:allow-set-fullscreen",
     "opener:default",
     "dialog:default",
-    "dialog:allow-save",
     "fs:default",
+    "fs:allow-write-text-file",
+    "fs:allow-home-write-recursive",
     "fs:allow-desktop-write-recursive",
     "fs:allow-document-write-recursive",
     "fs:allow-download-write-recursive",
-    "fs:allow-home-write-recursive",
-    "fs:allow-desktop-read-recursive",
-    "fs:allow-document-read-recursive",
-    "fs:allow-download-read-recursive",
-    "fs:allow-home-read-recursive",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" }
+      ]
+    },
+    "process:default",
     "updater:default",
-    "process:allow-restart"
+    "window-state:default"
   ]
 }

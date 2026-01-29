@@ -120,7 +120,7 @@ const ProPresenterAITemplatesSettings: React.FC<ProPresenterAITemplatesSettingsP
       description: "",
       useCase: "custom",
       maxLines: 3,
-      outputPath: "",
+      outputPath: "~/Documents/SmartVerses/Templates",
       outputFileNamePrefix: "",
       presentationUuid: "",
       slideIndex: 0,
@@ -551,7 +551,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
             type="text"
             value={form.outputPath || ""}
             onChange={(e) => setForm((prev) => ({ ...prev, outputPath: e.target.value }))}
-            placeholder="/path/to/output/folder/"
+            placeholder="~/Documents/SmartVerses/Templates"
             className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           />
           <button

@@ -267,20 +267,19 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
 
   // removed unused variable 'availableLayouts'
 
-  const contextMenuItems =
-    currentContextMenuSlide && !isLiveLinked
-      ? [
-          { label: "Edit", onClick: () => handleEdit(currentContextMenuSlide) },
-          {
-            label: "Delete",
-            onClick: () => {
-              if (currentContextMenuSlide) {
-                onDeleteSlide(currentContextMenuSlide.id);
-              }
-            },
+  const contextMenuItems = currentContextMenuSlide
+    ? [
+        { label: "Edit", onClick: () => handleEdit(currentContextMenuSlide) },
+        {
+          label: "Delete",
+          onClick: () => {
+            if (currentContextMenuSlide) {
+              onDeleteSlide(currentContextMenuSlide.id);
+            }
           },
-        ]
-      : [];
+        },
+      ]
+    : [];
 
   // Simple text area styling, can be moved to CSS if not already there
   // Individual input styling can also be added to App.css
@@ -500,8 +499,8 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
             }}
           >
             This item is <strong>Live Slides linked</strong>. It updates in
-            real-time. Editing a slide will sync back to the session;
-            add/delete/layout changes require detaching.
+            real-time. Edits, adds, deletes, and layout changes sync back to the
+            session.
             {liveSlidesStatus?.isCreating && (
               <>
                 {" "}
@@ -556,7 +555,7 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
               )}
             {onDetachLiveSlides && (
               <button onClick={onDetachLiveSlides} className="secondary btn-sm">
-                Detach (make editable)
+                Detach (stop syncing)
               </button>
             )}
           </div>
@@ -595,10 +594,6 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
                   onChangeSlideLayout(slide.id, e.target.value as LayoutType)
                 }
                 onClick={(e) => e.stopPropagation()} // Prevent card click-through
-                disabled={isLiveLinked}
-                title={
-                  isLiveLinked ? "Detach Live Slides to edit layout" : undefined
-                }
               >
                 {allLayoutOptions.map((layout) => (
                   <option key={layout} value={layout}>
@@ -760,7 +755,6 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
                     onClick={() => onDeleteSlide(slide.id)}
                     className="icon-button"
                     title="Delete slide"
-                    disabled={isLiveLinked}
                   >
                     <FaTrash />
                   </button>
@@ -817,7 +811,6 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
                 onClick={() => onAddSlide(layout)}
                 className="secondary btn-sm"
                 title={`Add ${getLayoutText(layout)} Slide`}
-                disabled={isLiveLinked}
               >
                 <FaPlus />
                 {getLayoutText(layout)}

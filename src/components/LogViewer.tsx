@@ -105,7 +105,7 @@ const LogViewer: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `proassist-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+    a.download = `smartverses-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

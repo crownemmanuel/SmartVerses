@@ -8,7 +8,14 @@
 // TRANSCRIPTION TYPES
 // =============================================================================
 
-export type TranscriptionEngine = 'assemblyai' | 'elevenlabs' | 'whisper' | 'groq' | 'offline-whisper' | 'offline-moonshine';
+export type TranscriptionEngine =
+  | 'assemblyai'
+  | 'elevenlabs'
+  | 'whisper'
+  | 'groq'
+  | 'offline-whisper'
+  | 'offline-whisper-native'
+  | 'offline-moonshine';
 
 export type AudioCaptureMode = 'webrtc' | 'native';
 
@@ -26,12 +33,20 @@ export interface TranscriptionSegment {
   isFinal: boolean;
 }
 
+export interface ModelLoadingProgress {
+  stage: string; // e.g., "Loading tokenizer...", "Loading model...", "Warming up model..."
+  progress: number; // 0-100
+  file?: string; // Current file being loaded
+}
+
 export interface TranscriptionCallbacks {
   onInterimTranscript?: (text: string) => void;
   onFinalTranscript?: (text: string, segment: TranscriptionSegment) => void;
   onError?: (error: Error) => void;
   onConnectionClose?: (code: number, reason: string) => void;
   onStatusChange?: (status: TranscriptionStatus) => void;
+  onAudioLevel?: (level: number) => void;
+  onModelLoadingProgress?: (progress: ModelLoadingProgress) => void;
 }
 
 export type TranscriptionStatus = 'idle' | 'connecting' | 'recording' | 'error' | 'waiting_for_browser';
@@ -107,6 +122,8 @@ export interface DetectedBibleReference {
   verse?: number;
   // Navigation tracking - true if this verse was loaded via prev/next navigation
   isNavigationResult?: boolean;
+  // Highlight words from AI search
+  highlight?: string[];     // Words to highlight in the verse text
 }
 
 // =============================================================================
@@ -245,9 +262,11 @@ export interface SmartVersesSettings {
   remoteTranscriptionEnabled?: boolean;
   remoteTranscriptionHost?: string;
   remoteTranscriptionPort?: number;
+  transcriptionTimeLimitMinutes?: number; // Auto-stop prompt threshold (default: 120)
   
   // Offline transcription settings
   offlineWhisperModel?: string; // Model ID for offline Whisper
+  offlineWhisperNativeModel?: string; // File name for native Whisper (macOS)
   offlineMoonshineModel?: string; // Model ID for offline Moonshine
   offlineLanguage?: string; // Language code for offline transcription (e.g., 'en')
   
@@ -263,6 +282,7 @@ export interface SmartVersesSettings {
   enableKeyPointExtraction: boolean;
   keyPointExtractionInstructions?: string;
   paraphraseConfidenceThreshold: number; // Default 0.6
+  aiMinWordCount: number; // Default 6
   
   // Display settings
   autoAddDetectedToHistory: boolean; // Add detected refs from transcription to chat history
@@ -270,6 +290,7 @@ export interface SmartVersesSettings {
   highlightParaphrasedReferences: boolean;
   directReferenceColor: string;      // Default pink/magenta
   paraphraseReferenceColor: string;  // Default blue
+  transcriptFilterPhrases?: string[]; // Hide these transcript-only phrases
   
   // ProPresenter integration
   autoTriggerOnDetection: boolean;
@@ -294,12 +315,14 @@ export interface SmartVersesSettings {
 
 export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
   transcriptionEngine: 'assemblyai',
-  audioCaptureMode: 'webrtc',
+  audioCaptureMode: 'native',
   streamTranscriptionsToWebSocket: true,
   remoteTranscriptionEnabled: false,
   remoteTranscriptionHost: "",
   remoteTranscriptionPort: 9876,
+  transcriptionTimeLimitMinutes: 120,
   offlineWhisperModel: 'onnx-community/whisper-base',
+  offlineWhisperNativeModel: 'ggml-small.en-q5_1.bin',
   offlineMoonshineModel: 'onnx-community/moonshine-base-ONNX',
   offlineLanguage: 'en',
   enableAISearch: false, // Off by default - uses text search instead
@@ -312,11 +335,13 @@ export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
   keyPointExtractionInstructions:
     "Extract 1–2 concise, quotable key points suitable for slides/lower-thirds. Prefer short sentences, avoid filler, keep the original voice, and skip vague statements.",
   paraphraseConfidenceThreshold: 0.6,
+  aiMinWordCount: 6,
   autoAddDetectedToHistory: false,
   highlightDirectReferences: true,
   highlightParaphrasedReferences: true,
   directReferenceColor: '#ec4899', // Pink
   paraphraseReferenceColor: '#3b82f6', // Blue
+  transcriptFilterPhrases: ["[BLANK_AUDIO]", "[INAUDIBLE]"],
   autoTriggerOnDetection: false,
   clearTextAfterLive: true,
   clearTextDelay: 0,

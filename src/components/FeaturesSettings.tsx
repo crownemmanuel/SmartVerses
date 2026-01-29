@@ -7,12 +7,12 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  FaHome,
   FaClock,
   FaStickyNote,
   FaBible,
   FaCircle,
   FaToggleOn,
+  FaUser,
 } from "react-icons/fa";
 import {
   loadEnabledFeatures,
@@ -35,7 +35,7 @@ const FEATURES: FeatureConfig[] = [
     key: "slides",
     label: "Slides",
     description: "Main slide management and presentation control",
-    icon: <FaHome />,
+    icon: <FaStickyNote />,
     color: "#3b82f6",
   },
   {
@@ -49,7 +49,7 @@ const FEATURES: FeatureConfig[] = [
     key: "liveTestimonies",
     label: "Live Testimonies",
     description: "Display and manage live testimonies from congregation",
-    icon: <FaStickyNote />,
+    icon: <FaUser />,
     color: "#ec4899",
   },
   {
@@ -118,7 +118,7 @@ const FeaturesSettings: React.FC = () => {
           color: "var(--app-text-color-secondary)",
         }}
       >
-        Enable or disable features to customize ProAssist for your needs.
+        Enable or disable features to customize SmartVerses for your needs.
         Disabled features will be hidden from the navigation.
       </p>
 

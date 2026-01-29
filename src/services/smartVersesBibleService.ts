@@ -137,6 +137,12 @@ const BOOKS_REGEX_ABBREV =
 
 const BOOKS_REGEX_FLEX = `(?:${BOOKS_REGEX_STRICT}|${BOOKS_REGEX_ABBREV})`;
 
+const NUMBER_WORDS_PATTERN =
+  "(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|" +
+  "thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|" +
+  "thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|" +
+  "first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)";
+
 const BIBLE_BOOK_PATTERN_STRICT = new RegExp(`\\b${BOOKS_REGEX_STRICT}\\b`, "i");
 const BIBLE_BOOK_ABBREV_CONTEXT_PATTERN = new RegExp(
   `\\b${BOOKS_REGEX_ABBREV}\\b(?=\\s*(?:\\d{1,3}|chapter|ch\\.?|\\d{1,3}:\\d{1,3}))`,
@@ -224,6 +230,7 @@ const TRANSCRIPTION_ERRORS: Record<string, string> = {
   'fast chronicles': 'Chronicles',
   'fast kings': 'Kings',
   'fast samuel': 'Samuel',
+  'force corinthians': '1 Corinthians',
   'the tronomy': 'Deuteronomy',
   // Single word corrections
   'axe': 'Acts',
@@ -252,12 +259,9 @@ const TRANSCRIPTION_ERRORS: Record<string, string> = {
 function normalizeTranscriptionErrors(text: string): string {
   let normalized = text;
   
-  // Pattern to match number words (common ones from speech-to-text)
-  const numberWords = '(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)';
-  
   // Pattern that must follow the error word/phrase
   // Matches: space + (number | number word | chapter/ch)
-  const requiredFollowPattern = `\\s+(?:\\d+|${numberWords}|chapter|ch\\.?)\\b`;
+  const requiredFollowPattern = `\\s+(?:\\d+|${NUMBER_WORDS_PATTERN}|chapter|ch\\.?)\\b`;
   
   // Process entries in reverse length order (longer patterns first)
   // This ensures "fast chronicles" is matched before just "fast"
@@ -285,6 +289,10 @@ function normalizeTranscriptionErrors(text: string): string {
   }
   
   return normalized;
+}
+
+function normalizeLikelyBookHomophones(text: string): string {
+  return text.replace(/\bdue\s+(?=chapter|ch\.?)/gi, "Joel ");
 }
 
 /**
@@ -368,6 +376,19 @@ function normalizeRomanNumeralsForBooks(text: string): string {
     if (normalized === "ii") return "2 ";
     if (normalized === "iii") return "3 ";
     return match;
+  });
+}
+
+function normalizeSpokenChapterDigits(text: string): string {
+  const bookPrefix = "(?:the\\s+)?(?:book\\s+of\\s+)?";
+  const regex = new RegExp(
+    `\\b(?:in\\s+)?${bookPrefix}(${BOOKS_REGEX_FLEX})\\s+(?:chapter\\s+)?(\\d)\\s+(\\d)\\s+(\\d)(?=\\s*(?:,\\s*)?(?:verse|verses|v|vs)\\b)`,
+    "gi"
+  );
+
+  return text.replace(regex, (_match, book, d1, d2, d3) => {
+    const combined = `${d1}${d2}${d3}`;
+    return `${book} ${combined}`;
   });
 }
 
@@ -503,7 +524,10 @@ function preprocessBibleReference(reference: string): string {
   // Only applies when followed by a number or "chapter"
   normalized = normalizeTranscriptionErrors(normalized);
 
-  // Step 1e: Remove stray slashes/backslashes before book names (e.g., "\Psalms 91:2")
+  // Step 1e: Normalize likely homophone book mentions with explicit chapter cues
+  normalized = normalizeLikelyBookHomophones(normalized);
+
+  // Step 1f: Remove stray slashes/backslashes before book names (e.g., "\Psalms 91:2")
   normalized = normalized.replace(
     new RegExp(`[\\\\/]+(?=${BOOKS_REGEX_FLEX})`, "gi"),
     ""
@@ -517,11 +541,29 @@ function preprocessBibleReference(reference: string): string {
 }
 
 /**
+ * Normalize explicit chapter lists into verse-1 references.
+ *
+ * Example:
+ * - "Exodus chapters 30 and 31" -> "Exodus 30:1; Exodus 31:1"
+ */
+function normalizeExplicitChapterListToVerseOne(text: string): string {
+  const regex = new RegExp(
+    `\\b(?<book>${BOOKS_REGEX_FLEX})\\s+chapters?\\s+(?<c1>\\d{1,3})\\s*(?:,|\\band\\b|\\bto\\b|-)\\s*(?<c2>\\d{1,3})\\b`,
+    "gi"
+  );
+
+  return text.replace(regex, (_m, book, c1, c2) => {
+    const b = String(book).trim();
+    return `${b} ${c1}:1; ${b} ${c2}:1`;
+  });
+}
+
+/**
  * Normalize chapter-only ranges/lists into explicit verse-1 references.
  *
  * Examples:
  * - "Matthew 21 to 22" -> "Matthew 21:1; Matthew 22:1"
- * - "Exodus 30, 31" -> "Exodus 30:1; Exodus 31:1"
+ * - "Exodus 30 and 31" -> "Exodus 30:1; Exodus 31:1"
  *
  * Guardrails:
  * - Only applies when there is NO ":" present and NO explicit verse indicator
@@ -534,7 +576,7 @@ function normalizeChapterRangeOrListToVerseOne(text: string): string {
   if (/(?:\bverse\b|\bverses\b|\bvs\.?\b|\bv\.?\b)/i.test(text)) return text;
 
   const regex = new RegExp(
-    `\\b(?<book>${BOOKS_REGEX_FLEX})\\s+(?<c1>\\d{1,3})\\s*(?:,|\\band\\b|\\bto\\b|-)\\s*(?<c2>\\d{1,3})\\b(?!\\s*(?:to|-)\\s*\\d)`,
+    `\\b(?<book>${BOOKS_REGEX_FLEX})\\s+(?<c1>\\d{1,3})\\s*(?:\\band\\b|\\bto\\b|-)\\s*(?<c2>\\d{1,3})\\b(?!\\s*(?:to|-)\\s*\\d)`,
     "gi"
   );
 
@@ -552,8 +594,12 @@ function normalizeChapterRangeOrListToVerseOne(text: string): string {
  * so we rewrite this to a chapter:verse form before parsing.
  */
 function normalizeCommaSeparatedChapterVerse(text: string): string {
+  const bookPrefix = "(?:the\\s+)?(?:book\\s+of\\s+)?";
   return text.replace(
-    /\b((?:[1-3]\s*)?[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)*)\s+(\d{1,3})\s*,\s*(\d{1,3})(?=[^\d]|$)/gi,
+    new RegExp(
+      `\\b(?:in\\s+)?${bookPrefix}(${BOOKS_REGEX_FLEX})\\s+(\\d{1,3})\\s*,\\s*(\\d{1,3})(?=[^\\d]|$)`,
+      "gi"
+    ),
     (_match, book, chapter, verse) => `${book} ${chapter}:${verse}`
   );
 }
@@ -652,8 +698,12 @@ function normalizeTrailingVerseListAfterFullReference(text: string): string {
  * Only used in aggressive speech normalization to avoid false positives in typed search.
  */
 function normalizeSpaceSeparatedChapterVerse(text: string): string {
+  const bookPrefix = "(?:the\\s+)?(?:book\\s+of\\s+)?";
   return text.replace(
-    /\b((?:[1-3]\s*)?[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)*)\s+(\d{1,3})\s+(\d{1,3})(?=[^\d]|$)/gi,
+    new RegExp(
+      `\\b(?:in\\s+)?${bookPrefix}(${BOOKS_REGEX_FLEX})\\s+(\\d{1,3})\\s+(\\d{1,3})(?=[^\\d]|$)`,
+      "gi"
+    ),
     (_match, book, chapter, verse) => `${book} ${chapter}:${verse}`
   );
 }
@@ -663,6 +713,10 @@ function normalizeSpaceSeparatedChapterVerse(text: string): string {
  */
 function normalizeCommaBetweenChapterAndVerse(text: string): string {
   return text.replace(/\b(\d{1,3})\s*,\s*(?=(?:verse|verses|v|vs)\b)/gi, "$1 ");
+}
+
+function normalizeFromVerseKeyword(text: string): string {
+  return text.replace(/\bfrom\s+(verses?|vv?\.?|v|vs)\b/gi, "$1");
 }
 
 /**
@@ -891,6 +945,22 @@ function isNavigationCommand(
   return null;
 }
 
+function isLikelyNumberedList(text: string): boolean {
+  const normalized = String(text || "").toLowerCase().trim();
+  if (!normalized) return false;
+  if (!/\bnumber\b/.test(normalized)) return false;
+  if (/\bnumbers\b/.test(normalized)) return false;
+  if (containsBibleBook(normalized)) return false;
+  if (/\b(?:chapter|ch\.?|verse|verses|v|vs)\b/.test(normalized)) return false;
+  if (/\d{1,3}:\d{1,3}/.test(normalized)) return false;
+
+  const pattern = new RegExp(
+    `\\bnumber\\s+(?:\\d{1,3}|${NUMBER_WORDS_PATTERN})\\b`,
+    "i"
+  );
+  return pattern.test(normalized);
+}
+
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
@@ -1036,7 +1106,11 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
     textToProcess = normalizeOrdinalIndicators(textToProcess);
     textToProcess = normalizeRomanNumeralsForBooks(textToProcess);
     textToProcess = normalizeRomanNumeralsForChapterVerse(textToProcess);
+    textToProcess = normalizeSpokenChapterDigits(textToProcess);
     textToProcess = normalizeCommaBetweenChapterAndVerse(textToProcess);
+    textToProcess = normalizeFromVerseKeyword(textToProcess);
+    textToProcess = normalizeCommaSeparatedChapterVerse(textToProcess);
+    textToProcess = normalizeExplicitChapterListToVerseOne(textToProcess);
     textToProcess = normalizeChapterRangeOrListToVerseOne(textToProcess);
 
     // If we have an explicit Bible book name, apply the safe "chapter/verse" phrase rewrite.
@@ -1051,7 +1125,6 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
       textToProcess = normalizeTrailingVerseListAfterFullReference(textToProcess);
     }
 
-    textToProcess = normalizeCommaSeparatedChapterVerse(textToProcess);
     textToProcess = normalizeMissingBookChapterSpace(textToProcess);
     textToProcess = normalizeConcatenatedReferences(textToProcess);
 
@@ -1405,13 +1478,19 @@ export async function detectAndLookupReferences(
     }
   }
 
+  if (isLikelyNumberedList(text)) {
+    return results;
+  }
+
   // Normalize common speech/typo patterns before parsing
   const preprocessed = preprocessBibleReference(text);
   let numericText = wordsToNumbers(preprocessed);
   numericText = normalizeOrdinalIndicators(numericText);
   numericText = normalizeRomanNumeralsForBooks(numericText);
   numericText = normalizeRomanNumeralsForChapterVerse(numericText);
+  numericText = normalizeSpokenChapterDigits(numericText);
   numericText = normalizeCommaBetweenChapterAndVerse(numericText);
+  numericText = normalizeFromVerseKeyword(numericText);
 
   // Guardrail: only apply the more aggressive/heuristic transforms if we actually
   // see a known Bible book in the text. This avoids accidental "chapter/verse"
@@ -1430,10 +1509,11 @@ export async function detectAndLookupReferences(
       )
     : numericText;
 
-  let normalizedText = hasBook
-    ? normalizeChapterRangeOrListToVerseOne(phraseNormalized)
-    : phraseNormalized;
-  normalizedText = normalizeCommaSeparatedChapterVerse(normalizedText);
+  let normalizedText = normalizeCommaSeparatedChapterVerse(phraseNormalized);
+  normalizedText = normalizeExplicitChapterListToVerseOne(normalizedText);
+  if (hasBook) {
+    normalizedText = normalizeChapterRangeOrListToVerseOne(normalizedText);
+  }
   if (options?.aggressiveSpeechNormalization && hasBook) {
     normalizedText = normalizeSpaceSeparatedChapterVerse(normalizedText);
   }

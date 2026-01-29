@@ -69,6 +69,8 @@ function normalizeAutomations(item: ScheduleItem): ScheduleItemAutomation[] {
     const normalized =
       (a as any)?.type === "slide" || 
       (a as any)?.type === "stageLayout" ||
+      (a as any)?.type === "midi" ||
+      (a as any)?.type === "http" ||
       RECORDING_AUTOMATION_TYPES.includes((a as any)?.type)
         ? (a as ScheduleItemAutomation)
         : (a as any)?.presentationUuid &&
@@ -474,8 +476,13 @@ const StageAssistPage: React.FC = () => {
       try {
         // Run stage layout first (so the stage is set before slide triggers)
         const ordered = [...sessionAutomations].sort((a, b) => {
-          const order = (x: ScheduleItemAutomation) =>
-            x.type === "stageLayout" ? 0 : 1;
+          const order = (x: ScheduleItemAutomation) => {
+            if (x.type === "stageLayout") return 0;
+            if (x.type === "slide") return 1;
+            if (x.type === "midi") return 2;
+            if (x.type === "http") return 3;
+            return 4; // recording automations last
+          };
           return order(a) - order(b);
         });
 
@@ -532,6 +539,25 @@ const StageAssistPage: React.FC = () => {
               );
             } catch (err) {
               console.error("Failed to send MIDI note:", err);
+            }
+          } else if (automation.type === "http") {
+            try {
+              const { triggerHttpAutomation } = await import(
+                "../services/httpAutomationService"
+              );
+              const result = await triggerHttpAutomation(automation);
+              if (result.ok) {
+                console.log(
+                  `Session automation: HTTP ${automation.method} ${automation.url} (${result.status ?? "ok"})`
+                );
+              } else {
+                console.warn(
+                  `Session automation: HTTP ${automation.method} ${automation.url} failed`,
+                  result.error || result.status
+                );
+              }
+            } catch (err) {
+              console.error("Failed to execute HTTP automation:", err);
             }
           } else {
             // Recording automations - dispatch events
@@ -1293,7 +1319,7 @@ const StageAssistPage: React.FC = () => {
         {/* Next Session */}
         <div
           style={{
-            backgroundColor: "rgba(255, 162, 0, 0.5)",
+            backgroundColor: "var(--timer-next-bg)",
             borderRadius: "12px",
             padding: "var(--spacing-6)",
             textAlign: "center",
@@ -2222,6 +2248,8 @@ const StageAssistPage: React.FC = () => {
                               .map((a) => {
                                 if (a.type === "slide") return "Slide";
                                 if (a.type === "stageLayout") return "Stage Layout";
+                                if (a.type === "midi") return "MIDI";
+                                if (a.type === "http") return "HTTP Call";
                                 if (a.type.startsWith("start")) return "▶ Recording";
                                 if (a.type.startsWith("stop")) return "⏹ Recording";
                                 return a.type;

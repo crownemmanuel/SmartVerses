@@ -88,7 +88,7 @@ export const DEFAULT_RECORDER_SETTINGS: RecorderSettings = {
   videoAudioDelayMs: 0,
   audioFormat: 'wav',
   audioBitrate: '320k',
-  outputBasePath: '~/Documents/ProAssist/Recordings',
+  outputBasePath: '~/Documents/SmartVerses/Recordings',
   namingPattern: 'session_timestamp',
   customPrefix: 'recording',
   includeSessionName: true,
