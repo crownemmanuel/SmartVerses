@@ -3,10 +3,11 @@
  * Configure standalone mode settings (audience screen, monitor, auto-trigger)
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { FaDesktop } from "react-icons/fa";
 import { Monitor } from "@tauri-apps/api/window";
 import { getAvailableMonitors } from "../../services/displayService";
+import MonitorSelectDropdown from "../MonitorSelectDropdown";
 import "./onboarding.css";
 
 interface StandaloneSetupScreenProps {
@@ -34,18 +35,19 @@ const StandaloneSetupScreen: React.FC<StandaloneSetupScreenProps> = ({
 }) => {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
 
+  const loadMonitors = useCallback(async () => {
+    try {
+      const availableMonitors = await getAvailableMonitors();
+      setMonitors(availableMonitors);
+    } catch (error) {
+      console.error("Failed to load monitors:", error);
+    }
+  }, []);
+
   // Load monitors on mount
   useEffect(() => {
-    const loadMonitors = async () => {
-      try {
-        const availableMonitors = await getAvailableMonitors();
-        setMonitors(availableMonitors);
-      } catch (error) {
-        console.error("Failed to load monitors:", error);
-      }
-    };
-    loadMonitors();
-  }, []);
+    void loadMonitors();
+  }, [loadMonitors]);
 
   const handleNext = () => {
     onNext();
@@ -62,7 +64,7 @@ const StandaloneSetupScreen: React.FC<StandaloneSetupScreenProps> = ({
           Standalone Configuration
         </h1>
         <p className="onboarding-subtitle">
-          Configure how ProAssist displays content to your audience.
+          Configure how SmartVerses displays content to your audience.
         </p>
 
         {/* Enable Audience Screen Toggle */}
@@ -111,29 +113,24 @@ const StandaloneSetupScreen: React.FC<StandaloneSetupScreenProps> = ({
               >
                 Select monitor for audience display:
               </label>
-              <select
-                value={selectedMonitorIndex ?? ""}
-                onChange={(e) =>
-                  onMonitorChange(e.target.value === "" ? null : parseInt(e.target.value))
-                }
-                style={{
-                  width: "100%",
-                  padding: "0.75rem",
-                  background: "rgba(255, 255, 255, 0.05)",
-                  border: "1px solid var(--onboarding-border-subtle)",
-                  borderRadius: "8px",
-                  color: "var(--onboarding-text-primary)",
-                  fontSize: "1rem",
-                }}
-              >
-                <option value="">Select a monitor</option>
-                {monitors.map((monitor, index) => (
-                  <option key={index} value={index}>
-                    Monitor {index + 1} ({monitor.size?.width} × {monitor.size?.height})
-                    {monitor.position?.x === 0 && monitor.position?.y === 0 ? " - Primary" : ""}
-                  </option>
-                ))}
-              </select>
+              <MonitorSelectDropdown
+                monitors={monitors}
+                selectedIndex={selectedMonitorIndex}
+                onSelect={(index) => onMonitorChange(index)}
+                onRefresh={loadMonitors}
+                disabled={monitors.length === 0}
+              />
+              {monitors.length === 0 && (
+                <p
+                  style={{
+                    marginTop: "0.5rem",
+                    fontSize: "0.85rem",
+                    color: "var(--onboarding-text-muted)",
+                  }}
+                >
+                  No additional monitors detected.
+                </p>
+              )}
             </div>
           )}
         </div>
