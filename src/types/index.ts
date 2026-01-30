@@ -35,6 +35,12 @@ export const GROQ_MODELS = [
 ] as const;
 export type GroqModelType = (typeof GROQ_MODELS)[number];
 
+/** Per-line metadata for Live Slides restore (bullet/numbered list formatting on the notepad). */
+export interface LiveSlidesItemMeta {
+  isSubItem: boolean;
+  listNumber?: number; // 1-based, for numbered lists
+}
+
 export interface Slide {
   id: string;
   text: string; // Can be multi-line, actual rendering will depend on layout
@@ -49,6 +55,13 @@ export interface Slide {
     activationClicks?: number; // Per-slide override for activation clicks
     takeOffClicks?: number; // Per-slide override for take off clicks
   }; // Per-slide override for ProPresenter presentation activation
+  /**
+   * Live Slides: list style so we can restore bullet/numbered format on the notepad.
+   * Set when converting from notepad raw text (parsed from • or 1. prefixes).
+   */
+  liveSlidesListStyle?: "bullet" | "numbered" | null;
+  /** One entry per line in slide.text; used by buildRawTextFromSlides to output \t• or 1. etc. */
+  liveSlidesItemMeta?: LiveSlidesItemMeta[];
 }
 
 export interface PlaylistItem {

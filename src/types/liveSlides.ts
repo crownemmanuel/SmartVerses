@@ -34,6 +34,7 @@ export type WsMessageType =
   | "session_deleted"
   | "transcription_stream"
   | "transcription_status"
+  | "live_slide_index"
   | "error";
 
 export interface WsTextUpdate {
@@ -68,6 +69,14 @@ export interface WsSessionDeleted {
 export interface WsError {
   type: "error";
   message: string;
+}
+
+/** Broadcast by app when a slide goes live or is taken off. Notepad uses this to lock/unlock that slide's lines. */
+export interface WsLiveSlideIndex {
+  type: "live_slide_index";
+  session_id: string;
+  /** 0-based slide index (matches boundaries.slideIndex). null = no slide is live. */
+  slide_index: number | null;
 }
 
 export type TranscriptionStreamKind = "interim" | "final";
@@ -114,6 +123,7 @@ export type WsMessage =
   | WsSessionDeleted
   | WsTranscriptionStream
   | WsTranscriptionStatus
+  | WsLiveSlideIndex
   | WsError;
 
 // Settings types

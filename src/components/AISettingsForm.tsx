@@ -891,7 +891,7 @@ const AISettingsForm: React.FC<AISettingsFormProps> = () => {
               marginBottom: "12px",
             }}
           >
-            The floating AI assistant that can create slides, control timers, and interact with ProPresenter.
+            The floating AI assistant that can create slides, control timers, and interact with ProPresenter. (OpenAI Models recommended)
           </p>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <div style={{ flex: "1", minWidth: "140px" }}>

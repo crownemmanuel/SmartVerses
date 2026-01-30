@@ -298,3 +298,116 @@ export function formatSlidesAsText(slides: LiveSlide[]): string {
     .map((slide) => slide.items.map((item) => item.text).join("\n"))
     .join("\n\n");
 }
+
+// Regexes to detect bullet/numbered list lines (match notepad format)
+const BULLET_LINE_REGEX = /^\s*•\s*/;
+const NUMBERED_LINE_REGEX = /^\s*(\d+)\.\s*/;
+
+export interface ParsedSlideListMeta {
+  listStyle: "bullet" | "numbered" | null;
+  items: { isSubItem: boolean; listNumber?: number }[];
+}
+
+/**
+ * Parse raw notepad text to get list-style metadata per slide (same structure as parseNotepadText).
+ * Used when converting LiveSlide[] to Slide[] so we can restore bullet/numbered format when building raw text back.
+ */
+export function parseRawTextListStyle(rawText: string): ParsedSlideListMeta[] {
+  const result: ParsedSlideListMeta[] = [];
+  const lines = rawText.split("\n");
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.trim() === "") {
+      i++;
+      continue;
+    }
+
+    if (line.startsWith("\t") || line.startsWith("    ")) {
+      const isSubItem = true;
+      const bullet = BULLET_LINE_REGEX.test(line);
+      const numMatch = line.match(NUMBERED_LINE_REGEX);
+      const listStyle: "bullet" | "numbered" | null = bullet ? "bullet" : numMatch ? "numbered" : null;
+      const listNumber = numMatch ? parseInt(numMatch[1], 10) : undefined;
+      result.push({
+        listStyle,
+        items: [{ isSubItem, listNumber }],
+      });
+      i++;
+      continue;
+    }
+
+    // Non-indented line: check for indented children (same structure as parseNotepadText)
+    const children: { isSubItem: boolean; listNumber?: number }[] = [];
+    let j = i + 1;
+    while (j < lines.length) {
+      const nextLine = lines[j];
+      if (nextLine.trim() === "") break;
+      if (nextLine.startsWith("\t") || nextLine.startsWith("    ")) {
+        const numMatch = nextLine.match(NUMBERED_LINE_REGEX);
+        children.push({
+          isSubItem: true,
+          listNumber: numMatch ? parseInt(numMatch[1], 10) : undefined,
+        });
+        j++;
+      } else break;
+    }
+
+    const parentBullet = BULLET_LINE_REGEX.test(line);
+    const parentNumMatch = line.match(NUMBERED_LINE_REGEX);
+    const parentListStyle: "bullet" | "numbered" | null = parentBullet ? "bullet" : parentNumMatch ? "numbered" : null;
+    const parentListNumber = parentNumMatch ? parseInt(parentNumMatch[1], 10) : undefined;
+
+    if (children.length > 0) {
+      result.push({
+        listStyle: parentListStyle || (children.some((c) => c.listNumber != null) ? "numbered" : null) || (parentListStyle ? parentListStyle : "bullet"),
+        items: [{ isSubItem: false, listNumber: parentListNumber }],
+      });
+      for (const _ of children) {
+        result.push({
+          listStyle: parentListStyle || (children.some((c) => c.listNumber != null) ? "numbered" : null) || "bullet",
+          items: [
+            { isSubItem: false, listNumber: parentListNumber },
+            { isSubItem: true, listNumber: _.listNumber },
+          ],
+        });
+      }
+      i = j;
+    } else {
+      // Consecutive non-indented lines = one slide with multiple items
+      const slideItems: { isSubItem: boolean; listNumber?: number }[] = [];
+      slideItems.push({ isSubItem: false, listNumber: parentListNumber });
+      let anyBullet = parentBullet;
+      let anyNumbered = !!parentNumMatch;
+      j = i + 1;
+      while (j < lines.length) {
+        const nextLine = lines[j];
+        if (nextLine.trim() === "") break;
+        if (nextLine.startsWith("\t") || nextLine.startsWith("    ")) break;
+        const bullet = BULLET_LINE_REGEX.test(nextLine);
+        const numMatch = nextLine.match(NUMBERED_LINE_REGEX);
+        if (bullet) anyBullet = true;
+        if (numMatch) anyNumbered = true;
+        slideItems.push({
+          isSubItem: false,
+          listNumber: numMatch ? parseInt(numMatch[1], 10) : undefined,
+        });
+        j++;
+      }
+      const listStyle: "bullet" | "numbered" | null = anyBullet
+        ? "bullet"
+        : anyNumbered
+          ? "numbered"
+          : null;
+      result.push({
+        listStyle,
+        items: slideItems,
+      });
+      i = j;
+    }
+  }
+
+  return result;
+}

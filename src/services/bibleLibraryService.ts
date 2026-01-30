@@ -5,7 +5,6 @@ import type {
   BibleTranslationMetadata,
   BibleTranslationSummary,
   BibleVerseEntry,
-  BibleVerseValue,
 } from "../types/bible";
 
 const BUILTIN_KJV_METADATA: BibleTranslationMetadata = {
@@ -179,8 +178,8 @@ function validateUserTranslationFile(raw: unknown): BibleTranslationFile | null 
           );
           return null;
         }
-        const v = (verseValue as BibleVerseEntry).v;
-        const t = (verseValue as BibleVerseEntry).t;
+        const v = (verseValue as unknown as BibleVerseEntry).v;
+        const t = (verseValue as unknown as BibleVerseEntry).t;
         if (typeof v !== "number" || typeof t !== "string") {
           console.warn(
             `[BibleLibrary] Verse ${bookName} ${chapterKey}:${verseKey} missing v/t fields.`
@@ -191,7 +190,7 @@ function validateUserTranslationFile(raw: unknown): BibleTranslationFile | null 
     }
   }
 
-  return raw as BibleTranslationFile;
+  return raw as unknown as BibleTranslationFile;
 }
 
 async function loadBuiltinKjv(): Promise<BibleTranslation | null> {

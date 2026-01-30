@@ -6,7 +6,7 @@
  * direct reference parsing fails.
  */
 
-import { Document } from 'flexsearch';
+import { Document, type DocumentData } from "flexsearch";
 import { BUILTIN_KJV_ID } from "./bibleLibraryService";
 import { loadVerses } from "./bibleService";
 import { DetectedBibleReference } from "../types/smartVerses";
@@ -85,7 +85,7 @@ async function initializeIndex(translationId: string): Promise<void> {
           };
 
           verseMap.set(reference, entry);
-          searchIndex.add(entry);
+          searchIndex.add(entry as unknown as DocumentData);
           count++;
         }
       }

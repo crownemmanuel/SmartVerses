@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
   getTestimoniesByDateAndService,
@@ -47,6 +48,7 @@ function describeFirebaseError(err: unknown): string {
 }
 
 const MediaView: React.FC = () => {
+  const location = useLocation();
   const [date, setDate] = useState(() => {
     try {
       const saved = localStorage.getItem("proassist-testimonies-date");
@@ -405,7 +407,7 @@ const MediaView: React.FC = () => {
     }
   }, [firebaseConfig]);
 
-  // Keyboard navigation handler - arrow keys navigate AND set live
+  // Keyboard navigation handler - arrow keys navigate AND set live (only on Live Testimonies page)
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (testimonies.length === 0) return;
 
@@ -429,22 +431,17 @@ const MediaView: React.FC = () => {
           handleSetLive(testimony);
         }
       }
-    } else if (event.key === "Enter" && selectedIndex >= 0) {
-      event.preventDefault();
-      const testimony = testimonies[selectedIndex];
-      if (testimony) {
-        handleSetLive(testimony);
-      }
     }
   }, [testimonies, selectedIndex, handleSetLive]);
 
-  // Add keyboard event listener
+  // Add keyboard event listener only when on Live Testimonies tab
   useEffect(() => {
+    if (location.pathname !== "/live-testimonies") return;
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleKeyDown]);
+  }, [location.pathname, handleKeyDown]);
 
   const handleClearLive = async () => {
     if (!firebaseConfig) return;
@@ -939,7 +936,7 @@ const MediaView: React.FC = () => {
               border: "1px solid var(--app-border-color)",
               fontFamily: "monospace",
             }}>↓</kbd>
-            {" next (sets live automatically)"}
+            {" next (sets live automatically, only on this tab)"}
           </div>
         </div>
       )}

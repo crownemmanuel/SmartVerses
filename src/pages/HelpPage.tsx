@@ -726,11 +726,7 @@ const HelpPage: React.FC = () => {
               </ul>
             </li>
             <li>
-              <strong>Keyboard Navigation:</strong>
-              <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
-                <li><kbd style={{ padding: "2px 6px", backgroundColor: "var(--app-header-bg)", borderRadius: "4px", border: "1px solid var(--app-border-color)", fontFamily: "monospace" }}>↑</kbd> / <kbd style={{ padding: "2px 6px", backgroundColor: "var(--app-header-bg)", borderRadius: "4px", border: "1px solid var(--app-border-color)", fontFamily: "monospace" }}>↓</kbd>: Navigate and automatically set live</li>
-                <li><kbd style={{ padding: "2px 6px", backgroundColor: "var(--app-header-bg)", borderRadius: "4px", border: "1px solid var(--app-border-color)", fontFamily: "monospace" }}>Enter</kbd>: Set selected testimony live</li>
-              </ul>
+              <strong>Keyboard Navigation</strong> (only on Live Testimonies tab): <kbd style={{ padding: "2px 6px", backgroundColor: "var(--app-header-bg)", borderRadius: "4px", border: "1px solid var(--app-border-color)", fontFamily: "monospace" }}>↑</kbd> / <kbd style={{ padding: "2px 6px", backgroundColor: "var(--app-header-bg)", borderRadius: "4px", border: "1px solid var(--app-border-color)", fontFamily: "monospace" }}>↓</kbd>: Navigate and automatically set live
             </li>
             <li>
               Click <strong>Copy Name</strong> to copy formatted name to clipboard
