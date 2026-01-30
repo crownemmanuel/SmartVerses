@@ -418,6 +418,69 @@ export async function closeDisplayWindow(): Promise<void> {
   }
 }
 
+export function initializeAudienceDisplayOnStartup(options?: {
+  maxRetries?: number;
+  retryDelayMs?: number;
+}): () => void {
+  const maxRetries = options?.maxRetries ?? 8;
+  const retryDelayMs = options?.retryDelayMs ?? 500;
+  let retries = 0;
+  let retryTimer: number | null = null;
+  let cancelled = false;
+
+  const attemptOpen = async () => {
+    if (cancelled) return;
+    const settings = loadDisplaySettings();
+    const needsDisplay = settings.enabled || settings.windowAudienceScreen;
+    if (!needsDisplay) return;
+
+    const monitors = await getAvailableMonitors();
+    if (cancelled) return;
+
+    if (monitors.length === 0) {
+      if (retries >= maxRetries) return;
+      retries += 1;
+      retryTimer = window.setTimeout(attemptOpen, retryDelayMs);
+      return;
+    }
+
+    let monitorIndex = settings.monitorIndex;
+    if (monitorIndex === null || monitorIndex >= monitors.length) {
+      monitorIndex = monitors.length > 1 ? 1 : 0;
+      const updatedSettings = { ...settings, monitorIndex };
+      saveDisplaySettings(updatedSettings);
+    }
+
+    const isWindows = navigator.userAgent.includes("Win");
+    const isMac = navigator.userAgent.includes("Mac");
+
+    if (isWindows) {
+      if (!settings.windowAudienceScreen) return;
+      await invoke("open_dialog", {
+        dialogWindow: "audience-test",
+        monitorIndex,
+      });
+      return;
+    }
+
+    if (settings.enabled) {
+      await openDisplayWindow({ ...settings, monitorIndex });
+    } else if (!isMac && settings.windowAudienceScreen) {
+      // Fallback for unknown OS: honor legacy toggle by opening the standard window.
+      await openDisplayWindow({ ...settings, monitorIndex });
+    }
+  };
+
+  void attemptOpen();
+
+  return () => {
+    cancelled = true;
+    if (retryTimer) {
+      window.clearTimeout(retryTimer);
+    }
+  };
+}
+
 // Helper to load a local file as base64 data URL
 async function loadImageAsDataUrl(imagePath: string): Promise<string> {
   if (!imagePath) return "";

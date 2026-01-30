@@ -36,7 +36,11 @@ import AudienceDisplayPage from "./pages/AudienceDisplayPage";
 import MonitorIdentifyPage from "./pages/MonitorIdentifyPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { loadEnabledFeatures } from "./services/recorderService";
-import { clearDisplayScripture, clearDisplaySlides } from "./services/displayService";
+import {
+  clearDisplayScripture,
+  clearDisplaySlides,
+  initializeAudienceDisplayOnStartup,
+} from "./services/displayService";
 import { EnabledFeatures } from "./types/recorder";
 import {
   StageAssistProvider,
@@ -666,6 +670,13 @@ function App() {
     clearDisplayScripture();
     clearDisplaySlides();
   }, [windowLabel]);
+
+  // Auto-open audience display on startup when enabled.
+  useEffect(() => {
+    if (!isMainWindow) return;
+    const cleanup = initializeAudienceDisplayOnStartup();
+    return () => cleanup();
+  }, [isMainWindow]);
 
   // Global shortcut to open DevTools / Inspector (useful on production machines to debug issues).
   useEffect(() => {
