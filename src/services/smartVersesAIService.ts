@@ -406,7 +406,8 @@ export async function searchBibleWithAI(
   query: string,
   appSettings: AppSettings,
   overrideProvider?: 'openai' | 'gemini' | 'groq',
-  overrideModel?: string
+  overrideModel?: string,
+  translationId?: string
 ): Promise<DetectedBibleReference[]> {
   console.log("🔍 AI Bible search:", query);
 
@@ -487,9 +488,12 @@ RULES:
       
       for (const verse of parsed.verses) {
         // Parse and look up the verse
-        const parsedRef = parseVerseReference(verse.reference);
+        const parsedRef = parseVerseReference(
+          verse.reference,
+          translationId
+        );
         if (parsedRef && parsedRef.length > 0) {
-          const verseText = await lookupVerse(parsedRef[0]);
+          const verseText = await lookupVerse(parsedRef[0], translationId);
           
           if (verseText) {
             results.push({
@@ -499,6 +503,7 @@ RULES:
               verseText,
               source: 'direct',
               timestamp: Date.now(),
+              translationId,
               // Include components for navigation
               book: parsedRef[0].book,
               chapter: parsedRef[0].chapter,
@@ -541,14 +546,18 @@ RULES:
  * Look up verse text for paraphrased verses detected by AI
  */
 export async function resolveParaphrasedVerses(
-  paraphrasedVerses: ParaphrasedVerse[]
+  paraphrasedVerses: ParaphrasedVerse[],
+  translationId?: string
 ): Promise<DetectedBibleReference[]> {
   const results: DetectedBibleReference[] = [];
 
   for (const verse of paraphrasedVerses) {
-    const parsedRef = parseVerseReference(verse.reference);
+    const parsedRef = parseVerseReference(
+      verse.reference,
+      translationId
+    );
     if (parsedRef && parsedRef.length > 0) {
-      const verseText = await lookupVerse(parsedRef[0]);
+      const verseText = await lookupVerse(parsedRef[0], translationId);
       
       if (verseText) {
         results.push({
@@ -560,6 +569,7 @@ export async function resolveParaphrasedVerses(
           confidence: verse.confidence,
           matchedPhrase: verse.matchedPhrase,
           timestamp: Date.now(),
+          translationId,
           // Include components for navigation
           book: parsedRef[0].book,
           chapter: parsedRef[0].chapter,

@@ -106,6 +106,7 @@ export interface Template {
   // Auto-scripture output mapping
   scriptureReferenceFileIndex?: number; // Which file index (1-6) to write scripture reference to
   scriptureTextFileIndex?: number; // Which file index (1-6) to write scripture text to
+  appendTranslationToReference?: boolean; // Append translation short name to reference output
   // ProPresenter activation settings
   proPresenterActivation?: {
     presentationUuid: string;

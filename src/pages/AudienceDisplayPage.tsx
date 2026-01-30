@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -183,11 +183,26 @@ const AudienceDisplayPage: React.FC = () => {
     { minFontSize: 14, maxFontSize: 220 }
   );
 
+  const displayReference = useMemo(() => {
+    if (!scripture.reference) return "";
+    if (!settings.displayTranslation || !scripture.translationShortName) {
+      return scripture.reference;
+    }
+    const trimmed = scripture.reference.trim();
+    if (!trimmed) return scripture.reference;
+    const suffix = ` (${scripture.translationShortName})`;
+    return trimmed.endsWith(suffix) ? scripture.reference : `${trimmed}${suffix}`;
+  }, [
+    scripture.reference,
+    scripture.translationShortName,
+    settings.displayTranslation,
+  ]);
+
   const referenceFontSize = useAutoFontSize(
     referenceBoxRef,
     referenceContentRef,
     [
-      scripture.reference,
+      displayReference,
       settings.referenceFont,
       settings.layout.reference.x,
       settings.layout.reference.y,
@@ -544,7 +559,7 @@ const AudienceDisplayPage: React.FC = () => {
         </div>
       )}
 
-      {!hasSlideContent && scripture.reference && (
+      {!hasSlideContent && displayReference && (
         <div
           ref={referenceBoxRef}
           style={{
@@ -568,7 +583,7 @@ const AudienceDisplayPage: React.FC = () => {
               ...getFontStyle(settings.referenceStyle),
             }}
           >
-            {scripture.reference}
+            {displayReference}
           </div>
         </div>
       )}

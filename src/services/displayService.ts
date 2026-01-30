@@ -127,6 +127,9 @@ export function loadDisplaySettings(): DisplaySettings {
       if (parsed.windowAudienceScreen === undefined) {
         settings.windowAudienceScreen = false;
       }
+      if (parsed.displayTranslation === undefined) {
+        settings.displayTranslation = true;
+      }
       if (parsed.showTimer === undefined) {
         settings.showTimer = false;
       }
@@ -170,6 +173,7 @@ export function loadDisplayScripture(): DisplayScripture {
       return {
         verseText: parsed.verseText ?? "",
         reference: parsed.reference ?? "",
+        translationShortName: parsed.translationShortName,
       };
     }
   } catch (error) {
@@ -479,6 +483,7 @@ export async function sendScriptureToDisplay(
         await invoke("update_display_state", {
           verseText: payload.verseText,
           reference: payload.reference,
+          translationShortName: payload.translationShortName ?? null,
           slides: slides.lines,
           settings: settingsJson,
         });
@@ -516,6 +521,7 @@ export async function sendSlidesToDisplay(lines: string[]): Promise<void> {
         await invoke("update_display_state", {
           verseText: scripture.verseText,
           reference: scripture.reference,
+          translationShortName: scripture.translationShortName ?? null,
           slides: normalizedLines,
           settings: settingsJson,
         });

@@ -9,7 +9,7 @@
  * - Output settings
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   FaMicrophone,
   FaRobot,
@@ -26,6 +26,7 @@ import {
   FaFilter,
   FaClock,
   FaBroadcastTower,
+  FaBook,
 } from "react-icons/fa";
 import {
   SmartVersesSettings as SmartVersesSettingsType,
@@ -33,6 +34,7 @@ import {
   TranscriptionEngine,
   AudioCaptureMode,
   AVAILABLE_OFFLINE_MODELS,
+  SMART_VERSES_SETTINGS_KEY,
 } from "../types/smartVerses";
 import {
   NATIVE_WHISPER_MODELS,
@@ -51,6 +53,10 @@ import {
   loadSmartVersesSettings,
   saveSmartVersesSettings,
 } from "../services/transcriptionService";
+import { BUILTIN_KJV_ID, getAvailableTranslations, refreshBibleLibrary } from "../services/bibleLibraryService";
+import { clearVersesCache } from "../services/bibleService";
+import { resetSearchIndexes } from "../services/bibleTextSearchService";
+import type { BibleTranslationSummary } from "../types/bible";
 import { pinRemoteTranscriptionSource } from "../services/liveSlideService";
 import { getAssemblyAITemporaryToken } from "../services/assemblyaiTokenService";
 import {
@@ -68,6 +74,7 @@ import { formatGroqModelLabel } from "../utils/groqModelLimits";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
 import { isDevModeEnabled } from "../utils/devFlags";
 import { sectionStyle, sectionHeaderStyle } from "../utils/settingsSectionStyles";
+import BibleConversionModal from "./BibleConversionModal";
 import "../App.css";
 
 // =============================================================================
@@ -99,6 +106,13 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
   const [bibleSearchModels, setBibleSearchModels] = useState<string[]>([]);
   const [bibleSearchModelsLoading, setBibleSearchModelsLoading] =
     useState(false);
+
+  // Bible translations state
+  const [availableTranslations, setAvailableTranslations] = useState<BibleTranslationSummary[]>([]);
+  const [translationsLoading, setTranslationsLoading] = useState(false);
+  const [translationsError, setTranslationsError] = useState<string | null>(null);
+  const [loadedTranslationsExpanded, setLoadedTranslationsExpanded] = useState(false);
+  const [showBibleConversionModal, setShowBibleConversionModal] = useState(false);
 
   // Offline model manager state
   const [showModelManager, setShowModelManager] = useState(false);
@@ -217,6 +231,95 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
         handleDeviceChange
       );
     };
+  }, []);
+
+  useEffect(() => {
+    const handleSettingsChanged = (event: Event) => {
+      const detail = (event as CustomEvent<SmartVersesSettingsType>).detail;
+      if (detail) {
+        setSettings(detail);
+      } else {
+        setSettings(loadSmartVersesSettings());
+      }
+    };
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key !== SMART_VERSES_SETTINGS_KEY) return;
+      setSettings(loadSmartVersesSettings());
+    };
+
+    window.addEventListener("smartverses-settings-changed", handleSettingsChanged);
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      window.removeEventListener("smartverses-settings-changed", handleSettingsChanged);
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
+
+  const loadTranslations = useCallback(async () => {
+    setTranslationsLoading(true);
+    setTranslationsError(null);
+    try {
+      const list = await getAvailableTranslations();
+      setAvailableTranslations(list);
+    } catch (error) {
+      setAvailableTranslations([]);
+      setTranslationsError(
+        error instanceof Error ? error.message : "Failed to load translations"
+      );
+    } finally {
+      setTranslationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTranslations();
+  }, [loadTranslations]);
+
+  const translationOptions = useMemo<BibleTranslationSummary[]>(() => {
+    if (availableTranslations.length > 0) {
+      return availableTranslations;
+    }
+    return [
+      {
+        id: BUILTIN_KJV_ID,
+        shortName: "KJV",
+        fullName: "King James Version",
+        language: "en",
+        isBuiltin: true,
+      },
+    ];
+  }, [availableTranslations]);
+
+  useEffect(() => {
+    if (!availableTranslations.length) return;
+    const ids = new Set(availableTranslations.map((t) => t.id));
+    const defaultId = settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+    if (!ids.has(defaultId)) {
+      setSettings((prev) => ({
+        ...prev,
+        defaultBibleTranslationId: BUILTIN_KJV_ID,
+      }));
+    }
+  }, [availableTranslations, settings.defaultBibleTranslationId]);
+
+  const handleRefreshTranslations = useCallback(async () => {
+    setTranslationsLoading(true);
+    setTranslationsError(null);
+    try {
+      const list = await refreshBibleLibrary();
+      clearVersesCache();
+      resetSearchIndexes();
+      setAvailableTranslations(list);
+      window.dispatchEvent(new CustomEvent("bible-library-refreshed"));
+    } catch (error) {
+      setTranslationsError(
+        error instanceof Error ? error.message : "Failed to refresh translations"
+      );
+    } finally {
+      setTranslationsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -2081,6 +2184,122 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
       </>
       )}
 
+      {/* Bible Translations */}
+      {isSmartVersesMode && (
+        <div style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <FaBook />
+            <h3 style={{ margin: 0 }}>Bible Translations</h3>
+          </div>
+
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Default Translation</label>
+            <select
+              value={settings.defaultBibleTranslationId || BUILTIN_KJV_ID}
+              onChange={(e) =>
+                handleChange("defaultBibleTranslationId", e.target.value)
+              }
+              style={inputStyle}
+            >
+              {translationOptions.map((translation) => (
+                <option key={translation.id} value={translation.id}>
+                  {translation.shortName} - {translation.fullName}
+                </option>
+              ))}
+            </select>
+            <p style={helpTextStyle}>
+              Used as the default for Bible search, auto‑scripture slides, and transcription.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--spacing-2)",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              onClick={handleRefreshTranslations}
+              className="secondary btn-sm"
+              disabled={translationsLoading}
+            >
+              {translationsLoading ? "Refreshing..." : "Refresh translations"}
+            </button>
+            <button
+              type="button"
+              className="secondary btn-sm"
+              onClick={() => setShowBibleConversionModal(true)}
+            >
+              Get More Translations
+            </button>
+            <span style={helpTextStyle}>
+              Reads `.svjson` files from ~/Documents/SmartVerses/Bibles
+            </span>
+          </div>
+
+          {translationsError && (
+            <p style={{ ...helpTextStyle, color: "var(--danger)" }}>
+              {translationsError}
+            </p>
+          )}
+
+          {translationOptions.length > 0 && (
+            <div style={{ marginTop: "var(--spacing-3)" }}>
+              <div style={{ fontWeight: 600, fontSize: "0.9rem", marginBottom: "6px" }}>
+                Loaded translations
+              </div>
+              <div style={{ display: "grid", gap: "6px" }}>
+                {(loadedTranslationsExpanded ? translationOptions : translationOptions.slice(0, 5)).map((translation) => (
+                  <div
+                    key={translation.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--app-border-color)",
+                      backgroundColor: "var(--app-header-bg)",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <span>
+                      {translation.shortName} — {translation.fullName}
+                    </span>
+                    <span style={{ color: "var(--app-text-color-secondary)" }}>
+                      {translation.language.toUpperCase()}
+                      {translation.isBuiltin ? " (built-in)" : ""}
+                    </span>
+                  </div>
+                ))}
+                {translationOptions.length > 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setLoadedTranslationsExpanded((prev) => !prev)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--app-border-color)",
+                      backgroundColor: "var(--app-header-bg)",
+                      color: "var(--app-primary-color)",
+                      fontSize: "0.85rem",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    {loadedTranslationsExpanded
+                      ? "Show less"
+                      : `and ${translationOptions.length - 5} more`}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* AI Settings */}
       {isSmartVersesMode && (
         <div style={sectionStyle}>
@@ -2923,6 +3142,21 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             />
           </div>
         </div>
+        <div style={{ marginTop: "12px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={settings.appendTranslationToReference ?? true}
+              onChange={(e) =>
+                handleChange("appendTranslationToReference", e.target.checked)
+              }
+              style={{ width: "18px", height: "18px", cursor: "pointer" }}
+            />
+            <span style={{ fontWeight: 500 }}>
+              Append Bible translation to the reference
+            </span>
+          </label>
+        </div>
       </div>
       )}
 
@@ -3033,6 +3267,11 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
           </div>
         </div>
       )}
+      <BibleConversionModal
+        isOpen={showBibleConversionModal}
+        onClose={() => setShowBibleConversionModal(false)}
+        onSaved={handleRefreshTranslations}
+      />
     </div>
   );
 };

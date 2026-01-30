@@ -99,6 +99,7 @@ pub struct TimerState {
 pub struct DisplayScripture {
     pub verse_text: String,
     pub reference: String,
+    pub translation_short_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,6 +316,7 @@ lazy_static::lazy_static! {
             scripture: DisplayScripture {
                 verse_text: String::new(),
                 reference: String::new(),
+                translation_short_name: None,
             },
             slides: Vec::new(),
             settings: serde_json::json!({}),
@@ -3707,6 +3709,7 @@ async fn update_timer_state(
 async fn update_display_state(
     verse_text: String,
     reference: String,
+    translation_short_name: Option<String>,
     slides: Vec<String>,
     settings: serde_json::Value,
 ) -> Result<(), String> {
@@ -3718,6 +3721,7 @@ async fn update_display_state(
         display_state.scripture = DisplayScripture {
             verse_text: verse_text.clone(),
             reference: reference.clone(),
+            translation_short_name: translation_short_name.clone(),
         };
         display_state.slides = slides.clone();
         display_state.settings = settings.clone();
@@ -3728,6 +3732,7 @@ async fn update_display_state(
         scripture: DisplayScripture {
             verse_text,
             reference,
+            translation_short_name,
         },
         slides,
         settings,

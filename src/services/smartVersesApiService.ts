@@ -1,16 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import { DetectedBibleReference, SmartVersesSettings } from "../types/smartVerses";
 import { loadSmartVersesSettings } from "./transcriptionService";
+import { BUILTIN_KJV_ID } from "./bibleLibraryService";
 import { detectAndLookupReferences } from "./smartVersesBibleService";
 import { searchBibleTextAsReferences } from "./bibleTextSearchService";
 import { triggerPresentationOnConnections } from "./propresenterService";
 
 let apiAutoClearTimeout: number | null = null;
 
-async function resolveReferences(query: string): Promise<DetectedBibleReference[]> {
-  const direct = await detectAndLookupReferences(query);
+async function resolveReferences(
+  query: string,
+  translationId: string
+): Promise<DetectedBibleReference[]> {
+  const direct = await detectAndLookupReferences(query, { translationId });
   if (direct.length > 0) return direct;
-  return await searchBibleTextAsReferences(query, 5);
+  return await searchBibleTextAsReferences(query, 5, translationId);
 }
 
 async function goLiveReference(
@@ -86,7 +90,9 @@ export async function goLiveScriptureReference(
   if (!trimmed) return null;
 
   const settings = loadSmartVersesSettings();
-  const references = await resolveReferences(trimmed);
+  const translationId =
+    settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+  const references = await resolveReferences(trimmed, translationId);
   if (!references.length) return null;
 
   try {
