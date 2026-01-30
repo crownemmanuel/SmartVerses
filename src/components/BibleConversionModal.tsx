@@ -23,6 +23,22 @@ import {
   generateConversionScript,
   runConversionScript,
 } from "../services/bibleConversionAIService";
+import { parseXmlBible, extractXmlBibleMetadata } from "../utils/xmlBibleParser";
+import {
+  FaBook,
+  FaFileCode,
+  FaBox,
+  FaInfoCircle,
+  FaFolder,
+  FaCheck,
+  FaBible,
+  FaTimes,
+  FaRobot,
+  FaDownload,
+  FaSave,
+  FaMagic,
+  FaSpinner,
+} from "react-icons/fa";
 import "../App.css";
 
 const SAMPLE_SOURCE_JSON = {
@@ -48,15 +64,21 @@ type BibleConversionModalProps = {
   onSaved?: () => void;
 };
 
+type FormatType = "xml" | "json";
+
 const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
   isOpen,
   onClose,
   onSaved,
 }) => {
+  const [format, setFormat] = useState<FormatType>("xml");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceText, setSourceText] = useState("");
   const [sourceJson, setSourceJson] = useState<unknown | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [xmlBookCount, setXmlBookCount] = useState<number | null>(null);
+  const [xmlLoaded, setXmlLoaded] = useState(false);
+  const [isLoadingXml, setIsLoadingXml] = useState(false);
 
   const [shortName, setShortName] = useState("");
   const [fullName, setFullName] = useState("");
@@ -92,8 +114,9 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
 
   const fileName = sourceFile?.name || "";
   const canConvertManual = !!sourceJson && !!shortName.trim() && !!fullName.trim();
-  const canGenerateAI = !!sourceText && aiAvailable && !isAiWorking;
-  const canRunAI = !!aiCode.trim() && !!sourceText && !isAiWorking;
+  const canConvertXml = format === "xml" && xmlLoaded && !!sourceJson && !!shortName.trim() && !!fullName.trim();
+  const canGenerateAI = format === "json" && !!sourceText && aiAvailable && !isAiWorking;
+  const canRunAI = format === "json" && !!aiCode.trim() && !!sourceText && !isAiWorking;
 
   const metadata: BibleConversionMetadata = useMemo(
     () => ({
@@ -112,10 +135,14 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    setFormat("xml");
     setSourceFile(null);
     setSourceText("");
     setSourceJson(null);
     setFileError(null);
+    setXmlBookCount(null);
+    setXmlLoaded(false);
+    setIsLoadingXml(false);
     setShortName("");
     setFullName("");
     setLanguage("");
@@ -168,17 +195,40 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
   useEffect(() => {
     if (!sourceText) {
       setSourceJson(null);
-      if (fileError === "Invalid JSON file.") setFileError(null);
+      setXmlBookCount(null);
+      if (fileError === "Invalid JSON file." || fileError?.includes("XML")) setFileError(null);
       return;
     }
-    const parsed = conversionHelpers.parseJsonSafe(sourceText);
-    setSourceJson(parsed);
-    if (!parsed && !useAI) {
-      setFileError("Invalid JSON file.");
-    } else if (parsed && fileError === "Invalid JSON file.") {
-      setFileError(null);
+
+    if (format === "xml") {
+      // For XML, don't auto-parse until Load button is clicked
+      // Just validate it's valid XML
+      if (!xmlLoaded) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(sourceText, "text/xml");
+          const parserError = doc.querySelector("parsererror");
+          if (parserError) {
+            setFileError(`XML parsing error: ${parserError.textContent || "Invalid XML format"}`);
+          } else {
+            setFileError(null);
+          }
+        } catch (error) {
+          setFileError("Invalid XML file format.");
+        }
+      }
+    } else {
+      // JSON format
+      const parsed = conversionHelpers.parseJsonSafe(sourceText);
+      setSourceJson(parsed);
+      setXmlBookCount(null);
+      if (!parsed && !useAI) {
+        setFileError("Invalid JSON file.");
+      } else if (parsed && fileError === "Invalid JSON file.") {
+        setFileError(null);
+      }
     }
-  }, [sourceText, useAI, fileError]);
+  }, [sourceText, format, useAI, fileError, xmlLoaded]);
 
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -188,6 +238,8 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
     setSourceText("");
     setSourceJson(null);
     setFileError(null);
+    setXmlBookCount(null);
+    setXmlLoaded(false);
     setConversionResult(null);
     setConversionError(null);
     setAiProgress([]);
@@ -196,6 +248,15 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
     setAiNotes(null);
     setAiMetadataSuggestion(null);
     setAiError(null);
+    // Reset metadata fields when file changes
+    setShortName("");
+    setFullName("");
+    setLanguage("");
+    setTranslationId("");
+    setSourceInfo("");
+    setAliases("");
+    setIdTouched(false);
+    setFullNameTouched(false);
 
     if (!file) return;
 
@@ -208,28 +269,102 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
     }
   };
 
+  const handleLoadXml = () => {
+    if (!sourceText || format !== "xml") return;
+    
+    setIsLoadingXml(true);
+    setFileError(null);
+    setConversionError(null);
+    
+    try {
+      // Extract metadata from XML
+      const xmlMetadata = extractXmlBibleMetadata(sourceText);
+      
+      // Parse XML to get book count
+      const { books, bookCount } = parseXmlBible(sourceText);
+      setXmlBookCount(bookCount);
+      setSourceJson({ books });
+      
+      // Pre-populate metadata fields
+      if (xmlMetadata.translation) {
+        const translationName = xmlMetadata.translation.trim();
+        // Try to extract short name (e.g., "English NIV" -> "NIV")
+        const parts = translationName.split(/\s+/);
+        const shortNameGuess = parts.length > 1 ? parts[parts.length - 1] : translationName;
+        if (!shortName.trim()) {
+          setShortName(shortNameGuess);
+        }
+        if (!fullName.trim()) {
+          setFullName(translationName);
+        }
+      }
+      
+      if (xmlMetadata.language && !language.trim()) {
+        setLanguage(xmlMetadata.language);
+      }
+      
+      // Set source info
+      if (!sourceInfo.trim()) {
+        setSourceInfo("XML Bible Format");
+      }
+      
+      setXmlLoaded(true);
+    } catch (error) {
+      console.error("Failed to load XML:", error);
+      setFileError(
+        error instanceof Error ? error.message : "Failed to load XML file."
+      );
+    } finally {
+      setIsLoadingXml(false);
+    }
+  };
+
   const handleDownloadSample = () => {
     downloadJSON("bible-source-sample.json", SAMPLE_SOURCE_JSON);
   };
 
   const handleManualConvert = () => {
-    if (!sourceJson) {
-      setConversionError("Please select a valid JSON file.");
-      return;
-    }
-    setConversionError(null);
-    setIsConverting(true);
-    try {
-      const result = convertSourceToBibleTranslationFile(sourceJson, metadata);
-      setConversionResult(result);
-      setSaveStatus(null);
-    } catch (error) {
-      console.error("Conversion failed:", error);
-      setConversionError(
-        error instanceof Error ? error.message : "Conversion failed."
-      );
-    } finally {
-      setIsConverting(false);
+    if (format === "xml") {
+      // XML conversion
+      if (!sourceText) {
+        setConversionError("Please select a valid XML file.");
+        return;
+      }
+      setConversionError(null);
+      setIsConverting(true);
+      try {
+        const { books } = parseXmlBible(sourceText);
+        const result = convertSourceToBibleTranslationFile({ books }, metadata);
+        setConversionResult(result);
+        setSaveStatus(null);
+      } catch (error) {
+        console.error("XML conversion failed:", error);
+        setConversionError(
+          error instanceof Error ? error.message : "XML conversion failed."
+        );
+      } finally {
+        setIsConverting(false);
+      }
+    } else {
+      // JSON conversion
+      if (!sourceJson) {
+        setConversionError("Please select a valid JSON file.");
+        return;
+      }
+      setConversionError(null);
+      setIsConverting(true);
+      try {
+        const result = convertSourceToBibleTranslationFile(sourceJson, metadata);
+        setConversionResult(result);
+        setSaveStatus(null);
+      } catch (error) {
+        console.error("Conversion failed:", error);
+        setConversionError(
+          error instanceof Error ? error.message : "Conversion failed."
+        );
+      } finally {
+        setIsConverting(false);
+      }
     }
   };
 
@@ -423,190 +558,432 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
     <div className="modal-overlay" onMouseDown={onClose}>
       <div
         className="modal-content"
-        style={{ maxWidth: "820px" }}
+        style={{ maxWidth: "900px", maxHeight: "90vh", overflowY: "auto" }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h2>Conversion Tool</h2>
-        <p style={{ color: "var(--app-text-color-secondary)", fontSize: "0.9em", marginTop: "-8px", marginBottom: "15px" }}>
-          This tool tries to convert any JSON Bible format to a format understandable by SmartVerses.
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+          <FaBook style={{ fontSize: "1.5em", color: "var(--primary)" }} />
+          <h2 style={{ margin: 0 }}>Bible Conversion Tool</h2>
+        </div>
+        <p style={{ color: "var(--app-text-color-secondary)", fontSize: "0.9em", marginTop: "-4px", marginBottom: "20px" }}>
+          Convert Bible translations from various formats into a format understandable by SmartVerses.
         </p>
 
-        <div className="form-group">
-          <label htmlFor="bible-file">Select Bible File</label>
+        {/* Format Selector */}
+        <div className="form-group" style={{ marginBottom: "20px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", fontWeight: 600 }}>
+            <FaFileCode style={{ color: "var(--primary)" }} />
+            <span>Source Format</span>
+          </label>
+          <div style={{ display: "flex", gap: "12px" }}>
+            <button
+              type="button"
+              className={format === "xml" ? "primary" : "secondary"}
+              onClick={() => {
+                setFormat("xml");
+                setSourceFile(null);
+                setSourceText("");
+                setSourceJson(null);
+                setFileError(null);
+                setXmlBookCount(null);
+                setXmlLoaded(false);
+                setIsLoadingXml(false);
+                setConversionResult(null);
+                setConversionError(null);
+                setUseAI(false);
+                setShortName("");
+                setFullName("");
+                setLanguage("");
+                setTranslationId("");
+                setSourceInfo("");
+                setAliases("");
+                setIdTouched(false);
+                setFullNameTouched(false);
+              }}
+              style={{
+                flex: 1,
+                padding: "12px",
+                fontSize: "1em",
+                fontWeight: format === "xml" ? 600 : 400,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+              }}
+            >
+              <FaFileCode /> XML
+            </button>
+            <button
+              type="button"
+              className={format === "json" ? "primary" : "secondary"}
+              onClick={() => {
+                setFormat("json");
+                setSourceFile(null);
+                setSourceText("");
+                setSourceJson(null);
+                setFileError(null);
+                setXmlBookCount(null);
+                setXmlLoaded(false);
+                setIsLoadingXml(false);
+                setConversionResult(null);
+                setConversionError(null);
+                setUseAI(false);
+                setShortName("");
+                setFullName("");
+                setLanguage("");
+                setTranslationId("");
+                setSourceInfo("");
+                setAliases("");
+                setIdTouched(false);
+                setFullNameTouched(false);
+              }}
+              style={{
+                flex: 1,
+                padding: "12px",
+                fontSize: "1em",
+                fontWeight: format === "json" ? 600 : 400,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+              }}
+            >
+              <FaBox /> JSON
+            </button>
+          </div>
+        </div>
+
+        {/* XML Format Section */}
+        {format === "xml" && (
+          <div
+            style={{
+              backgroundColor: "var(--app-background-secondary)",
+              padding: "16px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+              border: "1px solid var(--app-border-color)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
+              <FaInfoCircle style={{ fontSize: "1.2em", color: "var(--primary)", marginTop: "2px", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, marginBottom: "8px", fontWeight: 500 }}>
+                  This tool converts XML Bible formats to SmartVerses format.
+                </p>
+                <p style={{ margin: 0, fontSize: "0.9em", color: "var(--app-text-color-secondary)" }}>
+                  This repository has an extensive list of Bible translations (1000+) in XML format. Please ensure you have proper rights and permissions to use any Bible translation you download.
+                </p>
+              </div>
+            </div>
+            <div style={{ marginTop: "12px" }}>
+              <button
+                type="button"
+                className="primary"
+                onClick={async () => {
+                  try {
+                    const opener = await import("@tauri-apps/plugin-opener");
+                    await opener.openUrl("https://github.com/Beblia/Holy-Bible-XML-Format");
+                  } catch (error) {
+                    console.error("Failed to open URL:", error);
+                    // Fallback to window.open if Tauri opener fails
+                    try {
+                      window.open("https://github.com/Beblia/Holy-Bible-XML-Format", "_blank", "noopener,noreferrer");
+                    } catch (fallbackError) {
+                      console.error("Fallback URL open failed:", fallbackError);
+                    }
+                  }
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 16px",
+                  fontSize: "0.95em",
+                  fontWeight: 500,
+                }}
+              >
+                <FaDownload style={{ color: "var(--app-button-text-color)" }} />
+                <span>Download XML Bible Translations from GitHub</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* JSON Format Section */}
+        {format === "json" && (
+          <div
+            style={{
+              backgroundColor: "var(--app-background-secondary)",
+              padding: "16px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+              border: "1px solid var(--app-border-color)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <FaInfoCircle style={{ fontSize: "1.2em", color: "var(--primary)", marginTop: "2px", flexShrink: 0 }} />
+              <p style={{ margin: 0, fontSize: "0.9em", color: "var(--app-text-color-secondary)" }}>
+                This tool tries to support any Bible that is in the JSON format. You can use AI assistance or manual conversion with a sample format.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* File Upload */}
+        <div className="form-group" style={{ marginBottom: "20px" }}>
+          <label htmlFor="bible-file" style={{ fontWeight: 600, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <FaFolder style={{ color: "var(--primary)" }} />
+            <span>Select Bible File</span>
+          </label>
           <input
             id="bible-file"
             type="file"
-            accept={useAI ? undefined : ".json,application/json"}
+            accept={format === "xml" ? ".xml,text/xml,application/xml" : useAI ? undefined : ".json,application/json"}
             onChange={handleFileChange}
             disabled={isAiWorking || isConverting}
+            style={{ width: "100%" }}
           />
           {fileName && (
-            <p style={{ fontSize: "0.85em", color: "var(--app-text-color-secondary)" }}>
-              Selected: {fileName}
+            <p style={{ fontSize: "0.85em", color: "var(--app-text-color-secondary)", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaCheck style={{ color: "var(--success)" }} />
+              <span>Selected: {fileName}</span>
+            </p>
+          )}
+          {xmlBookCount !== null && format === "xml" && xmlLoaded && (
+            <p style={{ fontSize: "0.85em", color: "var(--success)", marginTop: "8px", fontWeight: 500, display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaBible style={{ color: "var(--success)" }} />
+              <span>Detected {xmlBookCount} book{xmlBookCount !== 1 ? "s" : ""} in XML file</span>
             </p>
           )}
           {fileError && (
-            <p style={{ color: "var(--danger)", marginTop: "6px" }}>{fileError}</p>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input
-              type="checkbox"
-              checked={useAI}
-              onChange={(e) => setUseAI(e.target.checked)}
-              disabled={!aiAvailable}
-            />
-            Convert with AI
-          </label>
-          {!aiAvailable && (
-            <p style={{ color: "var(--app-text-color-secondary)", marginTop: "6px" }}>
-              Configure an AI provider in Settings {"->"} AI Configuration to enable AI conversion.
+            <p style={{ color: "var(--danger)", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaTimes />
+              <span>{fileError}</span>
             </p>
           )}
-          {aiAvailable && (
-            <p style={{ color: "var(--app-text-color-secondary)", marginTop: "6px" }}>
-              Using your default AI provider setting in the AI configuration page.
-            </p>
-          )}
-          {useAI && aiAvailable && (
-            <>
-              <p style={{ color: "var(--app-text-color-secondary)", marginTop: "6px", fontSize: "0.85em" }}>
-                AI will attempt to automatically convert the file. If it doesn't work, uncheck this option and use the manual conversion with the sample JSON format.
-              </p>
-              <div
+          
+          {/* Load Button for XML */}
+          {format === "xml" && sourceText && !xmlLoaded && !fileError && (
+            <div style={{ marginTop: "12px" }}>
+              <button
+                type="button"
+                className="primary"
+                onClick={handleLoadXml}
+                disabled={isLoadingXml || isConverting}
                 style={{
-                  marginTop: "10px",
-                  padding: "10px 12px",
-                  borderRadius: "6px",
-                  backgroundColor: "rgba(255, 193, 7, 0.15)",
-                  border: "1px solid rgba(255, 193, 7, 0.3)",
-                  color: "var(--app-text-color)",
-                  fontSize: "0.85em",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 20px",
+                  fontSize: "1em",
                 }}
               >
-                <strong style={{ color: "rgba(255, 193, 7, 1)" }}>Tip:</strong> OpenAI gpt-4o-latest is recommended for best results.
-              </div>
-            </>
+                {isLoadingXml ? (
+                  <>
+                    <FaSpinner style={{ animation: "spin 1s linear infinite" }} />
+                    <span>Loading...</span>
+                  </>
+                ) : (
+                  <>
+                    <FaDownload />
+                    <span>Load</span>
+                  </>
+                )}
+              </button>
+            </div>
           )}
         </div>
 
+        {/* AI Conversion Option (JSON only) */}
+        {format === "json" && (
+          <div className="form-group" style={{ marginBottom: "20px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={useAI}
+                onChange={(e) => setUseAI(e.target.checked)}
+                disabled={!aiAvailable}
+              />
+              <FaRobot style={{ color: "var(--primary)" }} />
+              <span>Convert with AI</span>
+            </label>
+            {!aiAvailable && (
+              <p style={{ color: "var(--app-text-color-secondary)", marginTop: "6px", fontSize: "0.9em" }}>
+                Configure an AI provider in Settings {"->"} AI Configuration to enable AI conversion.
+              </p>
+            )}
+            {aiAvailable && (
+              <p style={{ color: "var(--app-text-color-secondary)", marginTop: "6px", fontSize: "0.9em" }}>
+                Using your default AI provider setting in the AI configuration page.
+              </p>
+            )}
+            {useAI && aiAvailable && (
+              <>
+                <p style={{ color: "var(--app-text-color-secondary)", marginTop: "6px", fontSize: "0.85em" }}>
+                  AI will attempt to automatically convert the file. If it doesn't work, uncheck this option and use the manual conversion with the sample JSON format.
+                </p>
+                <div
+                  style={{
+                    marginTop: "10px",
+                    padding: "10px 12px",
+                    borderRadius: "6px",
+                    backgroundColor: "rgba(255, 193, 7, 0.15)",
+                    border: "1px solid rgba(255, 193, 7, 0.3)",
+                    color: "var(--app-text-color)",
+                    fontSize: "0.85em",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                  }}
+                >
+                  <FaInfoCircle style={{ color: "rgba(255, 193, 7, 1)", marginTop: "2px", flexShrink: 0 }} />
+                  <div>
+                    <strong style={{ color: "rgba(255, 193, 7, 1)" }}>Tip:</strong> OpenAI gpt-4o-latest is recommended for best results.
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Metadata Section - Show for JSON always, for XML only after loading */}
+        {((format === "json") || (format === "xml" && xmlLoaded)) && (
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "12px",
-            marginBottom: "15px",
+            border: "1px solid var(--app-border-color)",
+            borderRadius: "8px",
+            padding: "16px",
+            marginBottom: "20px",
+            backgroundColor: "var(--app-background-secondary)",
           }}
         >
-          <div className="form-group">
-            <label htmlFor="short-name">
-              Short Name <span style={{ color: "var(--danger)" }}>*</span>
-            </label>
-            <input
-              id="short-name"
-              type="text"
-              value={shortName}
-              onChange={(e) => setShortName(e.target.value)}
-              placeholder="KJV"
-            />
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+            <FaFileCode style={{ fontSize: "1.2em", color: "var(--primary)" }} />
+            <h3 style={{ margin: 0, fontSize: "1em", fontWeight: 600 }}>Translation Metadata</h3>
           </div>
-          <div className="form-group">
-            <label htmlFor="full-name">
-              Full Name <span style={{ color: "var(--danger)" }}>*</span>
-            </label>
-            <input
-              id="full-name"
-              type="text"
-              value={fullName}
-              onChange={(e) => {
-                setFullNameTouched(true);
-                setFullName(e.target.value);
-              }}
-              placeholder="King James Version"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="translation-id">Translation ID</label>
-            <input
-              id="translation-id"
-              type="text"
-              value={translationId}
-              onChange={(e) => {
-                setIdTouched(true);
-                setTranslationId(e.target.value);
-              }}
-              placeholder="kjv"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="language">Language</label>
-            <input
-              id="language"
-              type="text"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              placeholder="en"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="source">Source</label>
-            <input
-              id="source"
-              type="text"
-              value={sourceInfo}
-              onChange={(e) => setSourceInfo(e.target.value)}
-              placeholder="Public Domain"
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="aliases">Aliases (comma-separated)</label>
-            <input
-              id="aliases"
-              type="text"
-              value={aliases}
-              onChange={(e) => setAliases(e.target.value)}
-              placeholder="KJV, King James"
-            />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "12px",
+            }}
+          >
+            <div className="form-group">
+              <label htmlFor="short-name">
+                Short Name <span style={{ color: "var(--danger)" }}>*</span>
+              </label>
+              <input
+                id="short-name"
+                type="text"
+                value={shortName}
+                onChange={(e) => setShortName(e.target.value)}
+                placeholder="KJV"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="full-name">
+                Full Name <span style={{ color: "var(--danger)" }}>*</span>
+              </label>
+              <input
+                id="full-name"
+                type="text"
+                value={fullName}
+                onChange={(e) => {
+                  setFullNameTouched(true);
+                  setFullName(e.target.value);
+                }}
+                placeholder="King James Version"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="translation-id">Translation ID</label>
+              <input
+                id="translation-id"
+                type="text"
+                value={translationId}
+                onChange={(e) => {
+                  setIdTouched(true);
+                  setTranslationId(e.target.value);
+                }}
+                placeholder="kjv"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="language">Language</label>
+              <input
+                id="language"
+                type="text"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                placeholder="en"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="source">Source</label>
+              <input
+                id="source"
+                type="text"
+                value={sourceInfo}
+                onChange={(e) => setSourceInfo(e.target.value)}
+                placeholder="Public Domain"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="aliases">Aliases (comma-separated)</label>
+              <input
+                id="aliases"
+                type="text"
+                value={aliases}
+                onChange={(e) => setAliases(e.target.value)}
+                placeholder="KJV, King James"
+              />
+            </div>
           </div>
         </div>
+        )}
 
-        {!useAI && (
+        {/* JSON Manual Format Info */}
+        {format === "json" && !useAI && (
           <div
             style={{
               backgroundColor: "var(--app-background-secondary)",
               padding: "12px",
               borderRadius: "6px",
               marginBottom: "15px",
+              border: "1px solid var(--app-border-color)",
             }}
           >
-            <p style={{ margin: 0, color: "var(--app-text-color-secondary)" }}>
-              Source JSON should look like a book {"->"} chapter {"->"} verse map
-              (string values).
+            <p style={{ margin: 0, color: "var(--app-text-color-secondary)", fontSize: "0.9em" }}>
+              Source JSON should look like a book {"->"} chapter {"->"} verse map (string values).
             </p>
             <button
               className="secondary btn-sm"
-              style={{ marginTop: "8px" }}
+              style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}
               type="button"
               onClick={handleDownloadSample}
               disabled={isConverting}
             >
-              Download sample JSON
+              <FaDownload style={{ color: "var(--primary)" }} />
+              <span>Download sample JSON</span>
             </button>
           </div>
         )}
 
-        {useAI && (
+        {/* AI Conversion Section (JSON only) */}
+        {format === "json" && useAI && (
           <div
             style={{
               border: "1px solid var(--app-border-color)",
-              borderRadius: "6px",
-              padding: "12px",
-              marginBottom: "15px",
+              borderRadius: "8px",
+              padding: "16px",
+              marginBottom: "20px",
+              backgroundColor: "var(--app-background-secondary)",
             }}
           >
-            <h4 style={{ marginTop: 0 }}>AI Conversion</h4>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+              <FaRobot style={{ fontSize: "1.2em", color: "var(--primary)" }} />
+              <h4 style={{ margin: 0 }}>AI Conversion</h4>
+            </div>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
               <button
                 className="primary"
@@ -740,25 +1117,69 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
           </div>
         )}
 
-        <div style={{ marginTop: "12px", display: "flex", gap: "8px" }}>
-          {!useAI && (
+        {/* Convert Button */}
+        <div style={{ marginTop: "20px", display: "flex", gap: "8px" }}>
+          {format === "xml" && (
+            <button
+              className="primary"
+              type="button"
+              onClick={handleManualConvert}
+              disabled={!canConvertXml || isConverting}
+              style={{ fontSize: "1em", padding: "12px 24px", display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              {isConverting ? (
+                <>
+                  <FaSpinner style={{ animation: "spin 1s linear infinite" }} />
+                  <span>Converting...</span>
+                </>
+              ) : (
+                <>
+                  <FaMagic />
+                  <span>Convert</span>
+                </>
+              )}
+            </button>
+          )}
+          {format === "json" && !useAI && (
             <button
               className="primary"
               type="button"
               onClick={handleManualConvert}
               disabled={!canConvertManual || isConverting}
+              style={{ fontSize: "1em", padding: "12px 24px", display: "flex", alignItems: "center", gap: "8px" }}
             >
-              {isConverting ? "Converting..." : "Convert"}
+              {isConverting ? (
+                <>
+                  <FaSpinner style={{ animation: "spin 1s linear infinite" }} />
+                  <span>Converting...</span>
+                </>
+              ) : (
+                <>
+                  <FaMagic />
+                  <span>Convert</span>
+                </>
+              )}
             </button>
           )}
-          {useAI && (
+          {format === "json" && useAI && (
             <button
               className="primary"
               type="button"
               onClick={handleRunAI}
               disabled={!canRunAI || isConverting}
+              style={{ fontSize: "1em", padding: "12px 24px", display: "flex", alignItems: "center", gap: "8px" }}
             >
-              {isConverting ? "Converting..." : "Run Conversion"}
+              {isConverting ? (
+                <>
+                  <FaSpinner style={{ animation: "spin 1s linear infinite" }} />
+                  <span>Converting...</span>
+                </>
+              ) : (
+                <>
+                  <FaMagic />
+                  <span>Run Conversion</span>
+                </>
+              )}
             </button>
           )}
         </div>
@@ -769,30 +1190,39 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
           </p>
         )}
 
+        {/* Conversion Result */}
         {conversionResult && (
           <div
             style={{
-              marginTop: "15px",
-              padding: "12px",
-              borderRadius: "6px",
-              border: "1px solid var(--app-border-color)",
+              marginTop: "20px",
+              padding: "16px",
+              borderRadius: "8px",
+              border: "2px solid var(--success)",
+              backgroundColor: "rgba(40, 167, 69, 0.1)",
             }}
           >
-            <strong>Conversion complete.</strong>
-            <div style={{ marginTop: "8px", fontSize: "0.85em" }}>
-              {Object.keys(conversionResult.books || {}).length} books loaded.
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+              <FaCheck style={{ fontSize: "1.5em", color: "var(--success)" }} />
+              <strong style={{ fontSize: "1.1em" }}>Conversion Complete!</strong>
             </div>
-            <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
-              <button type="button" onClick={handleSaveDefault}>
-                Save to SmartVerses/Bibles
+            <div style={{ marginTop: "8px", fontSize: "0.9em", color: "var(--app-text-color-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaBible style={{ color: "var(--success)" }} />
+              <span><strong>{Object.keys(conversionResult.books || {}).length}</strong> book{Object.keys(conversionResult.books || {}).length !== 1 ? "s" : ""} loaded successfully.</span>
+            </div>
+            <div style={{ display: "flex", gap: "8px", marginTop: "16px", flexWrap: "wrap" }}>
+              <button type="button" onClick={handleSaveDefault} className="primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <FaSave />
+                <span>Save to SmartVerses/Bibles</span>
               </button>
-              <button type="button" onClick={handleSaveAs}>
-                Save As...
+              <button type="button" onClick={handleSaveAs} className="secondary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <FaFolder />
+                <span>Save As...</span>
               </button>
             </div>
             {saveStatus && (
-              <p style={{ marginTop: "8px", fontSize: "0.85em", color: "var(--success)" }}>
-                {saveStatus}
+              <p style={{ marginTop: "12px", fontSize: "0.9em", color: "var(--success)", fontWeight: 500, display: "flex", alignItems: "center", gap: "6px" }}>
+                <FaCheck />
+                <span>{saveStatus}</span>
               </p>
             )}
           </div>

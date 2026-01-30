@@ -2232,7 +2232,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
               className="secondary btn-sm"
               onClick={() => setShowBibleConversionModal(true)}
             >
-              Conversion Tool
+              Get More Translations
             </button>
             <span style={helpTextStyle}>
               Reads `.svjson` files from ~/Documents/SmartVerses/Bibles
