@@ -3448,8 +3448,10 @@
           // Track download in Google Analytics
           if (macAssetInfo) {
             trackDownload('mac', macAssetInfo.version, '.dmg', macDownloadUrl, macAssetInfo.fileName);
+            // Track via PHP in background (non-blocking)
+            trackDownloadPHP('mac', macAssetInfo.version, macDownloadUrl);
           }
-          // Small delay to ensure event is sent before opening window
+          // Always redirect to GitHub directly (fail-safe)
           setTimeout(function() {
             window.open(macDownloadUrl, '_blank');
           }, 100);
@@ -3457,6 +3459,32 @@
         // Small delay to ensure download starts before closing
         setTimeout(hideMacInstallModal, 200);
       });
+
+      // Tracker configuration
+      const TRACKER_KEY = 'edi9023Der_dwe'; // Must match Next.js API route
+      const TRACKER_URL = 'https://smart-verses-stats.vercel.app/api/download-tracker';
+
+      // Helper function to track downloads via PHP (background, non-blocking)
+      function trackDownloadPHP(platform, version, downloadUrl) {
+        // Build tracker URL
+        const params = new URLSearchParams({
+          key: TRACKER_KEY,
+          version: version,
+          platform: platform,
+          url: downloadUrl
+        });
+        const trackerUrl = TRACKER_URL + '?' + params.toString();
+        
+        // Send tracking request in background (don't wait for response)
+        fetch(trackerUrl, {
+          method: 'GET',
+          mode: 'no-cors', // Don't wait for CORS, just fire and forget
+          cache: 'no-cache'
+        }).catch(function(error) {
+          // Silently fail - don't interrupt user experience
+          console.log('Download tracking failed (non-critical):', error);
+        });
+      }
 
       // Helper function to track downloads in Google Analytics
       function trackDownload(platform, version, fileExtension, downloadUrl, fileName) {
@@ -3678,7 +3706,9 @@
                 e.preventDefault();
                 // Track download in Google Analytics
                 trackDownload('windows', windowsResult.release.tag_name, fileExtension, downloadUrl, windowsResult.asset.name);
-                // Small delay to ensure event is sent before opening window
+                // Track via PHP in background (non-blocking)
+                trackDownloadPHP('windows', windowsResult.release.tag_name, downloadUrl);
+                // Always redirect to GitHub directly (fail-safe)
                 setTimeout(function() {
                   window.open(downloadUrl, '_blank');
                 }, 100);
@@ -3737,7 +3767,9 @@
                 e.preventDefault();
                 // Track download in Google Analytics
                 trackDownload('linux', linuxResult.release.tag_name, fileExtension, downloadUrl, linuxResult.asset.name);
-                // Small delay to ensure event is sent before opening window
+                // Track via PHP in background (non-blocking)
+                trackDownloadPHP('linux', linuxResult.release.tag_name, downloadUrl);
+                // Always redirect to GitHub directly (fail-safe)
                 setTimeout(function() {
                   window.open(downloadUrl, '_blank');
                 }, 100);
