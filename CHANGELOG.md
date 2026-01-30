@@ -2,6 +2,14 @@
 
 All notable changes to SmartVerses will be documented in this file.
 
+## [0.7.4] - 2026-01-30
+
+### Fixed
+- **MediaView Firebase subscription**: Removed redundant cleanup block that caused TypeScript error (ref narrow to never)
+
+### Changed
+- Version bump to 0.7.4
+
 ## [0.7.3] - 2026-01-29
 
 ### Added

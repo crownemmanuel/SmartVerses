@@ -206,11 +206,7 @@ const MediaView: React.FC = () => {
       return;
     }
 
-    // Cleanup previous subscription
-    if (unsubscribeTestimoniesRef.current) {
-      unsubscribeTestimoniesRef.current();
-      unsubscribeTestimoniesRef.current = null;
-    }
+    // (Previous subscription already cleaned up at start of effect)
 
     setIsLoading(true);
     setError(null);
