@@ -15,7 +15,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { FaMicrophone, FaStop, FaPaperPlane, FaRobot, FaPlay, FaSearch, FaChevronDown, FaChevronUp, FaTrash, FaStopCircle, FaExternalLinkAlt, FaDownload, FaSpinner, FaCog } from "react-icons/fa";
+import { FaMicrophone, FaStop, FaPaperPlane, FaRobot, FaPlay, FaSearch, FaChevronDown, FaChevronUp, FaTrash, FaStopCircle, FaExternalLinkAlt, FaDownload, FaSpinner, FaCog, FaBroadcastTower } from "react-icons/fa";
 import {
   SmartVersesSettings,
   SmartVersesChatMessage,
@@ -302,6 +302,7 @@ const SmartVersesPage: React.FC = () => {
   const [inlineTranslationOverride, setInlineTranslationOverride] = useState<string | null>(null);
   const [searchTranslationPickerOpen, setSearchTranslationPickerOpen] = useState(false);
   const [verseCardPickerRefId, setVerseCardPickerRefId] = useState<string | null>(null);
+  const [activeTranslationCueId, setActiveTranslationCueId] = useState<string | null>(null);
   const translationMenuRef = useRef<HTMLDivElement | null>(null);
   const searchTranslationTagRef = useRef<HTMLDivElement | null>(null);
   const verseCardPickerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -589,6 +590,13 @@ const SmartVersesPage: React.FC = () => {
     transcriptionTranslationIdRef.current = transcriptionTranslationId;
   }, [transcriptionTranslationId]);
 
+  useEffect(() => {
+    const defaultId = settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+    if (activeTranslationCueId && transcriptionTranslationId === defaultId) {
+      setActiveTranslationCueId(null);
+    }
+  }, [activeTranslationCueId, settings.defaultBibleTranslationId, transcriptionTranslationId]);
+
   const translationOptions = useMemo<BibleTranslationSummary[]>(() => {
     if (availableTranslations.length > 0) return availableTranslations;
     return [
@@ -634,6 +642,16 @@ const SmartVersesPage: React.FC = () => {
     },
     [translationsById]
   );
+
+  const activeTranslationCueLabel = useMemo(() => {
+    if (!activeTranslationCueId) return "";
+    const translation = translationsById.get(activeTranslationCueId);
+    return (
+      translation?.fullName ||
+      translation?.shortName ||
+      activeTranslationCueId.toUpperCase()
+    );
+  }, [activeTranslationCueId, translationsById]);
 
   useEffect(() => {
     const win = window as Window & { __smartVersesActive?: boolean };
@@ -1124,7 +1142,8 @@ const SmartVersesPage: React.FC = () => {
             if (offlineAnalysis.paraphrasedVerses.length > 0) {
               searchMethod = "offline";
               references = await resolveParaphrasedVerses(
-                offlineAnalysis.paraphrasedVerses
+                offlineAnalysis.paraphrasedVerses,
+                activeTranslationId
               );
               console.log(
                 "🧠 Offline paraphrase found:",
@@ -1285,6 +1304,7 @@ const SmartVersesPage: React.FC = () => {
     },
     []
   );
+
 
   const handleInputChange = (value: string) => {
     setInputValue(value);
@@ -1462,7 +1482,7 @@ const SmartVersesPage: React.FC = () => {
       setChatHistory(prev => [...prev, {
         id: `live-${Date.now()}`,
         type: "system",
-        content: `📺 Went live: ${reference.displayRef}`,
+        content: `Went live: ${reference.displayRef}`,
         timestamp: Date.now(),
       }]);
 
@@ -1509,6 +1529,87 @@ const SmartVersesPage: React.FC = () => {
       console.error("Error going live:", error);
     }
   }, [formatReferenceWithTranslation, resolveTranslationShortName, settings]);
+
+  const repoolLastDetectedReference = useCallback(
+    async (translationId: string) => {
+      const lastRef =
+        detectedReferencesRef.current[detectedReferencesRef.current.length - 1];
+      if (!lastRef || !lastRef.book || !lastRef.chapter || !lastRef.verse) return;
+
+      const verseData = await loadVerseByComponents(
+        lastRef.book,
+        lastRef.chapter,
+        lastRef.verse,
+        translationId
+      );
+      if (!verseData) return;
+
+      const updatedRef: DetectedBibleReference = {
+        ...lastRef,
+        reference: verseData.displayRef,
+        displayRef: verseData.displayRef,
+        verseText: verseData.verseText,
+        translationId,
+      };
+
+      setDetectedReferences((prev) =>
+        prev.map((item) => (item.id === lastRef.id ? updatedRef : item))
+      );
+
+      setChatHistory((prev) => {
+        const updatedHistory = prev.map((msg) => {
+          if (!msg.references) return msg;
+          return {
+            ...msg,
+            references: msg.references.map((item) =>
+              item.id === lastRef.id ? updatedRef : item
+            ),
+          };
+        });
+
+        if (!settings.autoAddDetectedToHistory) {
+          return updatedHistory;
+        }
+
+        return [
+          ...updatedHistory,
+          {
+            id: `transcript-${Date.now()}`,
+            type: "result",
+            content: `Detected from transcription`,
+            timestamp: Date.now(),
+            references: [updatedRef],
+          },
+        ];
+      });
+
+      if (autoTriggerOnDetectionRef.current) {
+        handleGoLive(updatedRef);
+      }
+    },
+    [handleGoLive, settings.autoAddDetectedToHistory]
+  );
+
+  const handleTranslationCue = useCallback(
+    async (cueTranslationId: string | null) => {
+      if (!cueTranslationId) return;
+      if (cueTranslationId === transcriptionTranslationIdRef.current) return;
+
+      const defaultId = settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+      setTranscriptionTranslationId(cueTranslationId);
+      setActiveTranslationCueId(
+        cueTranslationId === defaultId ? null : cueTranslationId
+      );
+      await repoolLastDetectedReference(cueTranslationId);
+    },
+    [repoolLastDetectedReference, settings.defaultBibleTranslationId]
+  );
+
+  const clearActiveTranslationCue = useCallback(() => {
+    const fallback = lastDefaultTranslationIdRef.current || BUILTIN_KJV_ID;
+    setTranscriptionTranslationId(fallback);
+    setActiveTranslationCueId(null);
+  }, []);
 
   // Handle taking a verse off live
   const handleOffLive = useCallback(async () => {
@@ -1587,14 +1688,6 @@ const SmartVersesPage: React.FC = () => {
 
       // Clear live state
       setLiveReferenceId(null);
-
-      // Add system message
-      setChatHistory(prev => [...prev, {
-        id: `offlive-${Date.now()}`,
-        type: "system",
-        content: `⬛ Cleared live verse`,
-        timestamp: Date.now(),
-      }]);
     } catch (error) {
       console.error("Error taking off live:", error);
     }
@@ -1657,12 +1750,14 @@ const SmartVersesPage: React.FC = () => {
     async (
       text: string,
       segment: TranscriptionSegment,
-      context: "remote" | "local" = "local"
+      context: "remote" | "local" = "local",
+      translationId?: string
     ): Promise<{
       scriptureReferences: string[];
       keyPoints: KeyPoint[];
       paraphrasedVersesForWs: ParaphrasedVerse[];
     }> => {
+      const activeTranslationId = translationId || transcriptionTranslationIdRef.current;
       const appSettings = loadAppSettings();
       let scriptureReferences: string[] = [];
       let keyPoints: KeyPoint[] = [];
@@ -1690,7 +1785,8 @@ const SmartVersesPage: React.FC = () => {
               offlineAnalysis.paraphrasedVerses.length
             );
             const resolvedRefs = await resolveParaphrasedVerses(
-              offlineAnalysis.paraphrasedVerses
+              offlineAnalysis.paraphrasedVerses,
+              activeTranslationId
             );
             const deduped = applyParaphraseDetections(
               resolvedRefs,
@@ -1763,7 +1859,8 @@ const SmartVersesPage: React.FC = () => {
             );
 
             const resolvedRefs = await resolveParaphrasedVerses(
-              analysis.paraphrasedVerses
+              analysis.paraphrasedVerses,
+              activeTranslationId
             );
             const deduped = applyParaphraseDetections(resolvedRefs, text);
             if (deduped.length > 0) {
@@ -1957,14 +2054,11 @@ const SmartVersesPage: React.FC = () => {
           setTranscriptHistory(prev => [...prev, segment]);
 
           const cueTranslationId = await findTranslationCue(m.text || "");
+          if (cueTranslationId) {
+            await handleTranslationCue(cueTranslationId);
+          }
           const activeTranslationId =
             cueTranslationId || transcriptionTranslationIdRef.current;
-          if (
-            cueTranslationId &&
-            cueTranslationId !== transcriptionTranslationIdRef.current
-          ) {
-            setTranscriptionTranslationId(cueTranslationId);
-          }
 
           if (m.key_points?.length) {
             const normalizedKeyPoints: KeyPoint[] = m.key_points.map((point) => ({
@@ -2012,6 +2106,7 @@ const SmartVersesPage: React.FC = () => {
   }, [
     emitTranscriptionStream,
     handleGoLive,
+    handleTranslationCue,
     scheduleInterimDirectParse,
     settings.autoAddDetectedToHistory,
     settings.transcriptionEngine,
@@ -2226,7 +2321,7 @@ const SmartVersesPage: React.FC = () => {
               paraphrasedVerses.length === 0 &&
               (settings.enableParaphraseDetection || settings.enableKeyPointExtraction)
             ) {
-              const result = await runParaphraseDetection(m.text, segment, "remote");
+              const result = await runParaphraseDetection(m.text, segment, "remote", activeTranslationId);
               scriptureReferences = Array.from(
                 new Set([
                   ...scriptureReferences,
@@ -2436,14 +2531,11 @@ const SmartVersesPage: React.FC = () => {
 
             // Detect translation switches in the transcript (Phase 3)
             const cueTranslationId = await findTranslationCue(text);
+            if (cueTranslationId) {
+              await handleTranslationCue(cueTranslationId);
+            }
             const activeTranslationId =
               cueTranslationId || transcriptionTranslationIdRef.current;
-            if (
-              cueTranslationId &&
-              cueTranslationId !== transcriptionTranslationIdRef.current
-            ) {
-              setTranscriptionTranslationId(cueTranslationId);
-            }
 
             // Detect Bible references in the transcript
             const directRefs = await detectAndLookupReferences(text, {
@@ -2476,7 +2568,7 @@ const SmartVersesPage: React.FC = () => {
                 handleGoLive(directRefs[0]);
               }
             } else if (settings.enableParaphraseDetection || settings.enableKeyPointExtraction) {
-              const result = await runParaphraseDetection(text, segment, "local");
+              const result = await runParaphraseDetection(text, segment, "local", activeTranslationId);
               scriptureReferences = result.scriptureReferences;
               keyPoints = result.keyPoints;
               paraphrasedVersesForWs = result.paraphrasedVersesForWs;
@@ -2581,6 +2673,7 @@ const SmartVersesPage: React.FC = () => {
     appSettings,
     connectToRemoteTranscriptionWs,
     handleGoLive,
+    handleTranslationCue,
     runParaphraseDetection,
     applyParaphraseDetections,
     emitTranscriptionStream,
@@ -3782,8 +3875,15 @@ const SmartVersesPage: React.FC = () => {
                     fontSize: "0.8rem",
                     color: "var(--app-text-color-secondary)",
                     padding: "var(--spacing-2)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
                   }}>
-                    {message.content}
+                    {message.content.startsWith("Went live:") && (
+                      <FaBroadcastTower size={12} style={{ flexShrink: 0 }} />
+                    )}
+                    <span>{message.content}</span>
                   </div>
                 )}
               </div>
@@ -4664,46 +4764,89 @@ const SmartVersesPage: React.FC = () => {
         </div>
 
         {/* Detected References Panel (compact + expandable rows) */}
-        {detectedReferences.length > 0 && (
+        {(detectedReferences.length > 0 || activeTranslationCueId) && (
           <div
             style={{
               borderTop: "1px solid var(--app-border-color)",
-              maxHeight: detectedPanelCollapsed ? "52px" : "320px",
-              overflowY: detectedPanelCollapsed ? "hidden" : "auto",
             }}
           >
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setDetectedPanelCollapsed((v) => !v)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") setDetectedPanelCollapsed((v) => !v);
-              }}
-              style={{
-                padding: "var(--spacing-2) var(--spacing-4)",
-                backgroundColor: "var(--app-header-bg)",
-                fontSize: "0.85rem",
-                fontWeight: 700,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
-                {detectedPanelCollapsed ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}
-                <span>Detected References ({detectedReferences.length})</span>
-              </div>
-              <span style={{ color: "var(--app-text-color-secondary)", fontWeight: 500 }}>
-                {detectedPanelCollapsed ? "Expand" : "Collapse"}
-              </span>
-            </div>
-
-            {!detectedPanelCollapsed && (
-              <div style={{ padding: "var(--spacing-3) var(--spacing-4)" }}>
-                {recentDetectedReferences.map((ref) => renderDetectedReferenceRow(ref))}
+            {activeTranslationCueId && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "var(--spacing-2)",
+                  padding: "var(--spacing-2) var(--spacing-4)",
+                  backgroundColor: "rgba(59, 130, 246, 0.12)",
+                  borderBottom: "1px solid var(--app-border-color)",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  color: "var(--app-text-color)",
+                }}
+              >
+                <span>
+                  {activeTranslationCueLabel
+                    ? `${activeTranslationCueLabel} activated`
+                    : "Translation activated"}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearActiveTranslationCue}
+                  title="Clear active translation"
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "inherit",
+                    cursor: "pointer",
+                    fontSize: "1rem",
+                    lineHeight: 1,
+                    padding: "2px 6px",
+                  }}
+                >
+                  ×
+                </button>
               </div>
             )}
+            <div
+              style={{
+                maxHeight: detectedPanelCollapsed ? "52px" : "320px",
+                overflowY: detectedPanelCollapsed ? "hidden" : "auto",
+              }}
+            >
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetectedPanelCollapsed((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") setDetectedPanelCollapsed((v) => !v);
+                }}
+                style={{
+                  padding: "var(--spacing-2) var(--spacing-4)",
+                  backgroundColor: "var(--app-header-bg)",
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
+                  {detectedPanelCollapsed ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}
+                  <span>Detected References ({detectedReferences.length})</span>
+                </div>
+                <span style={{ color: "var(--app-text-color-secondary)", fontWeight: 500 }}>
+                  {detectedPanelCollapsed ? "Expand" : "Collapse"}
+                </span>
+              </div>
+
+              {!detectedPanelCollapsed && (
+                <div style={{ padding: "var(--spacing-3) var(--spacing-4)" }}>
+                  {recentDetectedReferences.map((ref) => renderDetectedReferenceRow(ref))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

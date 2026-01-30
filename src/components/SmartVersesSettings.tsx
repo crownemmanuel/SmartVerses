@@ -94,6 +94,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
     DEFAULT_SMART_VERSES_SETTINGS
   );
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const saveMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [availableMics, setAvailableMics] = useState<MediaDeviceInfo[]>([]);
   const [nativeDevices, setNativeDevices] = useState<
     { id: number; name: string; is_default: boolean }[]
@@ -237,15 +238,33 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
     const handleSettingsChanged = (event: Event) => {
       const detail = (event as CustomEvent<SmartVersesSettingsType>).detail;
       if (detail) {
-        setSettings(detail);
+        // Only update if settings actually changed to prevent infinite loops
+        setSettings((currentSettings) => {
+          if (JSON.stringify(currentSettings) === JSON.stringify(detail)) {
+            return currentSettings; // No change, return same reference
+          }
+          return detail;
+        });
       } else {
-        setSettings(loadSmartVersesSettings());
+        const loadedSettings = loadSmartVersesSettings();
+        setSettings((currentSettings) => {
+          if (JSON.stringify(currentSettings) === JSON.stringify(loadedSettings)) {
+            return currentSettings; // No change, return same reference
+          }
+          return loadedSettings;
+        });
       }
     };
 
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key !== SMART_VERSES_SETTINGS_KEY) return;
-      setSettings(loadSmartVersesSettings());
+      const loadedSettings = loadSmartVersesSettings();
+      setSettings((currentSettings) => {
+        if (JSON.stringify(currentSettings) === JSON.stringify(loadedSettings)) {
+          return currentSettings; // No change, return same reference
+        }
+        return loadedSettings;
+      });
     };
 
     window.addEventListener("smartverses-settings-changed", handleSettingsChanged);
@@ -254,6 +273,10 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
     return () => {
       window.removeEventListener("smartverses-settings-changed", handleSettingsChanged);
       window.removeEventListener("storage", handleStorageChange);
+      // Clear save message timeout on unmount
+      if (saveMessageTimeoutRef.current) {
+        clearTimeout(saveMessageTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -511,8 +534,15 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             detail: settingsToSave,
           })
         );
+        // Clear any existing timeout before setting a new one
+        if (saveMessageTimeoutRef.current) {
+          clearTimeout(saveMessageTimeoutRef.current);
+        }
         setSaveMessage("All changes saved");
-        setTimeout(() => setSaveMessage(null), 2000);
+        saveMessageTimeoutRef.current = setTimeout(() => {
+          setSaveMessage(null);
+          saveMessageTimeoutRef.current = null;
+        }, 2000);
       } catch (error) {
         console.error("Failed to save settings:", error);
         setSaveMessage("Failed to save settings");
@@ -1138,7 +1168,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
       <div style={sectionStyle}>
         <div style={sectionHeaderStyle}>
           <FaMicrophone />
-          <h3 style={{ margin: 0 }}>Transcription Settings</h3>
+          <h3 style={{ margin: 0 }}>Use Remote Transcription</h3>
         </div>
 
         <div style={fieldStyle}>
@@ -1274,126 +1304,6 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
               )}
             </div>
           )}
-        </div>
-
-        <div style={fieldStyle}>
-          <label style={labelStyle}>Microphone</label>
-          {(settings.audioCaptureMode || "webrtc") === "native" ? (
-            <>
-              <select
-                value={settings.selectedNativeMicrophoneId || ""}
-                onChange={(e) =>
-                  handleChange(
-                    "selectedNativeMicrophoneId",
-                    e.target.value || undefined
-                  )
-                }
-                style={inputStyle}
-                disabled={
-                  settings.runTranscriptionInBrowser ||
-                  settings.remoteTranscriptionEnabled
-                }
-              >
-                <option value="">System Default</option>
-                {nativeDevices.map((d) => (
-                  <option key={d.id} value={String(d.id)}>
-                    {d.name}
-                    {d.is_default ? " (Default)" : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={loadNativeDevices}
-                className="secondary btn-sm"
-                style={{ marginTop: "var(--spacing-2)" }}
-                type="button"
-                disabled={
-                  settings.runTranscriptionInBrowser ||
-                  settings.remoteTranscriptionEnabled
-                }
-              >
-                Refresh Native Devices
-              </button>
-              {nativeDevicesError && (
-                <p style={{ ...helpTextStyle, color: "var(--error)" }}>
-                  Failed to load native devices: {nativeDevicesError}
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              <select
-                value={settings.selectedMicrophoneId || ""}
-                onChange={(e) =>
-                  handleChange("selectedMicrophoneId", e.target.value)
-                }
-                style={inputStyle}
-                disabled={
-                  settings.runTranscriptionInBrowser ||
-                  settings.remoteTranscriptionEnabled
-                }
-              >
-                <option value="">Default Microphone</option>
-                {availableMics.map((mic) => (
-                  <option key={mic.deviceId} value={mic.deviceId}>
-                    {mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={loadMicrophones}
-                className="secondary btn-sm"
-                style={{ marginTop: "var(--spacing-2)" }}
-                type="button"
-                disabled={
-                  settings.runTranscriptionInBrowser ||
-                  settings.remoteTranscriptionEnabled
-                }
-              >
-                Refresh Devices
-              </button>
-            </>
-          )}
-        </div>
-
-        <div style={fieldStyle}>
-          <label style={checkboxLabelStyle}>
-            <input
-              type="checkbox"
-              checked={settings.runTranscriptionInBrowser || false}
-              onChange={(e) =>
-                handleChange("runTranscriptionInBrowser", e.target.checked)
-              }
-            />
-            Run transcription in browser
-          </label>
-          <p style={helpTextStyle}>
-            If your microphone isn't showing up in the list above, enable this
-            option. When you start transcription, it will open in your default
-            browser (Chrome/Firefox) which has full access to all audio devices.
-            Transcriptions will stream back to the app automatically.
-          </p>
-        </div>
-
-        <div style={fieldStyle}>
-          <label style={checkboxLabelStyle}>
-            <input
-              type="checkbox"
-              checked={settings.streamTranscriptionsToWebSocket}
-              onChange={(e) =>
-                handleChange(
-                  "streamTranscriptionsToWebSocket",
-                  e.target.checked
-                )
-              }
-            />
-            Stream transcription output to WebSocket
-          </label>
-          <p style={helpTextStyle}>
-            Rebroadcast transcript chunks (and any extracted key points /
-            scripture refs) to the Live Slides WebSocket so other pages (like
-            the Notepad) can consume them in real-time.
-          </p>
         </div>
       </div>
 
@@ -2178,6 +2088,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
                   the Notepad) can consume them in real-time.
                 </p>
               </div>
+
             </div>
           </>
         )}
