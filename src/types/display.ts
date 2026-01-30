@@ -49,6 +49,7 @@ export type DisplaySettings = {
   enabled: boolean;
   windowAudienceScreen: boolean;
   webEnabled: boolean;
+  displayTranslation: boolean;
   monitorIndex: number | null;
   backgroundColor: string;
   backgroundImagePath?: string;
@@ -66,6 +67,7 @@ export type DisplaySettings = {
 export type DisplayScripture = {
   verseText: string;
   reference: string;
+  translationShortName?: string;
 };
 
 export const DISPLAY_SETTINGS_KEY = "proassist-display-settings";
@@ -107,6 +109,7 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   enabled: false,
   windowAudienceScreen: false,
   webEnabled: false,
+  displayTranslation: true,
   monitorIndex: null,
   backgroundColor: "#000000",
   backgroundImagePath: "",

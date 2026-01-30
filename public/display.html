@@ -144,7 +144,7 @@
 
     <script>
         let ws = null;
-        let scripture = { verseText: '', reference: '' };
+        let scripture = { verseText: '', reference: '', translationShortName: '' };
         let slides = [];
         let timerState = {
             is_running: false,
@@ -157,6 +157,7 @@
             backgroundImagePath: '',
             textFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             referenceFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            displayTranslation: true,
             textStyle: {
                 color: '#ffffff',
                 bold: false,
@@ -312,6 +313,17 @@
             return best;
         }
 
+        function resolveDisplayReference() {
+            if (!scripture.reference) return '';
+            if (!settings.displayTranslation || !scripture.translationShortName) {
+                return scripture.reference;
+            }
+            const trimmed = scripture.reference.trim();
+            if (!trimmed) return scripture.reference;
+            const suffix = ` (${scripture.translationShortName})`;
+            return trimmed.endsWith(suffix) ? scripture.reference : `${trimmed}${suffix}`;
+        }
+
         function updateDisplay() {
             // Update background
             document.body.style.backgroundColor = settings.backgroundColor;
@@ -348,16 +360,17 @@
             const referenceBox = document.getElementById('referenceBox');
             const referenceContent = document.getElementById('referenceContent');
             
-            if (!slideActive && scripture.reference) {
+            const displayReference = resolveDisplayReference();
+            if (!slideActive && displayReference) {
                 referenceBox.style.display = 'flex';
                 applyStyles(referenceBox, rectStyle(settings.layout.reference));
-                referenceContent.textContent = scripture.reference;
+                referenceContent.textContent = displayReference;
                 referenceContent.style.fontFamily = settings.referenceFont;
                 applyStyles(referenceContent, getFontStyle(settings.referenceStyle));
                 
                 // Auto font size - use requestAnimationFrame to ensure layout is complete
                 requestAnimationFrame(() => {
-                    autoFontSize(referenceBox, referenceContent, scripture.reference, 12, 160);
+                    autoFontSize(referenceBox, referenceContent, displayReference, 12, 160);
                 });
             } else {
                 referenceBox.style.display = 'none';
@@ -447,6 +460,7 @@
                         scripture = {
                             verseText: message.scripture?.verse_text || '',
                             reference: message.scripture?.reference || '',
+                            translationShortName: message.scripture?.translation_short_name || '',
                         };
                         slides = Array.isArray(message.slides) ? message.slides : [];
                         if (message.settings) {

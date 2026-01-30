@@ -14,6 +14,7 @@ import {
   BibleParseContext, 
   DetectedBibleReference 
 } from "../types/smartVerses";
+import { BUILTIN_KJV_ID } from "./bibleLibraryService";
 import { loadVerses } from "./bibleService";
 
 // =============================================================================
@@ -766,6 +767,7 @@ function resolveBookName(bookText: string): string {
  */
 async function normalizeCombinedChapterVerseInput(
   text: string,
+  translationId: string,
   versesOverride?: Record<string, string>
 ): Promise<string> {
   const combinedRegex = new RegExp(
@@ -773,7 +775,7 @@ async function normalizeCombinedChapterVerseInput(
     "gi"
   );
 
-  const verses = versesOverride || (await loadVerses());
+  const verses = versesOverride || (await loadVerses(translationId));
   let result = text;
   let match: RegExpExecArray | null;
 
@@ -1001,7 +1003,8 @@ function buildContextualPassages(
   book: string,
   fullBookName: string,
   chapter: number,
-  ranges: VerseRange[]
+  ranges: VerseRange[],
+  translationId: string
 ): ParsedBibleReference[] {
   const mappedBook = mapBookName(book);
   return ranges.map((range) => ({
@@ -1011,12 +1014,15 @@ function buildContextualPassages(
     endChapter: chapter,
     startVerse: range.start,
     endVerse: range.end,
-    translation: "default",
+    translationId,
     displayRef: createDisplayRef(fullBookName, chapter, range.start, range.end),
   }));
 }
 
-function parseContextualVerseReferences(text: string): ParsedBibleReference[] | null {
+function parseContextualVerseReferences(
+  text: string,
+  translationId: string
+): ParsedBibleReference[] | null {
   if (!lastParsedContext.book) return null;
 
   const book = lastParsedContext.book;
@@ -1026,14 +1032,14 @@ function parseContextualVerseReferences(text: string): ParsedBibleReference[] | 
 
   const ranges = extractVerseRangesFromText(text);
   if (chapter && ranges.length > 0) {
-    return buildContextualPassages(book, fullBookName, chapter, ranges);
+    return buildContextualPassages(book, fullBookName, chapter, ranges, translationId);
   }
 
   // Handle "chapter N" without explicit verses (default to verse 1).
   if (explicitChapter && (!ranges || ranges.length === 0)) {
     return buildContextualPassages(book, fullBookName, explicitChapter, [
       { start: 1, end: 1 },
-    ]);
+    ], translationId);
   }
 
   return null;
@@ -1088,7 +1094,10 @@ function createDisplayRef(
  * Main function to parse a Bible verse reference
  * This is the core "Bible Pacer" function that handles all reference formats
  */
-export function parseVerseReference(reference: string): ParsedBibleReference[] | null {
+export function parseVerseReference(
+  reference: string,
+  translationId: string = BUILTIN_KJV_ID
+): ParsedBibleReference[] | null {
   // Check for navigation commands first
   if (isNavigationCommand(reference)) {
     return null;
@@ -1135,7 +1144,7 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
 
     // Check for context-only references (e.g., "chapter 3 verse 5", "verses 2 and 3")
     if (!hasBook) {
-      const contextual = parseContextualVerseReferences(textToProcess);
+      const contextual = parseContextualVerseReferences(textToProcess, translationId);
       if (contextual && contextual.length > 0) {
         updateContextFromPassages(contextual, reference);
         return contextual;
@@ -1166,7 +1175,7 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
           endChapter: chapterOnly.chapter,
           startVerse: 1,
           endVerse: 1,
-          translation: 'default',
+          translationId,
           displayRef: createDisplayRef(fullBookName, chapterOnly.chapter, 1),
         },
       ];
@@ -1210,7 +1219,7 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
           endChapter,
           startVerse,
           endVerse,
-          translation: 'default',
+          translationId,
           displayRef: createDisplayRef(
             start.b,
             chapter,
@@ -1247,7 +1256,7 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
       const contextResult = parser.parse_with_context(reference, lastParsedContext.fullReference);
       const osisRef = contextResult.osis();
       if (osisRef) {
-        passages = parseVerseReference(osisRef);
+        passages = parseVerseReference(osisRef, translationId);
       }
     } catch (error) {
       console.error('Error parsing with context:', error);
@@ -1266,7 +1275,7 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
       const contextResult = parser.parse_with_context(reference, legacyContext);
       const osisRef = contextResult.osis();
       if (osisRef) {
-        passages = parseVerseReference(osisRef);
+        passages = parseVerseReference(osisRef, translationId);
       }
     } catch (error) {
       console.error('Error with legacy context:', error);
@@ -1290,7 +1299,7 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
             chapter,
             startVerse: verse,
             endVerse: verse,
-            translation: 'default',
+            translationId,
             displayRef: createDisplayRef(book, chapter, verse),
           },
         ];
@@ -1313,9 +1322,12 @@ export function parseVerseReference(reference: string): ParsedBibleReference[] |
 /**
  * Look up verse text for a parsed reference
  */
-export async function lookupVerse(reference: ParsedBibleReference): Promise<string | null> {
+export async function lookupVerse(
+  reference: ParsedBibleReference,
+  translationId: string = BUILTIN_KJV_ID
+): Promise<string | null> {
   try {
-    const verses = await loadVerses();
+    const verses = await loadVerses(translationId);
     const key = `${reference.book} ${reference.chapter}:${reference.startVerse}`;
     const text = verses[key];
     
@@ -1348,7 +1360,10 @@ function findLastVerseInChapter(
 /**
  * Look up multiple verses for a reference range
  */
-export async function lookupVerses(reference: ParsedBibleReference): Promise<Array<{
+export async function lookupVerses(
+  reference: ParsedBibleReference,
+  translationId: string = BUILTIN_KJV_ID
+): Promise<Array<{
   verse: number;
   text: string;
   displayRef: string;
@@ -1356,7 +1371,7 @@ export async function lookupVerses(reference: ParsedBibleReference): Promise<Arr
   const results: Array<{ verse: number; text: string; displayRef: string }> = [];
   
   try {
-    const verses = await loadVerses();
+    const verses = await loadVerses(translationId);
 
     const endChapter = reference.endChapter ?? reference.chapter;
     const startChapter = reference.chapter;
@@ -1404,9 +1419,10 @@ export async function lookupVerses(reference: ParsedBibleReference): Promise<Arr
  */
 export async function detectAndLookupReferences(
   text: string,
-  options?: { aggressiveSpeechNormalization?: boolean }
+  options?: { aggressiveSpeechNormalization?: boolean; translationId?: string }
 ): Promise<DetectedBibleReference[]> {
   const results: DetectedBibleReference[] = [];
+  const translationId = options?.translationId || BUILTIN_KJV_ID;
 
   const navCommand = isNavigationCommand(text);
   if (navCommand && lastParsedContext.book && lastParsedContext.chapter) {
@@ -1417,14 +1433,16 @@ export async function detectAndLookupReferences(
       const next = await getNextVerse(
         mappedBook,
         lastParsedContext.chapter,
-        lastParsedContext.verse
+        lastParsedContext.verse,
+        translationId
       );
       if (next) target = { book: next.book, chapter: next.chapter, verse: next.verse };
     } else if (navCommand === "previous" && lastParsedContext.verse) {
       const prev = await getPreviousVerse(
         mappedBook,
         lastParsedContext.chapter,
-        lastParsedContext.verse
+        lastParsedContext.verse,
+        translationId
       );
       if (prev) target = { book: prev.book, chapter: prev.chapter, verse: prev.verse };
     } else if (navCommand === "next_chapter") {
@@ -1445,7 +1463,8 @@ export async function detectAndLookupReferences(
       const verseData = await loadVerseByComponents(
         target.book,
         target.chapter,
-        target.verse
+        target.verse,
+        translationId
       );
       if (verseData) {
         const passage: ParsedBibleReference = {
@@ -1455,7 +1474,7 @@ export async function detectAndLookupReferences(
           endChapter: target.chapter,
           startVerse: target.verse,
           endVerse: target.verse,
-          translation: "default",
+          translationId,
           displayRef: verseData.displayRef,
         };
         updateContextFromPassages([passage], text);
@@ -1468,6 +1487,7 @@ export async function detectAndLookupReferences(
             source: "direct",
             transcriptText: text,
             timestamp: Date.now(),
+            translationId,
             book: target.book,
             chapter: target.chapter,
             verse: target.verse,
@@ -1520,21 +1540,25 @@ export async function detectAndLookupReferences(
   normalizedText = normalizeMissingBookChapterSpace(normalizedText);
   normalizedText = normalizeConcatenatedReferences(normalizedText);
   // Reuse already-cached verses to avoid redundant loads during normalization.
-  const verses = await loadVerses();
-  normalizedText = await normalizeCombinedChapterVerseInput(normalizedText, verses);
+  const verses = await loadVerses(translationId);
+  normalizedText = await normalizeCombinedChapterVerseInput(
+    normalizedText,
+    translationId,
+    verses
+  );
 
   if (isDebugBibleParse()) {
     console.log("[SmartVerses][Detect] raw:", text);
     console.log("[SmartVerses][Detect] normalized:", normalizedText);
   }
 
-  const parsed = parseVerseReference(normalizedText);
+  const parsed = parseVerseReference(normalizedText, translationId);
   if (!parsed || parsed.length === 0) {
     return results;
   }
 
   for (const ref of parsed) {
-    const verseData = await lookupVerses(ref);
+    const verseData = await lookupVerses(ref, translationId);
     
     for (const verse of verseData) {
       results.push({
@@ -1545,6 +1569,7 @@ export async function detectAndLookupReferences(
         source: 'direct',
         transcriptText: text,
         timestamp: Date.now(),
+        translationId,
         // Include components for navigation
         book: ref.book,
         chapter: ref.chapter,
@@ -1563,9 +1588,14 @@ export async function detectAndLookupReferences(
 /**
  * Check if a verse exists in the Bible data
  */
-export async function verseExists(book: string, chapter: number, verse: number): Promise<boolean> {
+export async function verseExists(
+  book: string,
+  chapter: number,
+  verse: number,
+  translationId: string = BUILTIN_KJV_ID
+): Promise<boolean> {
   try {
-    const verses = await loadVerses();
+    const verses = await loadVerses(translationId);
     const key = `${book} ${chapter}:${verse}`;
     return key in verses;
   } catch {
@@ -1580,10 +1610,11 @@ export async function verseExists(book: string, chapter: number, verse: number):
 export async function getPreviousVerse(
   book: string,
   chapter: number,
-  verse: number
+  verse: number,
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<{ book: string; chapter: number; verse: number; displayRef: string } | null> {
   try {
-    const verses = await loadVerses();
+    const verses = await loadVerses(translationId);
     
     // Try previous verse in same chapter
     if (verse > 1) {
@@ -1627,10 +1658,11 @@ export async function getPreviousVerse(
 export async function getNextVerse(
   book: string,
   chapter: number,
-  verse: number
+  verse: number,
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<{ book: string; chapter: number; verse: number; displayRef: string } | null> {
   try {
-    const verses = await loadVerses();
+    const verses = await loadVerses(translationId);
     
     // Try next verse in same chapter
     const nextKey = `${book} ${chapter}:${verse + 1}`;
@@ -1666,7 +1698,8 @@ export async function getNextVerse(
 export async function getVerseNavigation(
   book: string,
   chapter: number,
-  verse: number
+  verse: number,
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<{
   hasPrevious: boolean;
   hasNext: boolean;
@@ -1674,8 +1707,8 @@ export async function getVerseNavigation(
   next: { book: string; chapter: number; verse: number; displayRef: string } | null;
 }> {
   const [previous, next] = await Promise.all([
-    getPreviousVerse(book, chapter, verse),
-    getNextVerse(book, chapter, verse),
+    getPreviousVerse(book, chapter, verse, translationId),
+    getNextVerse(book, chapter, verse, translationId),
   ]);
 
   return {
@@ -1692,7 +1725,8 @@ export async function getVerseNavigation(
 export async function loadVerseByComponents(
   book: string,
   chapter: number,
-  verse: number
+  verse: number,
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<{
   reference: string;
   displayRef: string;
@@ -1702,7 +1736,7 @@ export async function loadVerseByComponents(
   verse: number;
 } | null> {
   try {
-    const verses = await loadVerses();
+    const verses = await loadVerses(translationId);
     const key = `${book} ${chapter}:${verse}`;
     const text = verses[key];
     

@@ -17,6 +17,7 @@ import {
   loadSmartVersesSettings,
 } from "../../services/transcriptionService";
 import { getAppSettings } from "../../utils/aiConfig";
+import { BUILTIN_KJV_ID } from "../../services/bibleLibraryService";
 import { detectAndLookupReferences, resetParseContext } from "../../services/smartVersesBibleService";
 import {
   analyzeTranscriptChunk,
@@ -144,8 +145,11 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
           if (!currentMode) return;
 
           if (currentMode === "scripture") {
+            const translationId =
+              settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
             const refs = await detectAndLookupReferences(text, {
               aggressiveSpeechNormalization: true,
+              translationId,
             });
             if (refs.length > 0 && activeTestRef.current === "scripture") {
               setScriptureResult(refs[0]);
@@ -167,8 +171,11 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
             );
             if (!activeTestRef.current || activeTestRef.current !== "paraphrase") return;
             if (analysis.paraphrasedVerses.length > 0) {
+              const translationId =
+                settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
               const resolved = await resolveParaphrasedVerses(
-                analysis.paraphrasedVerses
+                analysis.paraphrasedVerses,
+                translationId
               );
               if (resolved.length > 0 && activeTestRef.current === "paraphrase") {
                 setParaphraseResult(resolved[0]);

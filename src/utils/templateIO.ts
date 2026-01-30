@@ -169,6 +169,7 @@ function fillTemplateDefaults(t: Template): Template {
     // Preserve scripture output mapping if present
     scriptureReferenceFileIndex: t.scriptureReferenceFileIndex,
     scriptureTextFileIndex: t.scriptureTextFileIndex,
+    appendTranslationToReference: t.appendTranslationToReference,
   };
 }
 

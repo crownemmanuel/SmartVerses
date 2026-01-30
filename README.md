@@ -282,7 +282,6 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 
 - Built with [Tauri](https://tauri.app/) for cross-platform desktop apps
 - AI capabilities powered by [LangChain](https://www.langchain.com/)
-- Bible data from KJV JSON project
 
 ## 📞 Support
 

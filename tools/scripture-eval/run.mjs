@@ -9,7 +9,7 @@ const DEFAULT_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const DEFAULT_BASE_URL =
   process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
 const DEFAULT_VERSES_PATH =
-  process.env.KJV_VERSES_PATH || "./public/data/verses-kjv.json";
+  process.env.KJV_VERSES_PATH || "./public/data/bibles/kjv.svjson";
 
 // All books of the Bible (66 books)
 const BIBLE_BOOKS = [
@@ -1337,12 +1337,39 @@ async function localParseReferences(text, { verses, aggressiveSpeech }) {
   return parsed.map((p) => p.displayRef).filter(Boolean);
 }
 
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Build flat { "Book c:v": "text" } from .svjson books structure. */
+function versesFromBooks(books) {
+  const out = {};
+  for (const [bookName, chapters] of Object.entries(books)) {
+    if (!isRecord(chapters)) continue;
+    for (const [chapterKey, verses] of Object.entries(chapters)) {
+      if (!isRecord(verses)) continue;
+      for (const [verseKey, verseValue] of Object.entries(verses)) {
+        const text =
+          typeof verseValue === "string"
+            ? verseValue
+            : isRecord(verseValue) && typeof verseValue.t === "string"
+              ? verseValue.t
+              : "";
+        if (text) out[`${bookName} ${chapterKey}:${verseKey}`] = text;
+      }
+    }
+  }
+  return out;
+}
+
 async function loadVerses(versesPath) {
   const resolved = path.isAbsolute(versesPath)
     ? versesPath
     : path.resolve(process.cwd(), versesPath);
   const raw = await fs.readFile(resolved, "utf-8");
-  return JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+  if (isRecord(parsed.books)) return versesFromBooks(parsed.books);
+  return parsed;
 }
 
 // =============================================================================

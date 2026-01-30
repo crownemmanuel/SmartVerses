@@ -7,6 +7,7 @@
 import { bcv_parser } from "bible-passage-reference-parser/esm/bcv_parser";
 import * as en from "bible-passage-reference-parser/esm/lang/en";
 import { LayoutType } from "../types";
+import { BUILTIN_KJV_ID, getTranslationById } from "./bibleLibraryService";
 
 // Types for our Bible service
 export interface BibleReference {
@@ -38,8 +39,8 @@ export interface VerseSlide {
 let bcvParser: bcv_parser | null = null;
 
 // Cached verses
-let versesCache: Record<string, string> | null = null;
-let versesLoadPromise: Promise<Record<string, string>> | null = null;
+const versesCache = new Map<string, Record<string, string>>();
+const versesLoadPromises = new Map<string, Promise<Record<string, string>>>();
 
 // Book name mapping from OSIS to standard names
 const OSIS_TO_BOOK_NAME: Record<string, string> = {
@@ -129,32 +130,45 @@ function getParser(): bcv_parser {
 /**
  * Load verses from the JSON file
  */
-export async function loadVerses(): Promise<Record<string, string>> {
-  if (versesCache) {
-    return versesCache;
+export async function loadVerses(
+  translationId: string = BUILTIN_KJV_ID
+): Promise<Record<string, string>> {
+  const resolvedId = translationId || BUILTIN_KJV_ID;
+
+  if (versesCache.has(resolvedId)) {
+    return versesCache.get(resolvedId) as Record<string, string>;
   }
 
-  if (versesLoadPromise) {
-    return versesLoadPromise;
+  if (versesLoadPromises.has(resolvedId)) {
+    return versesLoadPromises.get(resolvedId) as Promise<Record<string, string>>;
   }
 
-  versesLoadPromise = fetch("/data/verses-kjv.json")
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`Failed to load verses: ${response.statusText}`);
-      }
-      return response.json();
-    })
-    .then((data) => {
-      versesCache = data;
-      return data;
-    })
-    .catch((error) => {
-      versesLoadPromise = null;
-      throw error;
-    });
+  const loadPromise = (async () => {
+    const translation = await getTranslationById(resolvedId);
+    const fallback =
+      translation || (await getTranslationById(BUILTIN_KJV_ID));
 
-  return versesLoadPromise;
+    if (!fallback) {
+      throw new Error("Failed to load built-in KJV translation.");
+    }
+
+    const finalId = translation ? resolvedId : BUILTIN_KJV_ID;
+    versesCache.set(finalId, fallback.verseIndex);
+    versesCache.set(resolvedId, fallback.verseIndex);
+    versesLoadPromises.delete(resolvedId);
+    return fallback.verseIndex;
+  })().catch((error) => {
+    versesLoadPromises.delete(resolvedId);
+    throw error;
+  });
+
+  versesLoadPromises.set(resolvedId, loadPromise);
+  return loadPromise;
+}
+
+export function clearVersesCache(): void {
+  versesCache.clear();
+  versesLoadPromises.clear();
 }
 
 /**
@@ -279,9 +293,10 @@ export function getVerseText(
  * Get all verses for a reference (handles ranges)
  */
 export async function getVersesForReference(
-  reference: BibleReference
+  reference: BibleReference,
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<Array<{ verse: number; chapter: number; book: string; text: string; displayRef: string }>> {
-  const verses = await loadVerses();
+  const verses = await loadVerses(translationId);
   const result: Array<{ verse: number; chapter: number; book: string; text: string; displayRef: string }> = [];
 
   const startBook = osisBookToFullName(reference.startBook);
@@ -344,12 +359,16 @@ export async function getVersesForReference(
  * Line 2: Reference
  */
 export async function createVerseSlidesFromReferences(
-  references: DetectedReference[]
+  references: DetectedReference[],
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<VerseSlide[]> {
   const slides: VerseSlide[] = [];
 
   for (const detected of references) {
-    const verseData = await getVersesForReference(detected.reference);
+    const verseData = await getVersesForReference(
+      detected.reference,
+      translationId
+    );
     
     for (const verse of verseData) {
       slides.push({
@@ -370,7 +389,8 @@ export async function createVerseSlidesFromReferences(
  */
 export async function processTextWithBibleReferences(
   slides: Array<{ text: string; layout: LayoutType }>,
-  insertScriptureSlides: boolean = true
+  insertScriptureSlides: boolean = true,
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<Array<{ text: string; layout: LayoutType; isAutoScripture?: boolean }>> {
   console.log("=== processTextWithBibleReferences called ===");
   console.log("insertScriptureSlides:", insertScriptureSlides);
@@ -381,7 +401,7 @@ export async function processTextWithBibleReferences(
     return slides;
   }
 
-  await loadVerses(); // Ensure verses are loaded
+  await loadVerses(translationId); // Ensure verses are loaded
   console.log("Verses loaded successfully");
   
   const result: Array<{ text: string; layout: LayoutType; isAutoScripture?: boolean }> = [];
@@ -399,7 +419,10 @@ export async function processTextWithBibleReferences(
     
     if (references.length > 0) {
       // Create verse slides and insert them after this slide
-      const verseSlides = await createVerseSlidesFromReferences(references);
+      const verseSlides = await createVerseSlidesFromReferences(
+        references,
+        translationId
+      );
       console.log(`Created ${verseSlides.length} verse slides`);
       
       for (const verseSlide of verseSlides) {

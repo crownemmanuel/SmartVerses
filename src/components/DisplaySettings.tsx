@@ -1719,6 +1719,20 @@ const DisplaySettings: React.FC = () => {
           <h3 style={{ margin: 0 }}>Layout & preview</h3>
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "12px" }}>
+            <input
+              type="checkbox"
+              checked={settings.displayTranslation}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  displayTranslation: event.target.checked,
+                }))
+              }
+              style={{ width: "18px", height: "18px", cursor: "pointer" }}
+            />
+            <span style={{ fontWeight: 500 }}>Display translation</span>
+          </label>
           <label>Preview & edit layout</label>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
             <button

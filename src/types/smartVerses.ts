@@ -62,7 +62,7 @@ export interface ParsedBibleReference {
   endChapter?: number;
   startVerse: number;
   endVerse: number;
-  translation: string;
+  translationId: string;
   displayRef: string; // Human-readable reference like "John 3:16"
 }
 
@@ -114,6 +114,7 @@ export interface DetectedBibleReference {
   matchedPhrase?: string;   // For paraphrased references
   transcriptText?: string;  // The transcript text that contained this reference
   timestamp: number;
+  translationId?: string;
   // Verse components for navigation
   book?: string;
   chapter?: number;
@@ -294,8 +295,11 @@ export interface SmartVersesSettings {
   bibleOutputPath?: string;
   bibleTextFileName?: string;
   bibleReferenceFileName?: string;
+  appendTranslationToReference?: boolean;
   clearTextAfterLive?: boolean;
   clearTextDelay?: number;
+  // Bible translation settings
+  defaultBibleTranslationId?: string;
 }
 
 export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
@@ -328,6 +332,8 @@ export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
   autoTriggerOnDetection: false,
   clearTextAfterLive: true,
   clearTextDelay: 0,
+  appendTranslationToReference: true,
+  defaultBibleTranslationId: "kjv",
 };
 
 // =============================================================================
