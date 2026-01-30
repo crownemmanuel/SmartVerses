@@ -33,6 +33,7 @@ export type WsMessageType =
   | "session_created"
   | "session_deleted"
   | "transcription_stream"
+  | "transcription_status"
   | "error";
 
 export interface WsTextUpdate {
@@ -96,6 +97,15 @@ export interface WsTranscriptionStream {
   }>;
 }
 
+export type TranscriptionStatusUpdate = "recording" | "stopped";
+
+export interface WsTranscriptionStatus {
+  type: "transcription_status";
+  status: TranscriptionStatusUpdate;
+  timestamp?: number;
+  reason?: string;
+}
+
 export type WsMessage =
   | WsTextUpdate
   | WsJoinSession
@@ -103,6 +113,7 @@ export type WsMessage =
   | WsSessionCreated
   | WsSessionDeleted
   | WsTranscriptionStream
+  | WsTranscriptionStatus
   | WsError;
 
 // Settings types

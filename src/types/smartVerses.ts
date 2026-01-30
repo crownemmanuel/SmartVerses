@@ -93,6 +93,8 @@ export interface KeyPoint {
   category: KeyPointCategory;
 }
 
+export type ParaphraseDetectionMode = 'ai' | 'offline' | 'hybrid';
+
 export interface TranscriptAnalysisResult {
   paraphrasedVerses: ParaphrasedVerse[];
   keyPoints: KeyPoint[];
@@ -162,7 +164,7 @@ export interface SmartVersesChatMessage {
 // OFFLINE MODEL TYPES
 // =============================================================================
 
-export type OfflineModelType = 'whisper' | 'moonshine';
+export type OfflineModelType = 'whisper' | 'moonshine' | 'embedding';
 
 export interface OfflineModelInfo {
   id: string;
@@ -234,6 +236,17 @@ export const AVAILABLE_OFFLINE_MODELS: OfflineModelInfo[] = [
     supportsWebGPU: true,
     supportsWASM: true,
   },
+  {
+    id: 'embedding-minilm',
+    name: 'Sentence Embeddings (MiniLM)',
+    type: 'embedding',
+    modelId: 'Xenova/all-MiniLM-L6-v2',
+    size: '~90MB',
+    description: 'Semantic matching for offline paraphrase detection',
+    isDownloaded: false,
+    supportsWebGPU: true,
+    supportsWASM: true,
+  },
 ];
 
 export interface SmartVersesSettings {
@@ -260,11 +273,13 @@ export interface SmartVersesSettings {
   
   // AI Search settings
   enableAISearch: boolean;
-  bibleSearchProvider?: 'openai' | 'gemini' | 'groq';
+  bibleSearchProvider?: 'openai' | 'gemini' | 'groq' | 'offline';
   bibleSearchModel?: string;
+  bibleSearchConfidenceThreshold?: number; // Default 0.6 (offline search)
   
   // AI Detection settings (for transcription)
   enableParaphraseDetection: boolean;
+  paraphraseDetectionMode?: ParaphraseDetectionMode;
   enableKeyPointExtraction: boolean;
   keyPointExtractionInstructions?: string;
   paraphraseConfidenceThreshold: number; // Default 0.6
@@ -317,13 +332,15 @@ export const DEFAULT_SMART_VERSES_SETTINGS: SmartVersesSettings = {
   enableAISearch: false, // Off by default - uses text search instead
   bibleSearchProvider: 'groq',
   bibleSearchModel: 'llama-3.3-70b-versatile',
+  bibleSearchConfidenceThreshold: 0.6,
   enableParaphraseDetection: true,
+  paraphraseDetectionMode: 'offline',
   enableKeyPointExtraction: false,
   keyPointExtractionInstructions:
     "Extract 1–2 concise, quotable key points suitable for slides/lower-thirds. Prefer short sentences, avoid filler, keep the original voice, and skip vague statements.",
   paraphraseConfidenceThreshold: 0.6,
   aiMinWordCount: 6,
-  autoAddDetectedToHistory: false,
+  autoAddDetectedToHistory: true,
   highlightDirectReferences: true,
   highlightParaphrasedReferences: true,
   directReferenceColor: '#ec4899', // Pink

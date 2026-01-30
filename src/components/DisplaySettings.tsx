@@ -46,6 +46,8 @@ const SAMPLE_SLIDE_LINES = [
   "Line 5 sample text",
   "Line 6 sample text",
 ];
+const MONITOR_RETRY_DELAY_MS = 500;
+const MAX_MONITOR_RETRIES = 8;
 
 const DisplaySettings: React.FC = () => {
   const [settings, setSettings] = useState<DisplaySettingsType>(
@@ -174,29 +176,65 @@ const DisplaySettings: React.FC = () => {
 
   // Track if we've attempted initial monitor detection
   const [monitorsInitialized, setMonitorsInitialized] = useState(false);
+  const [monitorRetryCount, setMonitorRetryCount] = useState(0);
 
-  // Retry monitor detection if we don't have enough monitors for the saved index
+  // Retry monitor detection until the selected monitor is available
   useEffect(() => {
-    if (!settingsLoaded || monitors.length === 0) return;
+    if (!settingsLoaded) return;
 
-    const savedIndex = settings.monitorIndex;
-    const needsMoreMonitors = savedIndex !== null && savedIndex >= monitors.length;
-
-    if (needsMoreMonitors && !monitorsInitialized) {
-      // Wait a bit and retry monitor detection - secondary monitors might take longer
-      console.log(`[Display] Saved monitor index ${savedIndex} but only ${monitors.length} monitors detected, retrying...`);
-      const timer = setTimeout(() => {
-        void loadMonitors().then(() => setMonitorsInitialized(true));
-      }, 500);
-      return () => clearTimeout(timer);
-    } else {
-      setMonitorsInitialized(true);
+    const needsDisplay = settings.enabled || settings.windowAudienceScreen;
+    if (!needsDisplay) {
+      setMonitorsInitialized(false);
+      if (monitorRetryCount !== 0) setMonitorRetryCount(0);
+      setErrorMessage("");
+      return;
     }
-  }, [settingsLoaded, monitors.length, settings.monitorIndex, monitorsInitialized]);
+
+    const requiredCount =
+      settings.monitorIndex !== null ? settings.monitorIndex + 1 : 1;
+
+    if (monitors.length >= requiredCount && monitors.length > 0) {
+      setMonitorsInitialized(true);
+      if (monitorRetryCount !== 0) setMonitorRetryCount(0);
+      setErrorMessage("");
+      return;
+    }
+
+    setMonitorsInitialized(false);
+
+    if (monitorRetryCount >= MAX_MONITOR_RETRIES) {
+      if (settings.monitorIndex !== null) {
+        setErrorMessage(
+          `Selected monitor ${settings.monitorIndex + 1} not detected. Connect it or choose another monitor.`
+        );
+      } else if (monitors.length === 0) {
+        setErrorMessage("No monitors detected. Please ensure at least one display is connected.");
+      }
+      return;
+    }
+
+    console.log(
+      `[Display] Waiting for monitors (have ${monitors.length}, need ${requiredCount}). Retrying...`
+    );
+    const timer = setTimeout(() => {
+      setMonitorRetryCount((prev) => prev + 1);
+      void loadMonitors();
+    }, MONITOR_RETRY_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [
+    settingsLoaded,
+    settings.enabled,
+    settings.windowAudienceScreen,
+    settings.monitorIndex,
+    monitors.length,
+    monitorRetryCount,
+  ]);
 
   useEffect(() => {
-    if (!settingsLoaded || !monitorsInitialized) return;
+    if (!settingsLoaded) return;
     if (settings.enabled) {
+      if (!monitorsInitialized) return;
       // Wait for monitors to be detected before opening window
       if (monitors.length === 0) {
         console.log("[Display] Waiting for monitors to be detected...");
@@ -386,10 +424,11 @@ const DisplaySettings: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!settingsLoaded || !monitorsInitialized) return;
+    if (!settingsLoaded) return;
 
     const manageAudienceWindow = async () => {
       if (settings.windowAudienceScreen) {
+        if (!monitorsInitialized) return;
         // Wait for monitors to be detected before opening window
         if (monitors.length === 0) {
           console.log("[Display] Windows: Waiting for monitors to be detected...");

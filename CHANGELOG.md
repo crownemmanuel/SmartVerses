@@ -2,6 +2,29 @@
 
 All notable changes to SmartVerses will be documented in this file.
 
+## [0.7.3] - 2026-01-29
+
+### Added
+- **Offline Paraphrase**: Introduction of offline paraphrase for Bible search and transcription (direct quoting support)
+- **Monitor Identification**: Option to identify a second monitor; onboarding monitor selector for dual-screen setup
+- **Transcription Status in Remote**: Handle `transcription_status` in remote WebSocket so clients see stopped notification
+
+### Fixed
+- **Cloud Tab Provider**: Cloud tab now updates provider correctly when switching from offline
+- **Keypoint Extraction Test**: Keypoint extraction test no longer blocks when offline Bible search is enabled
+- **Monitor Identify Window**: Fix monitor identify window stuck on quick click; fix dual-screen window opening off screen
+- **Recorder Cleanup**: Fix recorder cleanup pending count reset; use write chain instead of promise array for long recordings to prevent issues
+- **Transcription Time Limit**: Clearer copy for transcription time limit; no auto-stop for remote source
+- **Whisper Overlap**: Whisper overlap handling fix; Vitest overlap tests added
+
+### Changed
+- **Paraphrasing UI**: Paraphrase/offline UI, defaults, and settings order improvements in SmartVerses
+- **Duplicate Paraphrase Detection**: Refactored duplicate paraphrase detection into helper function; removed unused `groqHasKey` state from ParaphrasingSetupScreen
+- **TranscriptionStatusUpdate**: Deduplicated `TranscriptionStatusUpdate` type
+
+### Technical
+- Apple Silicon (aarch64) build: enable i8mm for whisper-rs/ggml (PR #25)
+
 ## [0.7.2] - 2026-01-29
 
 ### Changed

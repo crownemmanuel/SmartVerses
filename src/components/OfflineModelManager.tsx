@@ -343,6 +343,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
 
   const whisperModels = models.filter((m) => m.type === "whisper");
   const moonshineModels = models.filter((m) => m.type === "moonshine");
+  const embeddingModels = models.filter((m) => m.type === "embedding");
   const showNativeWhisperModels = isMac || isDevMode;
   const showOfflineWhisperModels = !isMac || isDevMode;
 
@@ -598,6 +599,45 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
             </div>
           </div>
 
+          {/* Embedding Models */}
+          {embeddingModels.length > 0 && (
+            <div style={{ marginTop: "var(--spacing-6)" }}>
+              <h3
+                style={{
+                  margin: "0 0 var(--spacing-3) 0",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--spacing-2)",
+                }}
+              >
+                <span>Embedding Models</span>
+                <span
+                  style={{
+                    fontSize: "0.75em",
+                    color: "var(--app-text-color-secondary)",
+                    fontWeight: "normal",
+                  }}
+                >
+                  (Offline paraphrase detection)
+                </span>
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-2)" }}>
+                {embeddingModels.map((model) => (
+                  <ModelCard
+                    key={model.modelId}
+                    model={model}
+                    isDownloading={downloadingModels.has(model.modelId)}
+                    isDeleting={deletingModels.has(model.modelId)}
+                    progress={downloadProgress[model.modelId]}
+                    currentFile={currentFile[model.modelId]}
+                    onDownload={() => handleDownload(model)}
+                    onDelete={() => handleDelete(model)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Note */}
           <div
             style={{
@@ -611,7 +651,7 @@ const OfflineModelManager: React.FC<OfflineModelManagerProps> = ({
           >
             <strong>Note:</strong> Downloaded models are cached on your computer
             and will persist across sessions. Models run entirely offline after
-            download - no internet connection required for transcription.
+            download. Embedding models power offline paraphrase detection.
           </div>
         </div>
       </div>

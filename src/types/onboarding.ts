@@ -50,7 +50,7 @@ export interface OnboardingState {
     | "offline-whisper"
     | "offline-whisper-native"
     | "offline-moonshine";
-  paraphrasingProvider?: "openai" | "gemini" | "groq";
+  paraphrasingProvider?: "groq" | "offline";
 
   // API Keys
   assemblyAIKey?: string;

@@ -121,8 +121,17 @@ async function initializeIndex(translationId: string): Promise<void> {
 export async function searchBibleText(
   query: string,
   limit: number = 10,
-  translationId: string = BUILTIN_KJV_ID
+  translationIdOrOptions?: string | { suggest?: boolean },
+  options?: { suggest?: boolean }
 ): Promise<SearchResult[]> {
+  const translationId =
+    typeof translationIdOrOptions === "string"
+      ? translationIdOrOptions
+      : BUILTIN_KJV_ID;
+  const searchOptions =
+    typeof translationIdOrOptions === "string"
+      ? options
+      : translationIdOrOptions;
   await initializeIndex(translationId);
 
   const searchIndex = searchIndexMap.get(translationId);
@@ -135,7 +144,10 @@ export async function searchBibleText(
   const results: SearchResult[] = [];
   
   try {
-    const searchResults = searchIndex.search(query, { limit }) as Array<{ result: string[] }>;
+    const searchResults = searchIndex.search(query, {
+      limit,
+      suggest: searchOptions?.suggest ?? false,
+    }) as Array<{ result: string[] }>;
     
     // FlexSearch returns an array with field results
     for (const fieldResult of searchResults) {

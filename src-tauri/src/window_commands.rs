@@ -46,7 +46,34 @@ async fn open_dialog_impl(
 
         // Calculate position if a monitor is selected
         if let Some(index) = monitor_index {
-            if let Ok(monitors) = handle.available_monitors() {
+            if let Ok(mut monitors) = handle.available_monitors() {
+                monitors.sort_by(|a, b| {
+                    let a_pos = a.position();
+                    let b_pos = b.position();
+                    let a_primary = a_pos.x == 0 && a_pos.y == 0;
+                    let b_primary = b_pos.x == 0 && b_pos.y == 0;
+                    if a_primary != b_primary {
+                        return if a_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                    }
+                    if a_pos.x != b_pos.x {
+                        return a_pos.x.cmp(&b_pos.x);
+                    }
+                    if a_pos.y != b_pos.y {
+                        return a_pos.y.cmp(&b_pos.y);
+                    }
+                    let a_size = a.size();
+                    let b_size = b.size();
+                    if a_size.width != b_size.width {
+                        return a_size.width.cmp(&b_size.width);
+                    }
+                    if a_size.height != b_size.height {
+                        return a_size.height.cmp(&b_size.height);
+                    }
+                    let a_name = a.name().map(|s| s.as_str()).unwrap_or("");
+                    let b_name = b.name().map(|s| s.as_str()).unwrap_or("");
+                    a_name.cmp(&b_name)
+                });
+
                 if let Some(monitor) = monitors.get(index) {
                     let monitor_position = monitor.position();
                     let monitor_size = monitor.size();

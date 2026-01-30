@@ -182,7 +182,11 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
   // Load settings on mount
   useEffect(() => {
     const savedSettings = loadSmartVersesSettings();
-    setSettings(savedSettings);
+    const normalizedSettings: SmartVersesSettingsType =
+      savedSettings.paraphraseDetectionMode === "hybrid"
+        ? { ...savedSettings, paraphraseDetectionMode: "offline" }
+        : savedSettings;
+    setSettings(normalizedSettings);
     loadMicrophones();
     if ((savedSettings.audioCaptureMode || "native") === "native") {
       loadNativeDevices();
@@ -538,6 +542,11 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
       available.push({ value: "groq", label: "Groq (Recommended - Super Fast)" });
     }
 
+    available.push({
+      value: "offline",
+      label: "Offline Search (Experimental - low accuracy)",
+    });
+
     return available;
   }, []);
 
@@ -556,6 +565,9 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
           break;
         case "groq":
           hasApiKey = !!appSettings.groqConfig?.apiKey;
+          break;
+        case "offline":
+          hasApiKey = true;
           break;
       }
 
@@ -628,6 +640,9 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             models = DEFAULT_MODELS.groq;
           }
           break;
+        case "offline":
+          models = [];
+          break;
       }
       
       // Ensure the currently selected model is included in the list
@@ -652,11 +667,10 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
 
   // Load models when provider changes
   useEffect(() => {
-    if (!isSmartVersesMode) return;
     if (settings.bibleSearchProvider) {
       loadBibleSearchModels(settings.bibleSearchProvider);
     }
-  }, [isSmartVersesMode, settings.bibleSearchProvider, loadBibleSearchModels]);
+  }, [settings.bibleSearchProvider, loadBibleSearchModels]);
 
   const formatBibleSearchModelLabel = useCallback(
     (modelId: string) => {
@@ -671,6 +685,50 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
     },
     [settings.bibleSearchProvider]
   );
+
+  const formatProviderLabel = useCallback((provider?: string | null) => {
+    switch (provider) {
+      case "openai":
+        return "OpenAI";
+      case "gemini":
+        return "Gemini";
+      case "groq":
+        return "Groq";
+      default:
+        return "Default AI";
+    }
+  }, []);
+
+  const formatModelLabelForProvider = useCallback(
+    (provider?: string | null, modelId?: string | null) => {
+      if (!modelId) return "default model";
+      if (provider === "groq") {
+        return formatGroqModelLabel(modelId);
+      }
+      return modelId;
+    },
+    []
+  );
+
+  const getParaphraseAIOptionLabel = useCallback(() => {
+    const appSettings = getAppSettings();
+    const provider =
+      settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline"
+        ? settings.bibleSearchProvider
+        : appSettings.defaultAIProvider;
+    const model =
+      settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline"
+        ? settings.bibleSearchModel
+        : appSettings.defaultAIModel;
+    const providerLabel = formatProviderLabel(provider);
+    const modelLabel = formatModelLabelForProvider(provider, model || "");
+    return `AI Search (${providerLabel} - ${modelLabel})`;
+  }, [
+    settings.bibleSearchProvider,
+    settings.bibleSearchModel,
+    formatProviderLabel,
+    formatModelLabelForProvider,
+  ]);
 
   // Load available microphones
   const loadMicrophones = async () => {
@@ -1074,6 +1132,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
 
       {/* Transcription Settings */}
       {isTranscriptionMode && (
+      <>
       <div style={sectionStyle}>
         <div style={sectionHeaderStyle}>
           <FaMicrophone />
@@ -1214,7 +1273,129 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             </div>
           )}
         </div>
-        {!isRemoteTranscription && (
+
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Microphone</label>
+          {(settings.audioCaptureMode || "webrtc") === "native" ? (
+            <>
+              <select
+                value={settings.selectedNativeMicrophoneId || ""}
+                onChange={(e) =>
+                  handleChange(
+                    "selectedNativeMicrophoneId",
+                    e.target.value || undefined
+                  )
+                }
+                style={inputStyle}
+                disabled={
+                  settings.runTranscriptionInBrowser ||
+                  settings.remoteTranscriptionEnabled
+                }
+              >
+                <option value="">System Default</option>
+                {nativeDevices.map((d) => (
+                  <option key={d.id} value={String(d.id)}>
+                    {d.name}
+                    {d.is_default ? " (Default)" : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={loadNativeDevices}
+                className="secondary btn-sm"
+                style={{ marginTop: "var(--spacing-2)" }}
+                type="button"
+                disabled={
+                  settings.runTranscriptionInBrowser ||
+                  settings.remoteTranscriptionEnabled
+                }
+              >
+                Refresh Native Devices
+              </button>
+              {nativeDevicesError && (
+                <p style={{ ...helpTextStyle, color: "var(--error)" }}>
+                  Failed to load native devices: {nativeDevicesError}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <select
+                value={settings.selectedMicrophoneId || ""}
+                onChange={(e) =>
+                  handleChange("selectedMicrophoneId", e.target.value)
+                }
+                style={inputStyle}
+                disabled={
+                  settings.runTranscriptionInBrowser ||
+                  settings.remoteTranscriptionEnabled
+                }
+              >
+                <option value="">Default Microphone</option>
+                {availableMics.map((mic) => (
+                  <option key={mic.deviceId} value={mic.deviceId}>
+                    {mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={loadMicrophones}
+                className="secondary btn-sm"
+                style={{ marginTop: "var(--spacing-2)" }}
+                type="button"
+                disabled={
+                  settings.runTranscriptionInBrowser ||
+                  settings.remoteTranscriptionEnabled
+                }
+              >
+                Refresh Devices
+              </button>
+            </>
+          )}
+        </div>
+
+        <div style={fieldStyle}>
+          <label style={checkboxLabelStyle}>
+            <input
+              type="checkbox"
+              checked={settings.runTranscriptionInBrowser || false}
+              onChange={(e) =>
+                handleChange("runTranscriptionInBrowser", e.target.checked)
+              }
+            />
+            Run transcription in browser
+          </label>
+          <p style={helpTextStyle}>
+            If your microphone isn't showing up in the list above, enable this
+            option. When you start transcription, it will open in your default
+            browser (Chrome/Firefox) which has full access to all audio devices.
+            Transcriptions will stream back to the app automatically.
+          </p>
+        </div>
+
+        <div style={fieldStyle}>
+          <label style={checkboxLabelStyle}>
+            <input
+              type="checkbox"
+              checked={settings.streamTranscriptionsToWebSocket}
+              onChange={(e) =>
+                handleChange(
+                  "streamTranscriptionsToWebSocket",
+                  e.target.checked
+                )
+              }
+            />
+            Stream transcription output to WebSocket
+          </label>
+          <p style={helpTextStyle}>
+            Rebroadcast transcript chunks (and any extracted key points /
+            scripture refs) to the Live Slides WebSocket so other pages (like
+            the Notepad) can consume them in real-time.
+          </p>
+        </div>
+      </div>
+
+      {!isRemoteTranscription && (
           <>
             {/* Engine Configuration Container */}
             <div
@@ -1957,8 +2138,11 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
                   style={inputStyle}
                 />
                 <p style={helpTextStyle}>
-                  Show a continuation prompt at this limit (default 120 minutes). If
-                  no response in 1 minute, transcription auto-stops.
+                  At this limit (default 120 minutes), we prompt you to continue so you
+                  don't run up API charges if transcription is left on. Transcription
+                  stops at this time unless you choose to continue; if there's no
+                  response within 1 minute, it stops automatically. This limit doesn't
+                  apply when using a remote transcription source.
                 </p>
               </div>
 
@@ -1995,7 +2179,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             </div>
           </>
         )}
-      </div>
+      </>
       )}
 
       {/* Bible Translations */}
@@ -2121,8 +2305,9 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             </h4>
             <p style={{ ...helpTextStyle, marginBottom: "var(--spacing-3)" }}>
               When enabled, AI will search for Bible verses when direct reference
-              parsing fails. Configure the provider and model below. API keys are
-              configured in Settings → AI Configuration.
+              parsing fails. You can also select Offline Search (Experimental) to
+              use local paraphrase matching instead. API keys are configured in
+              Settings → AI Configuration.
             </p>
 
             <div
@@ -2168,7 +2353,9 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
                     style={inputStyle}
                   >
                     <option value="">
-                      {bibleSearchModelsLoading
+                      {settings.bibleSearchProvider === "offline"
+                        ? "Not required for offline"
+                        : bibleSearchModelsLoading
                         ? "Loading models..."
                         : "Select Model"}
                     </option>
@@ -2204,122 +2391,185 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
                 Select a provider and model to enable AI Bible search.
               </p>
             )}
-          </div>
-        </div>
-      )}
-
-      {isTranscriptionMode && !isRemoteTranscription && (
-        <div style={sectionStyle}>
-          <div style={sectionHeaderStyle}>
-            <FaRobot />
-            <h3 style={{ margin: 0 }}>Transcription AI</h3>
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={settings.enableParaphraseDetection}
-                onChange={(e) =>
-                  handleChange("enableParaphraseDetection", e.target.checked)
-                }
-              />
-              Enable Paraphrase Detection
-            </label>
-            <p style={helpTextStyle}>
-              Detect when speakers paraphrase Bible verses without quoting them
-              directly.
-            </p>
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={settings.enableKeyPointExtraction}
-                onChange={(e) =>
-                  handleChange("enableKeyPointExtraction", e.target.checked)
-                }
-              />
-              Enable Key Point Extraction
-            </label>
-            <p style={helpTextStyle}>
-              Extract quotable key points from sermons (requires AI).
-            </p>
+            {settings.bibleSearchProvider === "offline" && (
+              <div style={{ ...fieldStyle, marginTop: "var(--spacing-4)" }}>
+                <label style={labelStyle}>
+                  Offline Search (Experimental) Confidence Threshold
+                </label>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--spacing-3)",
+                  }}
+                >
+                  <input
+                    type="range"
+                    min="0.3"
+                    max="0.9"
+                    step="0.05"
+                    value={settings.bibleSearchConfidenceThreshold ?? 0.6}
+                    onChange={(e) =>
+                      handleChange(
+                        "bibleSearchConfidenceThreshold",
+                        parseFloat(e.target.value)
+                      )
+                    }
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ minWidth: "50px", textAlign: "right" }}>
+                    {Math.round((settings.bibleSearchConfidenceThreshold ?? 0.6) * 100)}%
+                  </span>
+                </div>
+                <p style={helpTextStyle}>
+                  Controls the minimum confidence for Offline Search (Experimental)
+                  results. This does not affect AI Search or live transcription.
+                </p>
+              </div>
+            )}
           </div>
 
-          {settings.enableKeyPointExtraction && (
+          <div
+            style={{
+              padding: "var(--spacing-3)",
+              backgroundColor: "var(--app-bg-color)",
+              borderRadius: "8px",
+              marginBottom: "var(--spacing-4)",
+            }}
+          >
+            <h4 style={{ margin: "0 0 var(--spacing-3) 0", fontSize: "0.95rem" }}>
+              Transcription AI
+            </h4>
+
             <div style={fieldStyle}>
-              <label style={labelStyle}>Key Point Extraction Instructions</label>
-              <textarea
-                value={settings.keyPointExtractionInstructions || ""}
-                onChange={(e) =>
-                  handleChange("keyPointExtractionInstructions", e.target.value)
-                }
-                placeholder="Optional: Customize how key points should be extracted for your church/pastor..."
-                style={{
-                  ...inputStyle,
-                  minHeight: "110px",
-                  fontFamily: "inherit",
-                  resize: "vertical",
-                }}
-              />
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={settings.enableParaphraseDetection}
+                  onChange={(e) =>
+                    handleChange("enableParaphraseDetection", e.target.checked)
+                  }
+                />
+                Enable Paraphrase Detection
+              </label>
               <p style={helpTextStyle}>
-                These instructions are added to the AI prompt when key point
-                extraction is enabled. Leave blank to use the default behavior.
+                Detect when speakers paraphrase Bible verses without quoting them
+                directly.
               </p>
             </div>
-          )}
 
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Paraphrase Confidence Threshold</label>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--spacing-3)",
-              }}
-            >
+            {settings.enableParaphraseDetection && (
+              <div style={fieldStyle}>
+                <label style={labelStyle}>Paraphrase Detection Mode</label>
+                <select
+                  value={settings.paraphraseDetectionMode || "offline"}
+                  onChange={(e) =>
+                    handleChange("paraphraseDetectionMode", e.target.value)
+                  }
+                  style={inputStyle}
+                >
+                  <option value="offline">Offline Search (Experimental)</option>
+                  <option value="ai">{getParaphraseAIOptionLabel()}</option>
+                </select>
+                <p style={helpTextStyle}>
+                  Offline Search (Experimental) uses local matching. AI Search uses the provider and
+                  model selected above. Key point extraction still requires AI. For
+                  best offline accuracy, download the embedding model in Manage
+                  Models.
+                </p>
+              </div>
+            )}
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Paraphrase Confidence Threshold</label>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--spacing-3)",
+                }}
+              >
+                <input
+                  type="range"
+                  min="0.3"
+                  max="0.9"
+                  step="0.1"
+                  value={settings.paraphraseConfidenceThreshold}
+                  onChange={(e) =>
+                    handleChange(
+                      "paraphraseConfidenceThreshold",
+                      parseFloat(e.target.value)
+                    )
+                  }
+                  style={{ flex: 1 }}
+                />
+                <span style={{ minWidth: "50px", textAlign: "right" }}>
+                  {Math.round(settings.paraphraseConfidenceThreshold * 100)}%
+                </span>
+              </div>
+              <p style={helpTextStyle}>
+                Only show paraphrased verses with confidence above this threshold.
+              </p>
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={settings.enableKeyPointExtraction}
+                  onChange={(e) =>
+                    handleChange("enableKeyPointExtraction", e.target.checked)
+                  }
+                />
+                Enable Key Point Extraction
+              </label>
+              <p style={helpTextStyle}>
+                Extract quotable key points from sermons (requires AI).
+              </p>
+            </div>
+
+            {settings.enableKeyPointExtraction && (
+              <div style={fieldStyle}>
+                <label style={labelStyle}>Key Point Extraction Instructions</label>
+                <textarea
+                  value={settings.keyPointExtractionInstructions || ""}
+                  onChange={(e) =>
+                    handleChange("keyPointExtractionInstructions", e.target.value)
+                  }
+                  placeholder="Optional: Customize how key points should be extracted for your church/pastor..."
+                  style={{
+                    ...inputStyle,
+                    minHeight: "110px",
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                  }}
+                />
+                <p style={helpTextStyle}>
+                  These instructions are added to the AI prompt when key point
+                  extraction is enabled. Leave blank to use the default behavior.
+                </p>
+              </div>
+            )}
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Minimum Words for AI Analysis</label>
               <input
-                type="range"
-                min="0.3"
-                max="0.9"
-                step="0.1"
-                value={settings.paraphraseConfidenceThreshold}
+                type="number"
+                min={1}
+                max={20}
+                value={settings.aiMinWordCount}
                 onChange={(e) =>
                   handleChange(
-                    "paraphraseConfidenceThreshold",
-                    parseFloat(e.target.value)
+                    "aiMinWordCount",
+                    Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1))
                   )
                 }
-                style={{ flex: 1 }}
+                style={inputStyle}
               />
-              <span style={{ minWidth: "50px", textAlign: "right" }}>
-                {Math.round(settings.paraphraseConfidenceThreshold * 100)}%
-              </span>
+              <p style={helpTextStyle}>
+                Skip AI requests for short phrases like "thank you".
+              </p>
             </div>
-            <p style={helpTextStyle}>
-              Only show paraphrased verses with confidence above this threshold.
-            </p>
-          </div>
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Minimum Words for AI Analysis</label>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={settings.aiMinWordCount}
-              onChange={(e) =>
-                handleChange(
-                  "aiMinWordCount",
-                  Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1))
-                )
-              }
-              style={inputStyle}
-            />
-            <p style={helpTextStyle}>
-              Skip AI requests for short phrases like "thank you".
-            </p>
           </div>
         </div>
       )}

@@ -684,8 +684,14 @@ const HelpPage: React.FC = () => {
             <li>
               <strong>Configuration:</strong>
               <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
-                <li><strong>Settings → Transcription</strong>: AssemblyAI API Key, paraphrase detection, key point extraction</li>
-                <li><strong>Settings → SmartVerses</strong>: Bible search provider, output paths, ProPresenter activation</li>
+                <li>
+                  <strong>Settings → Transcription</strong>: AssemblyAI API Key, paraphrase detection,
+                  key point extraction
+                </li>
+                <li>
+                  <strong>Settings → SmartVerses</strong>: Bible search provider, output paths,
+                  ProPresenter activation
+                </li>
               </ul>
             </li>
           </ol>

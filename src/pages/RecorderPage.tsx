@@ -336,14 +336,16 @@ const RecorderPage: React.FC = () => {
   const videoStreamRef = useRef<MediaStream | null>(null);
   const videoRecordingAudioCleanupRef = useRef<(() => void) | null>(null);
   const videoStreamingFilePathRef = useRef<string | null>(null); // Path for streaming recording
-  const videoChunkPromisesRef = useRef<Promise<void>[]>([]); // Track pending chunk writes to avoid race condition
+  const videoChunkWriteChainRef = useRef<Promise<void>>(Promise.resolve());
+  const videoChunkPendingRef = useRef(0);
   const audioRecorderRef = useRef<MediaRecorder | null>(null);
   // NOTE: We no longer accumulate audio chunks in memory for web recording
   // Chunks are streamed to disk for crash safety
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioStreamingTempPathRef = useRef<string | null>(null); // Temp WebM path for streaming
   const audioFinalMp3PathRef = useRef<string | null>(null); // Final MP3 path
-  const audioChunkPromisesRef = useRef<Promise<void>[]>([]); // Track pending chunk writes to avoid race condition
+  const audioChunkWriteChainRef = useRef<Promise<void>>(Promise.resolve());
+  const audioChunkPendingRef = useRef(0);
   const audioAnalyzerRef = useRef<ReturnType<typeof createAudioAnalyzer> | null>(null);
   const audioMeterStreamRef = useRef<MediaStream | null>(null);
   const audioMeterFrameRef = useRef<number | null>(null);
@@ -453,11 +455,14 @@ const RecorderPage: React.FC = () => {
       if (videoRecorderRef.current && videoRecorderRef.current.state !== "inactive") {
         videoRecorderRef.current.stop();
       }
-      // If video streaming was active, finalize it
+      // If video streaming was active, finalize it after pending writes flush
       if (videoStreamingFilePathRef.current) {
-        finalizeStreamingVideoRecording().catch((e) =>
-          console.error("[Cleanup] Failed to finalize video recording:", e)
-        );
+        videoChunkWriteChainRef.current
+          .catch(() => {})
+          .then(() => finalizeStreamingVideoRecording())
+          .catch((e) =>
+            console.error("[Cleanup] Failed to finalize video recording:", e)
+          );
         videoStreamingFilePathRef.current = null;
       }
       if (videoStreamRef.current) {
@@ -471,11 +476,14 @@ const RecorderPage: React.FC = () => {
       if (audioRecorderRef.current && audioRecorderRef.current.state !== "inactive") {
         audioRecorderRef.current.stop();
       }
-      // If web audio streaming was active, finalize it
+      // If web audio streaming was active, finalize it after pending writes flush
       if (audioStreamingTempPathRef.current) {
-        finalizeStreamingWebAudioRecording().catch((e) =>
-          console.error("[Cleanup] Failed to finalize audio recording:", e)
-        );
+        audioChunkWriteChainRef.current
+          .catch(() => {})
+          .then(() => finalizeStreamingWebAudioRecording())
+          .catch((e) =>
+            console.error("[Cleanup] Failed to finalize audio recording:", e)
+          );
         audioStreamingTempPathRef.current = null;
         audioFinalMp3PathRef.current = null;
       }
@@ -695,33 +703,37 @@ const RecorderPage: React.FC = () => {
     }
 
     // Stream each chunk directly to disk - NO memory accumulation
-    // Track pending promises to avoid race condition with onstop
-    videoChunkPromisesRef.current = [];
+    // Use a single write chain to preserve order without growing memory
+    videoChunkWriteChainRef.current = Promise.resolve();
+    videoChunkPendingRef.current = 0;
     recorder.ondataavailable = (e: BlobEvent) => {
       if (e.data.size > 0) {
-        // Track the async operation to ensure it completes before finalize
-        const chunkPromise = (async () => {
-          try {
-            // Convert blob to base64 and stream to Rust backend
-            const base64Chunk = await blobToBase64(e.data);
-            await appendVideoChunk(base64Chunk);
-            // Chunk is now on disk - memory is freed
-          } catch (err) {
-            console.error("[VideoRecording] Failed to stream chunk:", err);
-            // Continue recording even if one chunk fails
-          }
-        })();
-        videoChunkPromisesRef.current.push(chunkPromise);
+        videoChunkPendingRef.current += 1;
+        // Chain writes to preserve order
+        videoChunkWriteChainRef.current = videoChunkWriteChainRef.current
+          .catch(() => {})
+          .then(async () => {
+            try {
+              // Convert blob to base64 and stream to Rust backend
+              const base64Chunk = await blobToBase64(e.data);
+              await appendVideoChunk(base64Chunk);
+              // Chunk is now on disk - memory is freed
+            } catch (err) {
+              console.error("[VideoRecording] Failed to stream chunk:", err);
+              // Continue recording even if one chunk fails
+            } finally {
+              videoChunkPendingRef.current = Math.max(0, videoChunkPendingRef.current - 1);
+            }
+          });
       }
     };
 
     recorder.onstop = async () => {
       // Wait for all pending chunk writes to complete before finalizing
       // This prevents a race condition where finalize closes the file before chunks are written
-      if (videoChunkPromisesRef.current.length > 0) {
-        console.log(`[VideoRecording] Waiting for ${videoChunkPromisesRef.current.length} pending chunks...`);
-        await Promise.all(videoChunkPromisesRef.current);
-        videoChunkPromisesRef.current = [];
+      if (videoChunkPendingRef.current > 0) {
+        console.log(`[VideoRecording] Waiting for ${videoChunkPendingRef.current} pending chunks...`);
+        await videoChunkWriteChainRef.current.catch(() => {});
       }
 
       // Clean up the recording audio stream (mono mixer) but keep the camera live
@@ -762,6 +774,8 @@ const RecorderPage: React.FC = () => {
         console.error("[VideoRecording] Failed to abort:", e);
       }
       videoStreamingFilePathRef.current = null;
+      videoChunkPendingRef.current = 0;
+      videoChunkWriteChainRef.current = Promise.resolve();
     };
 
     videoRecorderRef.current = recorder;
@@ -1089,38 +1103,43 @@ const RecorderPage: React.FC = () => {
         }
         audioStreamingTempPathRef.current = null;
         audioFinalMp3PathRef.current = null;
+        audioChunkPendingRef.current = 0;
+        audioChunkWriteChainRef.current = Promise.resolve();
       };
 
       // Stream each chunk directly to disk - NO memory accumulation
-      // Track pending promises to avoid race condition with onstop
-      audioChunkPromisesRef.current = [];
+      // Use a single write chain to preserve order without growing memory
+      audioChunkWriteChainRef.current = Promise.resolve();
+      audioChunkPendingRef.current = 0;
       let audioChunkCount = 0;
       recorder.ondataavailable = (e) => {
         console.log(`[AudioRecording] ondataavailable fired, data size: ${e.data.size} bytes`);
         if (e.data.size > 0) {
           audioChunkCount++;
           const chunkNum = audioChunkCount;
-          // Track the async operation to ensure it completes before finalize
-          const chunkPromise = (async () => {
-            try {
-              const base64Chunk = await blobToBase64(e.data);
-              const bytesWritten = await appendWebAudioChunk(base64Chunk);
-              console.log(`[AudioRecording] Chunk ${chunkNum} written, total: ${bytesWritten} bytes`);
-            } catch (err) {
-              console.error(`[AudioRecording] Failed to stream chunk ${chunkNum}:`, err);
-            }
-          })();
-          audioChunkPromisesRef.current.push(chunkPromise);
+          audioChunkPendingRef.current += 1;
+          audioChunkWriteChainRef.current = audioChunkWriteChainRef.current
+            .catch(() => {})
+            .then(async () => {
+              try {
+                const base64Chunk = await blobToBase64(e.data);
+                const bytesWritten = await appendWebAudioChunk(base64Chunk);
+                console.log(`[AudioRecording] Chunk ${chunkNum} written, total: ${bytesWritten} bytes`);
+              } catch (err) {
+                console.error(`[AudioRecording] Failed to stream chunk ${chunkNum}:`, err);
+              } finally {
+                audioChunkPendingRef.current = Math.max(0, audioChunkPendingRef.current - 1);
+              }
+            });
         }
       };
 
       recorder.onstop = async () => {
         // Wait for all pending chunk writes to complete before finalizing
         // This prevents a race condition where finalize closes the file before chunks are written
-        if (audioChunkPromisesRef.current.length > 0) {
-          console.log(`[AudioRecording] Waiting for ${audioChunkPromisesRef.current.length} pending chunks...`);
-          await Promise.all(audioChunkPromisesRef.current);
-          audioChunkPromisesRef.current = [];
+        if (audioChunkPendingRef.current > 0) {
+          console.log(`[AudioRecording] Waiting for ${audioChunkPendingRef.current} pending chunks...`);
+          await audioChunkWriteChainRef.current.catch(() => {});
         }
 
         // Clean up audio context used for mono conversion
