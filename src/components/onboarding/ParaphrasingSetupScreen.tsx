@@ -97,9 +97,7 @@ const ParaphrasingSetupScreen: React.FC<ParaphrasingSetupScreenProps> = ({
             className={`onboarding-tab ${activeTab === "cloud" ? "active" : ""}`}
             onClick={() => {
               setActiveTab("cloud");
-              if (!provider) {
-                onProviderChange("groq");
-              }
+              onProviderChange("groq");
             }}
           >
             <FaCloud className="onboarding-tab-icon" />
