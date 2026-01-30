@@ -174,6 +174,8 @@ export async function analyzeTranscriptChunk(
     keyPointInstructions?: string;
     overrideProvider?: AIProviderType;
     overrideModel?: string;
+    minParaphraseConfidence?: number;
+    maxParaphraseResults?: number;
     minWords?: number;
   }
 ): Promise<TranscriptAnalysisResult> {
@@ -268,9 +270,16 @@ ${keyPointInstructions}
     : "";
 
   const rules: string[] = [];
+  const minParaphraseConfidence = options?.minParaphraseConfidence ?? 0.6;
+  const maxParaphraseResults = options?.maxParaphraseResults ?? 3;
+
   if (detectParaphrases) {
-    rules.push(`- For paraphrased verses, only return up to 3 most confident matches`);
-    rules.push(`- Only include paraphrased verses with confidence >= 0.6`);
+    rules.push(
+      `- For paraphrased verses, only return up to ${maxParaphraseResults} most confident matches`
+    );
+    rules.push(
+      `- Only include paraphrased verses with confidence >= ${minParaphraseConfidence}`
+    );
   }
   if (extractKeyPoints) {
     rules.push(`- For key points, only extract genuinely quotable content (max 2 per chunk)`);
@@ -344,12 +353,12 @@ Return ONLY valid JSON, no other text.`;
     
     if (parsed) {
       const result: TranscriptAnalysisResult = {
-        paraphrasedVerses: detectParaphrases 
+        paraphrasedVerses: detectParaphrases
           ? (parsed.paraphrasedVerses || [])
-              .filter((v: ParaphrasedVerse) => v.confidence >= 0.6)
-              .slice(0, 3)
+              .filter((v: ParaphrasedVerse) => v.confidence >= minParaphraseConfidence)
+              .slice(0, maxParaphraseResults)
           : [],
-        keyPoints: extractKeyPoints 
+        keyPoints: extractKeyPoints
           ? (parsed.keyPoints || []).slice(0, 2)
           : [],
       };
@@ -397,7 +406,8 @@ export async function searchBibleWithAI(
   query: string,
   appSettings: AppSettings,
   overrideProvider?: 'openai' | 'gemini' | 'groq',
-  overrideModel?: string
+  overrideModel?: string,
+  translationId?: string
 ): Promise<DetectedBibleReference[]> {
   console.log("🔍 AI Bible search:", query);
 
@@ -478,9 +488,12 @@ RULES:
       
       for (const verse of parsed.verses) {
         // Parse and look up the verse
-        const parsedRef = parseVerseReference(verse.reference);
+        const parsedRef = parseVerseReference(
+          verse.reference,
+          translationId
+        );
         if (parsedRef && parsedRef.length > 0) {
-          const verseText = await lookupVerse(parsedRef[0]);
+          const verseText = await lookupVerse(parsedRef[0], translationId);
           
           if (verseText) {
             results.push({
@@ -490,6 +503,7 @@ RULES:
               verseText,
               source: 'direct',
               timestamp: Date.now(),
+              translationId,
               // Include components for navigation
               book: parsedRef[0].book,
               chapter: parsedRef[0].chapter,
@@ -532,14 +546,18 @@ RULES:
  * Look up verse text for paraphrased verses detected by AI
  */
 export async function resolveParaphrasedVerses(
-  paraphrasedVerses: ParaphrasedVerse[]
+  paraphrasedVerses: ParaphrasedVerse[],
+  translationId?: string
 ): Promise<DetectedBibleReference[]> {
   const results: DetectedBibleReference[] = [];
 
   for (const verse of paraphrasedVerses) {
-    const parsedRef = parseVerseReference(verse.reference);
+    const parsedRef = parseVerseReference(
+      verse.reference,
+      translationId
+    );
     if (parsedRef && parsedRef.length > 0) {
-      const verseText = await lookupVerse(parsedRef[0]);
+      const verseText = await lookupVerse(parsedRef[0], translationId);
       
       if (verseText) {
         results.push({
@@ -551,6 +569,7 @@ export async function resolveParaphrasedVerses(
           confidence: verse.confidence,
           matchedPhrase: verse.matchedPhrase,
           timestamp: Date.now(),
+          translationId,
           // Include components for navigation
           book: parsedRef[0].book,
           chapter: parsedRef[0].chapter,

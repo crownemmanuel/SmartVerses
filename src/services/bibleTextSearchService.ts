@@ -7,8 +7,9 @@
  */
 
 import { Document } from 'flexsearch';
-import { loadVerses } from './bibleService';
-import { DetectedBibleReference } from '../types/smartVerses';
+import { BUILTIN_KJV_ID } from "./bibleLibraryService";
+import { loadVerses } from "./bibleService";
+import { DetectedBibleReference } from "../types/smartVerses";
 
 // =============================================================================
 // TYPES
@@ -35,73 +36,78 @@ interface SearchResult {
 // =============================================================================
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let searchIndex: any = null;
-let verseMap: Map<string, VerseEntry> = new Map();
-let isIndexed = false;
-let indexPromise: Promise<void> | null = null;
+const searchIndexMap: Map<string, any> = new Map();
+const verseMapByTranslation: Map<string, Map<string, VerseEntry>> = new Map();
+const indexedTranslations: Set<string> = new Set();
+const indexPromises: Map<string, Promise<void>> = new Map();
 
 /**
  * Initialize the search index from the KJV verses data
  */
-async function initializeIndex(): Promise<void> {
-  if (isIndexed) return;
-  
-  if (indexPromise) {
-    await indexPromise;
+async function initializeIndex(translationId: string): Promise<void> {
+  if (indexedTranslations.has(translationId)) return;
+
+  if (indexPromises.has(translationId)) {
+    await indexPromises.get(translationId);
     return;
   }
-  
-  indexPromise = (async () => {
+
+  const promise = (async () => {
     try {
-      console.log('[BibleTextSearch] Initializing search index...');
-      
-      const verses = await loadVerses();
-      
-      // Create FlexSearch document index
-      searchIndex = new Document({
+      console.log(
+        `[BibleTextSearch] Initializing search index (${translationId})...`
+      );
+
+      const verses = await loadVerses(translationId);
+
+      const searchIndex = new Document({
         document: {
-          id: 'reference',
-          index: ['text'],
+          id: "reference",
+          index: ["text"],
         },
-        tokenize: 'forward',
+        tokenize: "forward",
         cache: true,
       });
-      
-      // Clear previous mapping
-      verseMap.clear();
-      
-      // Index all verses
-      // KJV format: { "Genesis 1:1": "In the beginning...", ... }
+
+      const verseMap = new Map<string, VerseEntry>();
+
       let count = 0;
       for (const [reference, text] of Object.entries(verses)) {
-        // Parse reference like "Genesis 1:1" or "1 John 3:16"
         const match = reference.match(/^(.+?)\s+(\d+):(\d+)$/);
         if (match) {
           const [, book, chapter, verse] = match;
           const entry: VerseEntry = {
             reference,
             book,
-            chapter: parseInt(chapter),
-            verse: parseInt(verse),
+            chapter: parseInt(chapter, 10),
+            verse: parseInt(verse, 10),
             text: text as string,
           };
-          
+
           verseMap.set(reference, entry);
           searchIndex.add(entry);
           count++;
         }
       }
-      
-      isIndexed = true;
-      console.log(`[BibleTextSearch] Indexed ${count} verses successfully`);
+
+      searchIndexMap.set(translationId, searchIndex);
+      verseMapByTranslation.set(translationId, verseMap);
+      indexedTranslations.add(translationId);
+      console.log(
+        `[BibleTextSearch] Indexed ${count} verses successfully (${translationId})`
+      );
     } catch (error) {
-      console.error('[BibleTextSearch] Failed to initialize index:', error);
-      indexPromise = null;
+      console.error(
+        "[BibleTextSearch] Failed to initialize index:",
+        error
+      );
+      indexPromises.delete(translationId);
       throw error;
     }
   })();
-  
-  await indexPromise;
+
+  indexPromises.set(translationId, promise);
+  await promise;
 }
 
 /**
@@ -114,18 +120,34 @@ async function initializeIndex(): Promise<void> {
  */
 export async function searchBibleText(
   query: string,
-  limit: number = 10
+  limit: number = 10,
+  translationIdOrOptions?: string | { suggest?: boolean },
+  options?: { suggest?: boolean }
 ): Promise<SearchResult[]> {
-  await initializeIndex();
-  
-  if (!searchIndex) {
+  const translationId =
+    typeof translationIdOrOptions === "string"
+      ? translationIdOrOptions
+      : BUILTIN_KJV_ID;
+  const searchOptions =
+    typeof translationIdOrOptions === "string"
+      ? options
+      : translationIdOrOptions;
+  await initializeIndex(translationId);
+
+  const searchIndex = searchIndexMap.get(translationId);
+  const verseMap = verseMapByTranslation.get(translationId);
+
+  if (!searchIndex || !verseMap) {
     return [];
   }
-  
+
   const results: SearchResult[] = [];
   
   try {
-    const searchResults = searchIndex.search(query, { limit }) as Array<{ result: string[] }>;
+    const searchResults = searchIndex.search(query, {
+      limit,
+      suggest: searchOptions?.suggest ?? false,
+    }) as Array<{ result: string[] }>;
     
     // FlexSearch returns an array with field results
     for (const fieldResult of searchResults) {
@@ -155,9 +177,10 @@ export async function searchBibleText(
  */
 export async function searchBibleTextAsReferences(
   query: string,
-  limit: number = 10
+  limit: number = 10,
+  translationId: string = BUILTIN_KJV_ID
 ): Promise<DetectedBibleReference[]> {
-  const results = await searchBibleText(query, limit);
+  const results = await searchBibleText(query, limit, translationId);
   
   return results.map((result, index) => ({
     id: `text-search-${Date.now()}-${index}`,
@@ -168,6 +191,7 @@ export async function searchBibleTextAsReferences(
       .replace(/\[([^\]]+)\]/g, '$1'),
     source: 'direct' as const,
     timestamp: Date.now(),
+    translationId,
     book: result.book,
     chapter: result.chapter,
     verse: result.verse,
@@ -177,13 +201,22 @@ export async function searchBibleTextAsReferences(
 /**
  * Check if the index is ready
  */
-export function isSearchIndexReady(): boolean {
-  return isIndexed;
+export function isSearchIndexReady(translationId: string = BUILTIN_KJV_ID): boolean {
+  return indexedTranslations.has(translationId);
 }
 
 /**
  * Pre-initialize the index (call on app startup for faster first search)
  */
-export async function preloadSearchIndex(): Promise<void> {
-  await initializeIndex();
+export async function preloadSearchIndex(
+  translationId: string = BUILTIN_KJV_ID
+): Promise<void> {
+  await initializeIndex(translationId);
+}
+
+export function resetSearchIndexes(): void {
+  searchIndexMap.clear();
+  verseMapByTranslation.clear();
+  indexedTranslations.clear();
+  indexPromises.clear();
 }

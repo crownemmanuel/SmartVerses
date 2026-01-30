@@ -27,7 +27,7 @@ node tools/scripture-eval/run.mjs --input "/Users/emmanuelcrown/Downloads/1ST_Se
 - `--parse-out /path/file.jsonl` (optional full parse results)
 - `--start N`, `--limit N`
 - `--delay-ms N`, `--retries N`
-- `--verses /path/to/verses-kjv.json` (default: `public/data/verses-kjv.json`)
+- `--verses /path/to/kjv.svjson` (default: `public/data/bibles/kjv.svjson`)
 
 ## Notes
 

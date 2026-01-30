@@ -2950,11 +2950,11 @@
               <span>Option 2</span>
             </h3>
             <p>Run in Terminal:</p>
-            <code>xattr -cr /path/to/proassist.app</code>
+            <code>xattr -cr /path/to/SmartVerses.app</code>
             <p style="margin-top: 0.75rem; font-size: 0.875rem">
               Replace
               <code style="background: transparent; padding: 0"
-                >/path/to/proassist.app</code
+                >/path/to/SmartVerses.app</code
               >
               with the actual path to the application after mounting the DMG.
             </p>
@@ -3405,6 +3405,7 @@
 
       // macOS Installation Modal
       let macDownloadUrl = null;
+      let macAssetInfo = null; // Store asset info for tracking
       const macInstallModal = document.getElementById("macInstallModal");
       const closeMacModal = document.getElementById("closeMacModal");
       const macDownloadBtn = document.getElementById("macDownloadBtn");
@@ -3443,12 +3444,37 @@
       macDownloadBtn.addEventListener("click", function (e) {
         // Ensure download opens in new tab
         if (macDownloadUrl) {
-          window.open(macDownloadUrl, '_blank');
           e.preventDefault();
+          // Track download in Google Analytics
+          if (macAssetInfo) {
+            trackDownload('mac', macAssetInfo.version, '.dmg', macDownloadUrl, macAssetInfo.fileName);
+          }
+          // Small delay to ensure event is sent before opening window
+          setTimeout(function() {
+            window.open(macDownloadUrl, '_blank');
+          }, 100);
         }
         // Small delay to ensure download starts before closing
-        setTimeout(hideMacInstallModal, 100);
+        setTimeout(hideMacInstallModal, 200);
       });
+
+      // Helper function to track downloads in Google Analytics
+      function trackDownload(platform, version, fileExtension, downloadUrl, fileName) {
+        if (typeof gtag !== 'undefined') {
+          const eventParams = {
+            'file_name': fileName || downloadUrl.split('/').pop(),
+            'platform': platform,
+            'file_extension': fileExtension,
+            'version': version,
+            'link_url': downloadUrl,
+            'link_domain': new URL(downloadUrl).hostname
+          };
+          console.log('Tracking download:', eventParams);
+          gtag('event', 'file_download', eventParams);
+        } else {
+          console.warn('gtag is not defined - Google Analytics may not be loaded');
+        }
+      }
 
       // Helper function to find Mac asset in a release
       function findMacAsset(release) {
@@ -3602,6 +3628,10 @@
             
             if (macResult) {
               macDownloadUrl = macResult.asset.browser_download_url;
+              macAssetInfo = {
+                fileName: macResult.asset.name,
+                version: macResult.release.tag_name
+              };
               const versionLabel =
                 macResult.release.tag_name === latestRelease.tag_name
                   ? macResult.release.tag_name
@@ -3610,6 +3640,7 @@
               macLink.href = "#";
               macLink.onclick = function (e) {
                 e.preventDefault();
+                trackDownload('mac', macResult.release.tag_name, '.dmg', macDownloadUrl, macResult.asset.name);
                 showMacInstallModal();
               };
               // Update modal download button - open in new tab to ensure download works
@@ -3639,13 +3670,19 @@
                   ? windowsResult.release.tag_name
                   : `${windowsResult.release.tag_name} (previous)`;
               const downloadUrl = windowsResult.asset.browser_download_url;
+              const fileExtension = windowsResult.asset.name.toLowerCase().endsWith('.msi') ? '.msi' : '.exe';
               windowsLink.href = downloadUrl;
               windowsLink.textContent = `Download for Windows (${versionLabel})`;
               windowsLink.target = "_blank";
               windowsLink.onclick = function(e) {
-                // Open in new tab to ensure download works
-                window.open(downloadUrl, '_blank');
-                return false; // Prevent default navigation
+                e.preventDefault();
+                // Track download in Google Analytics
+                trackDownload('windows', windowsResult.release.tag_name, fileExtension, downloadUrl, windowsResult.asset.name);
+                // Small delay to ensure event is sent before opening window
+                setTimeout(function() {
+                  window.open(downloadUrl, '_blank');
+                }, 100);
+                return false;
               };
               windowsLink.style.opacity = "1";
               windowsLink.title = "";
@@ -3686,6 +3723,8 @@
                 : linuxResult.asset.name.toLowerCase().endsWith(".rpm")
                 ? "RPM"
                 : "";
+              const fileExtension = linuxResult.asset.name.toLowerCase().endsWith('.appimage') ? '.appimage' :
+                                    linuxResult.asset.name.toLowerCase().endsWith('.deb') ? '.deb' : '.rpm';
               const versionLabel =
                 linuxResult.release.tag_name === latestRelease.tag_name
                   ? linuxResult.release.tag_name
@@ -3695,9 +3734,14 @@
               linuxLink.textContent = `Download for Linux (${versionLabel} - ${fileType})`;
               linuxLink.target = "_blank";
               linuxLink.onclick = function(e) {
-                // Open in new tab to ensure download works
-                window.open(downloadUrl, '_blank');
-                return false; // Prevent default navigation
+                e.preventDefault();
+                // Track download in Google Analytics
+                trackDownload('linux', linuxResult.release.tag_name, fileExtension, downloadUrl, linuxResult.asset.name);
+                // Small delay to ensure event is sent before opening window
+                setTimeout(function() {
+                  window.open(downloadUrl, '_blank');
+                }, 100);
+                return false;
               };
               console.log(
                 "Linux link updated:",

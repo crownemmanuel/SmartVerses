@@ -17,11 +17,13 @@ import {
   loadSmartVersesSettings,
 } from "../../services/transcriptionService";
 import { getAppSettings } from "../../utils/aiConfig";
+import { BUILTIN_KJV_ID } from "../../services/bibleLibraryService";
 import { detectAndLookupReferences, resetParseContext } from "../../services/smartVersesBibleService";
 import {
   analyzeTranscriptChunk,
   resolveParaphrasedVerses,
 } from "../../services/smartVersesAIService";
+import { analyzeTranscriptChunkOffline } from "../../services/smartVersesOfflineParaphraseService";
 import "./onboarding.css";
 
 interface TestSmartVersesScreenProps {
@@ -56,7 +58,8 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
     useState<DetectedBibleReference | null>(null);
   const [keypointResult, setKeypointResult] = useState<KeyPoint | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [groqAvailable, setGroqAvailable] = useState(false);
+  const [aiProviderAvailable, setAiProviderAvailable] = useState(false);
+  const [aiProviderLabel, setAiProviderLabel] = useState<string | null>(null);
   const [modelLoadingProgress, setModelLoadingProgress] = useState<ModelLoadingProgress | null>(null);
 
   const transcriptionServiceRef = useRef<ITranscriptionService | null>(null);
@@ -64,9 +67,45 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
 
   const canTestScripture = transcriptionConfigured && micConfigured;
 
-  useEffect(() => {
+  const updateProviderAvailability = useCallback((settings: ReturnType<typeof loadSmartVersesSettings>) => {
     const appSettings = getAppSettings();
-    setGroqAvailable(!!appSettings.groqConfig?.apiKey);
+    
+    // For paraphrase detection: if offline mode is selected, don't show AI provider
+    // For keypoint extraction: always check for default AI provider even if bibleSearchProvider is offline
+    // (keypoint extraction always requires AI, but can fall back to defaultAIProvider)
+    
+    // Determine the provider to use
+    let provider: string | undefined;
+    
+    if (settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline") {
+      provider = settings.bibleSearchProvider;
+    } else if (settings.bibleSearchProvider === "offline") {
+      // Even if bibleSearchProvider is offline, check for default AI provider for keypoint extraction
+      provider = appSettings.defaultAIProvider ?? undefined;
+    } else {
+      provider = appSettings.defaultAIProvider ?? undefined;
+    }
+
+    const hasKey =
+      provider === "openai"
+        ? !!appSettings.openAIConfig?.apiKey
+        : provider === "gemini"
+        ? !!appSettings.geminiConfig?.apiKey
+        : provider === "groq"
+        ? !!appSettings.groqConfig?.apiKey
+        : false;
+
+    // For paraphrase detection: if offline mode is enabled, don't show AI provider
+    // For keypoint extraction: show AI provider if available (even if bibleSearchProvider is offline)
+    if (settings.paraphraseDetectionMode === "offline") {
+      // Paraphrase detection uses offline mode, so don't show AI provider for paraphrase
+      // But still allow keypoint extraction if default AI provider is available
+      setAiProviderAvailable(hasKey);
+      setAiProviderLabel(hasKey && provider ? provider.toUpperCase() : null);
+    } else {
+      setAiProviderAvailable(hasKey);
+      setAiProviderLabel(provider ? provider.toUpperCase() : null);
+    }
   }, []);
 
   const stopTranscription = useCallback(async () => {
@@ -108,6 +147,8 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
       setActiveTest(mode);
 
       const settings = loadSmartVersesSettings();
+      // Note: Keypoint extraction can still work with defaultAIProvider even if bibleSearchProvider is "offline"
+      // The analysis logic (lines 230-233) will fall back to defaultAIProvider
       if (mode === "scripture") {
         setScriptureResult(null);
         setParaphraseResult(null);
@@ -144,8 +185,11 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
           if (!currentMode) return;
 
           if (currentMode === "scripture") {
+            const translationId =
+              settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
             const refs = await detectAndLookupReferences(text, {
               aggressiveSpeechNormalization: true,
+              translationId,
             });
             if (refs.length > 0 && activeTestRef.current === "scripture") {
               setScriptureResult(refs[0]);
@@ -155,20 +199,38 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
 
           if (currentMode === "paraphrase") {
             const appSettings = getAppSettings();
-            const analysis = await analyzeTranscriptChunk(
-              text,
-              appSettings,
-              true,
-              false,
-              {
-                overrideProvider: "groq",
-                minWords: settings.aiMinWordCount,
-              }
-            );
+            const paraphraseMode = settings.paraphraseDetectionMode || "offline";
+            const aiProvider =
+              settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline"
+                ? settings.bibleSearchProvider
+                : appSettings.defaultAIProvider ?? undefined;
+
+            const analysis =
+              paraphraseMode === "offline"
+                ? await analyzeTranscriptChunkOffline(text, {
+                    minConfidence: settings.paraphraseConfidenceThreshold,
+                    maxResults: 3,
+                    minWords: settings.aiMinWordCount,
+                  })
+                : await analyzeTranscriptChunk(
+                    text,
+                    appSettings,
+                    true,
+                    false,
+                    {
+                      overrideProvider: aiProvider,
+                      overrideModel: settings.bibleSearchModel,
+                      minWords: settings.aiMinWordCount,
+                    }
+                  );
+
             if (!activeTestRef.current || activeTestRef.current !== "paraphrase") return;
             if (analysis.paraphrasedVerses.length > 0) {
+              const translationId =
+                settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
               const resolved = await resolveParaphrasedVerses(
-                analysis.paraphrasedVerses
+                analysis.paraphrasedVerses,
+                translationId
               );
               if (resolved.length > 0 && activeTestRef.current === "paraphrase") {
                 setParaphraseResult(resolved[0]);
@@ -179,6 +241,11 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
 
           if (currentMode === "keypoint") {
             const appSettings = getAppSettings();
+            const aiProvider =
+              settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline"
+                ? settings.bibleSearchProvider
+                : appSettings.defaultAIProvider ?? undefined;
+
             const analysis = await analyzeTranscriptChunk(
               text,
               appSettings,
@@ -186,7 +253,8 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
               true,
               {
                 keyPointInstructions: settings.keyPointExtractionInstructions,
-                overrideProvider: "groq",
+                overrideProvider: aiProvider,
+                overrideModel: settings.bibleSearchModel,
                 minWords: settings.aiMinWordCount,
               }
             );
@@ -252,6 +320,25 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
     borderRadius: "12px",
     border: "1px solid var(--app-border-color)",
   };
+
+  // Reload settings to ensure we have the latest values
+  const [latestSettings, setLatestSettings] = useState(() => {
+    const settings = loadSmartVersesSettings();
+    return settings;
+  });
+
+  useEffect(() => {
+    // Reload settings immediately on mount and periodically to catch changes
+    const refreshSettings = () => {
+      const freshSettings = loadSmartVersesSettings();
+      setLatestSettings(freshSettings);
+      updateProviderAvailability(freshSettings);
+    };
+    
+    refreshSettings();
+    const interval = setInterval(refreshSettings, 500);
+    return () => clearInterval(interval);
+  }, [updateProviderAvailability]);
 
   return (
     <div className="onboarding-screen">
@@ -415,15 +502,31 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
                 )}
               </h3>
 
-              {!groqAvailable && (
-                <div className="onboarding-message onboarding-message-warning">
-                  For paraphrase detection, you have to set up Groq API. You can
-                  do that later in Settings.
+              {latestSettings.paraphraseDetectionMode === "offline" ? (
+                <div className="onboarding-message onboarding-message-info">
+                  Offline Search (Experimental) is enabled. Accuracy is currently
+                  low, but you can still run the paraphrase test.
                 </div>
-              )}
+              ) : !aiProviderAvailable ? (
+                <div className="onboarding-message onboarding-message-warning">
+                  For paraphrase detection with AI Search, you need a configured
+                  AI provider (Groq/OpenAI/Gemini). You can set this up later in
+                  Settings.
+                </div>
+              ) : null}
 
-              {groqAvailable && (
+              {(latestSettings.paraphraseDetectionMode === "offline" ||
+                aiProviderAvailable) && (
                 <>
+                  {latestSettings.paraphraseDetectionMode === "offline" ? (
+                    <p style={{ margin: "0 0 var(--spacing-2)", fontSize: "0.85rem", color: "var(--onboarding-text-secondary)" }}>
+                      Using: Offline Search (Experimental)
+                    </p>
+                  ) : aiProviderAvailable ? (
+                    <p style={{ margin: "0 0 var(--spacing-2)", fontSize: "0.85rem" }}>
+                      Using AI provider: {aiProviderLabel || "Configured provider"}
+                    </p>
+                  ) : null}
                   <p style={{ margin: "0 0 var(--spacing-3)", fontSize: "0.9rem" }}>
                     Try saying: "For God so loved the world, that he gave his only begotten Son."
                   </p>
@@ -442,7 +545,10 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
                       onClick={() => startTest("paraphrase")}
                       className="onboarding-button onboarding-button-primary"
                       style={{ display: "flex", alignItems: "center", gap: "8px" }}
-                      disabled={!groqAvailable}
+                      disabled={
+                        latestSettings.paraphraseDetectionMode !== "offline" &&
+                        !aiProviderAvailable
+                      }
                     >
                       <FaPlay />
                       {paraphraseResult ? "Retest" : "Start test"}
@@ -506,14 +612,29 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
                 )}
               </h3>
 
-              {!groqAvailable && (
+              {latestSettings.bibleSearchProvider === "offline" && !aiProviderAvailable && (
                 <div className="onboarding-message onboarding-message-warning">
-                  For key point extraction, you have to set up Groq API. You can
-                  do that later in Settings.
+                  Key point extraction requires AI Search. Offline Search
+                  (Experimental) does not support key points. Please configure an AI provider
+                  in Settings → AI Configuration to use key point extraction.
                 </div>
               )}
 
-              {groqAvailable && (
+              {!aiProviderAvailable && latestSettings.bibleSearchProvider !== "offline" && (
+                <div className="onboarding-message onboarding-message-warning">
+                  For key point extraction, you need a configured AI provider.
+                  You can set this up later in Settings.
+                </div>
+              )}
+
+              {latestSettings.bibleSearchProvider === "offline" && aiProviderAvailable && (
+                <div className="onboarding-message onboarding-message-info">
+                  Using default AI provider ({aiProviderLabel || "configured provider"}) for key point extraction.
+                  Offline Search (Experimental) is only used for Bible search, not key point extraction.
+                </div>
+              )}
+
+              {aiProviderAvailable && (
                 <>
                   <p style={{ margin: "0 0 var(--spacing-3)", fontSize: "0.9rem" }}>
                     Read this example aloud:
@@ -536,7 +657,7 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
                       onClick={() => startTest("keypoint")}
                       className="onboarding-button onboarding-button-primary"
                       style={{ display: "flex", alignItems: "center", gap: "8px" }}
-                      disabled={!groqAvailable}
+                      disabled={!aiProviderAvailable}
                     >
                       <FaPlay />
                       {keypointResult ? "Retest" : "Start test"}

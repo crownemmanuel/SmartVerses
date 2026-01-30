@@ -167,7 +167,7 @@ const ProPresenterSlideSetupScreen: React.FC<
           <h1 className="onboarding-title">Capture your scripture slide</h1>
           <p className="onboarding-body">
             Put the scripture slide live in ProPresenter, then click &quot;Get
-            Slide&quot; to link ProAssist to your slide.
+            Slide&quot; to link SmartVerses to your slide.
           </p>
 
           {slideLoadError && (

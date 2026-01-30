@@ -207,6 +207,25 @@ export async function downloadModel(
         dtype: dtypeConfig,
         progress_callback: progressCallback,
       });
+    } else if (model.type === 'embedding') {
+      console.log('📦 Loading embedding model via pipeline...');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const extractor = await (pipeline as any)('feature-extraction', modelId, {
+        device: device as 'webgpu' | 'wasm',
+        dtype: 'fp32',
+        progress_callback: progressCallback,
+      });
+
+      // Warm up the model to ensure weights are cached.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (extractor as any)("For God so loved the world", {
+          pooling: 'mean',
+          normalize: true,
+        });
+      } catch {
+        // Ignore warm-up failures; model files are already cached.
+      }
     }
 
     // Mark as downloaded

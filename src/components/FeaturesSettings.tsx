@@ -118,7 +118,7 @@ const FeaturesSettings: React.FC = () => {
           color: "var(--app-text-color-secondary)",
         }}
       >
-        Enable or disable features to customize ProAssist for your needs.
+        Enable or disable features to customize SmartVerses for your needs.
         Disabled features will be hidden from the navigation.
       </p>
 

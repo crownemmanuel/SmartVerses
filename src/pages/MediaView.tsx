@@ -70,6 +70,7 @@ const MediaView: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settingsInitVersion, setSettingsInitVersion] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState<number>(() => {
     try {
       const saved = localStorage.getItem("proassist-testimonies-selected-index");
@@ -83,6 +84,27 @@ const MediaView: React.FC = () => {
   const unsubscribeTestimoniesRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
+    const handleSettingsChanged = () => {
+      setSettingsInitVersion((prev) => prev + 1);
+    };
+
+    window.addEventListener(
+      "live-testimonies-settings-changed",
+      handleSettingsChanged as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        "live-testimonies-settings-changed",
+        handleSettingsChanged as EventListener
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    setError(null);
+    setFirebaseConfig(null);
+    setIsSubscribed(false);
+
     // Load Firebase config
     let config: FirebaseConfig | null = null;
     try {
@@ -165,10 +187,15 @@ const MediaView: React.FC = () => {
         unsubscribe();
       }
     };
-  }, []);
+  }, [settingsInitVersion]);
 
   // Subscribe to real-time testimonies updates
   useEffect(() => {
+    if (unsubscribeTestimoniesRef.current) {
+      unsubscribeTestimoniesRef.current();
+      unsubscribeTestimoniesRef.current = null;
+    }
+
     if (!firebaseConfig || !service || !date) return;
 
     // Validate config again before subscribing
@@ -179,11 +206,7 @@ const MediaView: React.FC = () => {
       return;
     }
 
-    // Cleanup previous subscription
-    if (unsubscribeTestimoniesRef.current) {
-      unsubscribeTestimoniesRef.current();
-      unsubscribeTestimoniesRef.current = null;
-    }
+    // (Previous subscription already cleaned up at start of effect)
 
     setIsLoading(true);
     setError(null);

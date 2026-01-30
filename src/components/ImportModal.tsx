@@ -3,7 +3,9 @@ import { Template, Slide, AppSettings, LayoutType } from "../types";
 import { getAppSettings } from "../utils/aiConfig";
 import { generateSlidesFromText } from "../services/aiService";
 import { formatSlidesForClipboard } from "../utils/slideUtils";
+import { BUILTIN_KJV_ID } from "../services/bibleLibraryService";
 import { processTextWithBibleReferences } from "../services/bibleService";
+import { loadSmartVersesSettings } from "../services/transcriptionService";
 import "../App.css"; // Ensure global styles are applied
 
 const MAX_PREVIEW_SLIDES = 10;
@@ -118,9 +120,13 @@ const ImportModal: React.FC<ImportModalProps> = ({
       console.log("Auto-load Bible verses checkbox:", autoLoadBibleVerses);
       if (autoLoadBibleVerses) {
         console.log("Processing slides for Bible references...");
+        const smartVersesSettings = loadSmartVersesSettings();
+        const translationId =
+          smartVersesSettings.defaultBibleTranslationId || BUILTIN_KJV_ID;
         generatedSlides = await processTextWithBibleReferences(
           generatedSlides,
-          true
+          true,
+          translationId
         );
         console.log(
           "After Bible processing, slides count:",

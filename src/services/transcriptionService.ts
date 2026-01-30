@@ -30,6 +30,7 @@ import {
   isNativeWhisperModelDownloaded,
   resolveNativeWhisperModelPath,
 } from "./nativeWhisperModelService";
+import { extractNewTranscriptionText } from "../utils/transcriptionOverlap";
 
 type NativeAudioInputDevice = {
   id: string;
@@ -1222,88 +1223,6 @@ export class MacNativeWhisperTranscriptionService implements ITranscriptionServi
     return Math.sqrt(sumSquares / samples.length);
   }
 
-  private normalizeOverlapText(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/[^a-z0-9'\s]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  private extractNewNativeText(newText: string): string {
-    if (!this.lastFinalText) {
-      return newText;
-    }
-
-    const lastTrimmed = this.lastFinalText.trim();
-    const newTrimmed = newText.trim();
-
-    if (!lastTrimmed || !newTrimmed) {
-      return newText;
-    }
-
-    const lastNormalized = this.normalizeOverlapText(lastTrimmed);
-    const newNormalized = this.normalizeOverlapText(newTrimmed);
-
-    if (!lastNormalized || !newNormalized) {
-      return newText;
-    }
-
-    const lastWords = lastNormalized.split(/\s+/);
-    const newWords = newNormalized.split(/\s+/);
-
-    let maxOverlapWords = 0;
-    const minOverlapWords = 2;
-
-    for (let i = Math.min(lastWords.length, newWords.length); i >= minOverlapWords; i--) {
-      const lastSuffix = lastWords.slice(-i).join(" ");
-      const newPrefix = newWords.slice(0, i).join(" ");
-      if (lastSuffix === newPrefix) {
-        maxOverlapWords = i;
-        break;
-      }
-    }
-
-    if (maxOverlapWords > 0) {
-      const originalWords = newTrimmed.split(/\s+/);
-      const remainingWords = originalWords.slice(maxOverlapWords);
-      return remainingWords.join(" ").trim();
-    }
-
-    let maxOverlapLength = 0;
-    const minOverlapLength = 20;
-
-    for (let i = Math.min(lastNormalized.length, newNormalized.length); i >= minOverlapLength; i--) {
-      const lastSuffix = lastNormalized.slice(-i);
-      const newPrefix = newNormalized.slice(0, i);
-      if (lastSuffix === newPrefix) {
-        maxOverlapLength = i;
-        break;
-      }
-    }
-
-    if (maxOverlapLength > 0) {
-      const words = newTrimmed.split(/\s+/);
-      let charCount = 0;
-      let wordIndex = 0;
-
-      for (let i = 0; i < words.length; i++) {
-        const normalizedWord = this.normalizeOverlapText(words[i]);
-        const wordLength = normalizedWord.length + 1; // +1 for space
-        if (charCount + wordLength > maxOverlapLength) {
-          wordIndex = i;
-          break;
-        }
-        charCount += wordLength;
-      }
-
-      const remainingWords = words.slice(wordIndex);
-      return remainingWords.join(" ").trim();
-    }
-
-    return newText;
-  }
-
   private async cleanupAudioResources(): Promise<void> {
     await this.stopNativeAudioCapture();
 
@@ -1465,7 +1384,7 @@ export class MacNativeWhisperTranscriptionService implements ITranscriptionServi
 
           let emitText = text;
           if (this.lastFinalText && startMs < this.lastFinalEndMs) {
-            emitText = this.extractNewNativeText(text);
+            emitText = extractNewTranscriptionText(this.lastFinalText, text);
           }
 
           if (!emitText.trim()) {
@@ -1784,7 +1703,7 @@ export class OfflineWhisperTranscriptionService implements ITranscriptionService
           this.isProcessing = false;
           if (text) {
             // Extract only the new portion, removing overlap from context audio
-            const newText = this.extractNewTranscriptionText(text);
+            const newText = extractNewTranscriptionText(this.lastTranscriptionText, text);
             
             // Only report if there's actually new text (not just overlap)
             if (newText.trim()) {
@@ -1798,13 +1717,13 @@ export class OfflineWhisperTranscriptionService implements ITranscriptionService
               // Clear accumulated interim text when final transcript arrives
               this.accumulatedInterimText = "";
               this.callbacks.onFinalTranscript?.(newText, segment);
-              
-              // Update last transcription text for next overlap detection
-              this.lastTranscriptionText = text;
             } else {
               console.log("📝 Whisper transcript (overlap only, skipping)");
             }
             
+            // Update last transcription text for next overlap detection
+            this.lastTranscriptionText = text;
+
             // Clear processed audio from buffer, keeping only context overlap
             // This prevents re-transcribing the same audio in the next segment
             this.clearProcessedAudio();
@@ -1973,102 +1892,6 @@ export class OfflineWhisperTranscriptionService implements ITranscriptionService
     combined.set(samples, this.rollingAudioBuffer.length);
     this.rollingAudioBuffer =
       combined.length > MAX_SAMPLES ? combined.slice(-MAX_SAMPLES) : combined;
-  }
-
-  /**
-   * Extract only the new portion of transcription, removing overlap from context.
-   * Finds the longest common suffix/prefix match between last and new transcription,
-   * then returns only the new portion.
-   * 
-   * Uses word-based matching to handle cases where transcription might vary slightly
-   * at character level but match at word level.
-   */
-  private extractNewTranscriptionText(newText: string): string {
-    if (!this.lastTranscriptionText) {
-      // First transcription, return it all
-      return newText;
-    }
-
-    const lastTrimmed = this.lastTranscriptionText.trim();
-    const newTrimmed = newText.trim();
-
-    if (!lastTrimmed || !newTrimmed) {
-      return newText;
-    }
-
-    // Normalize for comparison (lowercase, normalize whitespace)
-    const lastNormalized = lastTrimmed.toLowerCase().replace(/\s+/g, ' ');
-    const newNormalized = newTrimmed.toLowerCase().replace(/\s+/g, ' ');
-
-    // Try word-based matching first (more reliable)
-    const lastWords = lastNormalized.split(/\s+/);
-    const newWords = newNormalized.split(/\s+/);
-    
-    // Find the longest suffix of last transcription that matches a prefix of new transcription
-    let maxOverlapWords = 0;
-    const minOverlapWords = 2; // Minimum words to consider as overlap (avoid false matches)
-
-    // Check all possible suffix lengths of last transcription
-    for (let i = Math.min(lastWords.length, newWords.length); i >= minOverlapWords; i--) {
-      const lastSuffix = lastWords.slice(-i).join(' ');
-      const newPrefix = newWords.slice(0, i).join(' ');
-      
-      if (lastSuffix === newPrefix) {
-        maxOverlapWords = i;
-        break;
-      }
-    }
-
-    if (maxOverlapWords > 0) {
-      // Extract only the new portion (everything after the overlapping words)
-      // Map back to original case by finding the position in the original text
-      const originalWords = newTrimmed.split(/\s+/);
-      const remainingWords = originalWords.slice(maxOverlapWords);
-      const result = remainingWords.join(' ').trim();
-      
-      console.log(`✂️ Removed ${maxOverlapWords} word overlap from transcription`);
-      return result;
-    }
-
-    // Fallback to character-based matching if word matching fails
-    let maxOverlapLength = 0;
-    const minOverlapLength = 20; // Minimum characters to consider as overlap
-
-    // Check all possible suffix lengths of last transcription
-    for (let i = Math.min(lastNormalized.length, newNormalized.length); i >= minOverlapLength; i--) {
-      const lastSuffix = lastNormalized.slice(-i);
-      const newPrefix = newNormalized.slice(0, i);
-      
-      if (lastSuffix === newPrefix) {
-        maxOverlapLength = i;
-        break;
-      }
-    }
-
-    if (maxOverlapLength > 0) {
-      // Extract only the new portion (everything after the overlap)
-      // Try to align at word boundary
-      const words = newTrimmed.split(/\s+/);
-      let charCount = 0;
-      let wordIndex = 0;
-      
-      // Find which word the overlap ends at
-      for (let i = 0; i < words.length; i++) {
-        const wordLength = words[i].toLowerCase().replace(/\s+/g, ' ').length + 1; // +1 for space
-        if (charCount + wordLength > maxOverlapLength) {
-          wordIndex = i;
-          break;
-        }
-        charCount += wordLength;
-      }
-      
-      const result = words.slice(wordIndex).join(' ').trim();
-      console.log(`✂️ Removed ${maxOverlapLength} character overlap from transcription`);
-      return result;
-    }
-
-    // No overlap found, return the full new text
-    return newText;
   }
 
   /**

@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { FaCloud, FaLaptop, FaCheck } from "react-icons/fa";
 import { getAppSettings, saveAppSettings } from "../../utils/aiConfig";
 import {
   loadSmartVersesSettings,
@@ -11,12 +12,14 @@ import {
 import "./onboarding.css";
 
 interface ParaphrasingSetupScreenProps {
-  provider?: "openai" | "gemini" | "groq";
-  onProviderChange: (provider?: "openai" | "gemini" | "groq") => void;
+  provider?: "groq" | "offline";
+  onProviderChange: (provider?: "groq" | "offline") => void;
   onNext: () => void;
   onBack: () => void;
   onSkip: () => void;
 }
+
+type TabType = "cloud" | "offline";
 
 const ParaphrasingSetupScreen: React.FC<ParaphrasingSetupScreenProps> = ({
   provider,
@@ -25,50 +28,37 @@ const ParaphrasingSetupScreen: React.FC<ParaphrasingSetupScreenProps> = ({
   onBack,
   onSkip,
 }) => {
-  const [availableProviders, setAvailableProviders] = useState<
-    { value: string; label: string; hasKey: boolean }[]
-  >([]);
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    return provider === "offline" ? "offline" : "cloud";
+  });
   const [groqKey, setGroqKey] = useState("");
-
-  const refreshProviders = () => {
-    const appSettings = getAppSettings();
-    const providers = [
-      {
-        value: "openai",
-        label: "OpenAI",
-        hasKey: !!appSettings.openAIConfig?.apiKey,
-      },
-      {
-        value: "gemini",
-        label: "Google Gemini",
-        hasKey: !!appSettings.geminiConfig?.apiKey,
-      },
-      {
-        value: "groq",
-        label: "Groq (Recommended - Super Fast)",
-        hasKey: !!appSettings.groqConfig?.apiKey,
-      },
-    ];
-    setAvailableProviders(providers);
-
-    if (!provider && appSettings.groqConfig?.apiKey) {
-      onProviderChange("groq");
-    }
-  };
 
   useEffect(() => {
     const appSettings = getAppSettings();
     setGroqKey(appSettings.groqConfig?.apiKey || "");
-    refreshProviders();
+    
+    if (!provider && appSettings.groqConfig?.apiKey) {
+      onProviderChange("groq");
+    }
   }, [provider, onProviderChange]);
 
-  const handleProviderSelect = (selectedProvider: string) => {
-    const providerValue = selectedProvider as "openai" | "gemini" | "groq";
-    onProviderChange(providerValue);
+  useEffect(() => {
+    if (provider) {
+      setActiveTab(provider === "offline" ? "offline" : "cloud");
+    }
+  }, [provider]);
+
+  const handleProviderSelect = (selectedProvider: "groq" | "offline") => {
+    onProviderChange(selectedProvider);
 
     // Save to settings
     const settings = loadSmartVersesSettings();
-    settings.bibleSearchProvider = providerValue;
+    settings.bibleSearchProvider = selectedProvider;
+    settings.paraphraseDetectionMode =
+      selectedProvider === "offline" ? "offline" : "ai";
+    if (selectedProvider === "offline") {
+      settings.enableKeyPointExtraction = false;
+    }
     saveSmartVersesSettings(settings);
   };
 
@@ -83,89 +73,138 @@ const ParaphrasingSetupScreen: React.FC<ParaphrasingSetupScreenProps> = ({
     settings.groqApiKey = value;
     saveSmartVersesSettings(settings);
 
-    refreshProviders();
+    if (value && !provider) {
+      onProviderChange("groq");
+    }
   };
 
-  const providersWithKeys = availableProviders.filter((p) => p.hasKey);
+  const showApiKeyInput = provider === "groq" || (activeTab === "cloud" && !provider);
 
   return (
     <div className="onboarding-screen">
       <div className="onboarding-content">
-        <h1 className="onboarding-title">Paraphrasing & AI Features</h1>
-        <p className="onboarding-body">
-          Select an AI provider for paraphrase detection and Bible search. This
-          allows Smart Verses to detect scriptures even when they're not quoted
-          directly.
+        <h1 className="onboarding-title">Choose Paraphrase Detection Provider</h1>
+        <p className="onboarding-subtitle">
+          Select how Smart Verses will detect paraphrased Bible verses.
         </p>
 
-        {providersWithKeys.length === 0 ? (
-          <div className="onboarding-message onboarding-message-warning">
-            <strong>No AI providers configured</strong>
-            <p style={{ margin: "8px 0 0", fontSize: "0.9rem" }}>
-              You haven't set up any AI providers yet. You can configure them in
-              Settings → AI Configuration after onboarding, or add a Groq API
-              key below to get started.
+        {/* Icon tabs */}
+        <div className="onboarding-tabs">
+          <div
+            className={`onboarding-tab ${activeTab === "cloud" ? "active" : ""}`}
+            onClick={() => {
+              setActiveTab("cloud");
+              onProviderChange("groq");
+            }}
+          >
+            <FaCloud className="onboarding-tab-icon" />
+            <span className="onboarding-tab-label">Cloud</span>
+          </div>
+          <div
+            className={`onboarding-tab ${activeTab === "offline" ? "active" : ""}`}
+            onClick={() => {
+              setActiveTab("offline");
+              onProviderChange("offline");
+            }}
+          >
+            <FaLaptop className="onboarding-tab-icon" />
+            <span className="onboarding-tab-label">Offline</span>
+          </div>
+        </div>
+
+        {/* Provider cards based on active tab */}
+        <div className="onboarding-cards">
+          {activeTab === "cloud" && (
+            <div
+              className={`onboarding-card ${
+                provider === "groq" ? "selected" : ""
+              }`}
+              onClick={() => handleProviderSelect("groq")}
+            >
+              <img
+                src="/assets/onboarding/groq.jpg"
+                alt="Groq"
+                className="onboarding-card-icon"
+              />
+              <h3 className="onboarding-card-title">
+                Groq
+                <span className="onboarding-card-tag">Free · Most accurate · Recommended</span>
+                {provider === "groq" && (
+                  <FaCheck
+                    style={{ marginLeft: "8px", color: "#22c55e" }}
+                  />
+                )}
+              </h3>
+              <p className="onboarding-card-text">
+                Free, most accurate option with ultra-fast responses. Includes a generous free tier.
+              </p>
+            </div>
+          )}
+
+          {activeTab === "offline" && (
+            <div
+              className={`onboarding-card ${
+                provider === "offline" ? "selected" : ""
+              }`}
+              onClick={() => handleProviderSelect("offline")}
+            >
+              <FaLaptop
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  color: "var(--onboarding-text-secondary)",
+                  marginBottom: "12px",
+                }}
+              />
+              <h3 className="onboarding-card-title">
+                Offline Search
+                <span className="onboarding-card-tag">Experimental</span>
+                {provider === "offline" && (
+                  <FaCheck
+                    style={{ marginLeft: "8px", color: "#22c55e" }}
+                  />
+                )}
+              </h3>
+              <p className="onboarding-card-text">
+                Offline Search (Experimental) runs locally. Less accurate - we recommend the free Groq option.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* API Key input - only show for Groq */}
+        {showApiKeyInput && (
+          <div className="onboarding-form-field" style={{ marginTop: "1.25rem" }}>
+            <label className="onboarding-label" htmlFor="groq-api-key">
+              Groq API Key (free)
+            </label>
+            <div className="onboarding-input-group">
+              <input
+                id="groq-api-key"
+                type="password"
+                value={groqKey}
+                onChange={(e) => handleGroqKeyChange(e.target.value)}
+                placeholder="Enter your Groq API key"
+                className="onboarding-input"
+                style={{ flex: 1 }}
+              />
+            </div>
+            <p
+              className="onboarding-body"
+              style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}
+            >
+              Get your free API key from{" "}
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--onboarding-cyan-bright)" }}
+              >
+                console.groq.com/keys
+              </a>
             </p>
           </div>
-        ) : (
-          <div className="onboarding-cards">
-            {providersWithKeys.map((p) => (
-              <div
-                key={p.value}
-                className={`onboarding-card ${
-                  provider === p.value ? "selected" : ""
-                }`}
-                onClick={() => handleProviderSelect(p.value)}
-              >
-                <h3 className="onboarding-card-title">
-                  {p.label}
-                  {p.value === "groq" && (
-                    <span className="onboarding-card-tag">Recommended</span>
-                  )}
-                </h3>
-                <p className="onboarding-card-text">
-                  {p.value === "openai" &&
-                    "High-quality paraphrase detection with GPT models."}
-                  {p.value === "gemini" &&
-                    "Fast and accurate detection with Google's Gemini."}
-                  {p.value === "groq" &&
-                    "Ultra-fast detection with generous free tier."}
-                </p>
-              </div>
-            ))}
-          </div>
         )}
-
-        <div className="onboarding-form-field" style={{ marginTop: "1.25rem" }}>
-          <label className="onboarding-label" htmlFor="groq-api-key">
-            Groq API Key
-          </label>
-          <div className="onboarding-input-group">
-            <input
-              id="groq-api-key"
-              type="password"
-              value={groqKey}
-              onChange={(e) => handleGroqKeyChange(e.target.value)}
-              placeholder="Enter your Groq API key"
-              className="onboarding-input"
-              style={{ flex: 1 }}
-            />
-          </div>
-          <p
-            className="onboarding-body"
-            style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}
-          >
-            Get your free API key from{" "}
-            <a
-              href="https://console.groq.com/keys"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--onboarding-cyan-bright)" }}
-            >
-              console.groq.com/keys
-            </a>
-          </p>
-        </div>
 
         <p className="onboarding-help-text">
           API keys are configured in Settings → AI Configuration. You can set

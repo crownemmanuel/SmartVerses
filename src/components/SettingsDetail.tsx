@@ -69,6 +69,9 @@ const SettingsDetail: React.FC<SettingsDetailProps> = ({
   const [scriptureTextFileIndex, setScriptureTextFileIndex] = useState<number | undefined>(
     template.scriptureTextFileIndex
   );
+  const [appendTranslationToReference, setAppendTranslationToReference] = useState<boolean>(
+    template.appendTranslationToReference ?? true
+  );
   // ProPresenter activation settings
   const [proPresenterActivation, setProPresenterActivation] = useState<ProPresenterActivationConfig | undefined>(
     template.proPresenterActivation
@@ -145,6 +148,9 @@ const SettingsDetail: React.FC<SettingsDetailProps> = ({
       setAiModel(template.aiModel);
       setScriptureReferenceFileIndex(template.scriptureReferenceFileIndex);
       setScriptureTextFileIndex(template.scriptureTextFileIndex);
+      setAppendTranslationToReference(
+        template.appendTranslationToReference ?? true
+      );
       setProPresenterActivation(template.proPresenterActivation);
       setProPresenterConnectionIds(template.proPresenterConnectionIds || []);
       setProPresenterActivationClicks(template.proPresenterActivationClicks ?? 1);
@@ -254,6 +260,7 @@ const SettingsDetail: React.FC<SettingsDetailProps> = ({
       aiModel: processingType === "ai" ? aiModel : undefined,
       scriptureReferenceFileIndex,
       scriptureTextFileIndex,
+      appendTranslationToReference,
       proPresenterActivation,
       proPresenterConnectionIds: proPresenterConnectionIds.length > 0 ? proPresenterConnectionIds : undefined,
       proPresenterActivationClicks: proPresenterActivationClicks > 1 ? proPresenterActivationClicks : undefined,
@@ -733,6 +740,19 @@ const SettingsDetail: React.FC<SettingsDetailProps> = ({
                         e.g., "For God so loved..."
                       </p>
                     </div>
+                  </div>
+                  <div style={{ marginTop: "12px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={appendTranslationToReference}
+                        onChange={(e) => setAppendTranslationToReference(e.target.checked)}
+                        style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                      />
+                      <span style={{ fontWeight: 500 }}>
+                        Append Bible translation to the reference
+                      </span>
+                    </label>
                   </div>
                 </div>
               </div>

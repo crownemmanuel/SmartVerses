@@ -905,7 +905,15 @@ const MainApplicationPage: React.FC = () => {
         // - Write reference to the designated reference file index
         // - Blank out ALL other files (1-6)
         const verseText = lines[0] || ""; // First line is the verse text
-        const reference = lines[1] || ""; // Second line is the reference
+        const referenceBase = lines[1] || ""; // Second line is the reference
+        const reference = (template?.appendTranslationToReference ?? true)
+          ? (() => {
+              const trimmed = referenceBase.trim();
+              const suffix = " (KJV)";
+              if (!trimmed) return referenceBase;
+              return trimmed.endsWith(suffix) ? referenceBase : `${trimmed}${suffix}`;
+            })()
+          : referenceBase;
 
         console.log("Auto-scripture slide with custom mapping detected");
         console.log(

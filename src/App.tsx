@@ -33,6 +33,7 @@ import StageAssistPage from "./pages/StageAssistPage";
 import SmartVersesPage from "./pages/SmartVersesPage";
 import RecorderPage from "./pages/RecorderPage";
 import AudienceDisplayPage from "./pages/AudienceDisplayPage";
+import MonitorIdentifyPage from "./pages/MonitorIdentifyPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { loadEnabledFeatures } from "./services/recorderService";
 import { clearDisplayScripture, clearDisplaySlides } from "./services/displayService";
@@ -639,6 +640,7 @@ function App() {
 
   // Calculate isSecondScreen purely from initial state to prevent flash of main app
   const isSecondScreen = windowLabel.startsWith("dialog-");
+  const isIdentifyWindow = windowLabel === "monitor-identify";
   const isMainWindow = windowLabel === "main";
 
   // Onboarding state
@@ -755,6 +757,11 @@ function App() {
   const handleOnboardingSkip = () => {
     setShowOnboarding(false);
   };
+
+  // If this is the monitor identify window, render ONLY the identify page.
+  if (isIdentifyWindow) {
+    return <MonitorIdentifyPage />;
+  }
 
   // If this is a secondary window, render ONLY that component.
   // CRITICAL: Do NOT render Router, StageAssistProvider, or any other main app context here.

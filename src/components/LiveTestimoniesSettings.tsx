@@ -17,10 +17,41 @@ import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
 import { sectionStyle, sectionHeaderStyle } from "../utils/settingsSectionStyles";
 import "../App.css";
 
+const FIREBASE_REQUIRED_FIELDS: Array<keyof FirebaseConfig> = [
+  "apiKey",
+  "authDomain",
+  "databaseURL",
+  "projectId",
+  "storageBucket",
+  "messagingSenderId",
+  "appId",
+];
+
+const isFirebaseConfigEqual = (
+  a: FirebaseConfig | null,
+  b: FirebaseConfig | null
+): boolean => {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return FIREBASE_REQUIRED_FIELDS.every((field) => (a[field] ?? "") === (b[field] ?? ""));
+};
+
+const dispatchLiveTestimoniesSettingsChanged = (firebaseConfigChanged: boolean) => {
+  window.dispatchEvent(
+    new CustomEvent("live-testimonies-settings-changed", {
+      detail: { firebaseConfigChanged },
+    })
+  );
+};
+
 const LiveTestimoniesSettings: React.FC = () => {
   const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(
     null
   );
+  const [savedFirebaseConfig, setSavedFirebaseConfig] = useState<FirebaseConfig | null>(
+    null
+  );
+  const [isEditingFirebase, setIsEditingFirebase] = useState(false);
   const [outputPath, setOutputPath] = useState("");
   const [fileName, setFileName] = useState("");
   const [nameFormattingType, setNameFormattingType] = useState<NameFormattingType>("default");
@@ -28,6 +59,10 @@ const LiveTestimoniesSettings: React.FC = () => {
   const [testName, setTestName] = useState("");
   const [testResult, setTestResult] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<{
+    text: string;
+    type: "success" | "error" | "";
+  }>({ text: "", type: "" });
+  const [firebaseSaveMessage, setFirebaseSaveMessage] = useState<{
     text: string;
     type: "success" | "error" | "";
   }>({ text: "", type: "" });
@@ -50,6 +85,7 @@ const LiveTestimoniesSettings: React.FC = () => {
   useEffect(() => {
     const settings = loadLiveTestimoniesSettings();
     setFirebaseConfig(settings.firebaseConfig);
+    setSavedFirebaseConfig(settings.firebaseConfig);
     setOutputPath(settings.liveTestimonyOutputPath);
     setFileName(settings.liveTestimonyFileName);
     setNameFormattingType(settings.nameFormatting?.type || "default");
@@ -75,10 +111,6 @@ const LiveTestimoniesSettings: React.FC = () => {
   useDebouncedEffect(
     () => {
       try {
-        if (firebaseConfig) {
-          saveFirebaseConfig(firebaseConfig);
-        }
-
         const proPresenterActivation = proPresenterConfig
           ? {
               ...proPresenterConfig,
@@ -89,7 +121,7 @@ const LiveTestimoniesSettings: React.FC = () => {
           : undefined;
 
         const settingsToSave: LiveTestimoniesSettingsType = {
-          firebaseConfig,
+          firebaseConfig: isEditingFirebase ? savedFirebaseConfig : firebaseConfig,
           liveTestimonyOutputPath: outputPath,
           liveTestimonyFileName: fileName,
           nameFormatting: {
@@ -102,6 +134,7 @@ const LiveTestimoniesSettings: React.FC = () => {
         saveLiveTestimoniesSettings(settingsToSave);
         setSaveMessage({ text: "All changes saved", type: "success" });
         setTimeout(() => setSaveMessage({ text: "", type: "" }), 2000);
+        dispatchLiveTestimoniesSettingsChanged(false);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to save settings";
@@ -109,7 +142,6 @@ const LiveTestimoniesSettings: React.FC = () => {
       }
     },
     [
-      firebaseConfig,
       outputPath,
       fileName,
       nameFormattingType,
@@ -122,6 +154,60 @@ const LiveTestimoniesSettings: React.FC = () => {
     ],
     { delayMs: 600, enabled: settingsLoaded, skipFirstRun: true }
   );
+
+  const handleFirebaseSave = () => {
+    if (!firebaseConfig) {
+      setFirebaseSaveMessage({ text: "Firebase configuration is required.", type: "error" });
+      return;
+    }
+
+    const missingField = FIREBASE_REQUIRED_FIELDS.find(
+      (field) => !firebaseConfig[field]
+    );
+    if (missingField) {
+      setFirebaseSaveMessage({
+        text: "Please complete all required Firebase fields before saving.",
+        type: "error",
+      });
+      return;
+    }
+
+    try {
+      const firebaseChanged = !isFirebaseConfigEqual(savedFirebaseConfig, firebaseConfig);
+      saveFirebaseConfig(firebaseConfig);
+
+      const proPresenterActivation = proPresenterConfig
+        ? {
+            ...proPresenterConfig,
+            activationClicks,
+            takeOffClicks,
+            clearTextFileOnTakeOff,
+          }
+        : undefined;
+
+      const settingsToSave: LiveTestimoniesSettingsType = {
+        firebaseConfig,
+        liveTestimonyOutputPath: outputPath,
+        liveTestimonyFileName: fileName,
+        nameFormatting: {
+          type: nameFormattingType,
+          customLogic: nameFormattingType !== "default" ? customLogic : undefined,
+        },
+        proPresenterActivation,
+      };
+
+      saveLiveTestimoniesSettings(settingsToSave);
+      setSavedFirebaseConfig(firebaseConfig);
+      setIsEditingFirebase(false);
+      setFirebaseSaveMessage({ text: "Firebase configuration saved.", type: "success" });
+      setTimeout(() => setFirebaseSaveMessage({ text: "", type: "" }), 2000);
+      dispatchLiveTestimoniesSettingsChanged(firebaseChanged);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save Firebase settings";
+      setFirebaseSaveMessage({ text: message, type: "error" });
+    }
+  };
   
   const handleGetSlide = async () => {
     setIsLoadingSlide(true);
@@ -172,6 +258,7 @@ const LiveTestimoniesSettings: React.FC = () => {
     field: keyof FirebaseConfig,
     value: string
   ) => {
+    setFirebaseSaveMessage({ text: "", type: "" });
     setFirebaseConfig((prev) => {
       if (!prev) {
         // Initialize with empty config
@@ -192,6 +279,8 @@ const LiveTestimoniesSettings: React.FC = () => {
 
   const handleImportConfig = (config: FirebaseConfig) => {
     setFirebaseConfig(config);
+    setSavedFirebaseConfig(config);
+    setIsEditingFirebase(true);
     setSaveMessage({ text: "Firebase configuration imported successfully", type: "success" });
     setTimeout(() => setSaveMessage({ text: "", type: "" }), 3000);
   };
@@ -237,9 +326,22 @@ const LiveTestimoniesSettings: React.FC = () => {
           <FaDatabase />
           <h3 style={{ margin: 0 }}>Firebase Configuration</h3>
           <button
+            onClick={() => {
+              if (isEditingFirebase) {
+                handleFirebaseSave();
+              } else {
+                setIsEditingFirebase(true);
+              }
+            }}
+            className={isEditingFirebase ? "primary btn-sm" : "secondary btn-sm"}
+            style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
+          >
+            {isEditingFirebase ? "Save" : "Edit"}
+          </button>
+          <button
             onClick={() => setIsImportModalOpen(true)}
             className="secondary btn-sm"
-            style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
+            style={{ marginLeft: "var(--spacing-2)", whiteSpace: "nowrap" }}
           >
             Import Config
           </button>
@@ -248,6 +350,21 @@ const LiveTestimoniesSettings: React.FC = () => {
             Enter your Firebase Realtime Database configuration. You can find these values in your Firebase project settings.
             You can also import from environment variables or JavaScript config object.
           </p>
+        {firebaseSaveMessage.text && (
+          <div style={{ marginBottom: "var(--spacing-3)" }}>
+            <span
+              style={{
+                color:
+                  firebaseSaveMessage.type === "success"
+                    ? "#22c55e"
+                    : "#dc2626",
+                fontSize: "0.9em",
+              }}
+            >
+              {firebaseSaveMessage.text}
+            </span>
+          </div>
+        )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3)" }}>
           <div>
@@ -259,6 +376,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               value={firebaseConfig?.apiKey || ""}
               onChange={(e) => handleFirebaseConfigChange("apiKey", e.target.value)}
               placeholder="AIza..."
+              disabled={!isEditingFirebase}
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
           </div>
@@ -272,6 +390,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               value={firebaseConfig?.authDomain || ""}
               onChange={(e) => handleFirebaseConfigChange("authDomain", e.target.value)}
               placeholder="your-project.firebaseapp.com"
+              disabled={!isEditingFirebase}
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
           </div>
@@ -285,6 +404,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               value={firebaseConfig?.databaseURL || ""}
               onChange={(e) => handleFirebaseConfigChange("databaseURL", e.target.value)}
               placeholder="https://your-project-default-rtdb.firebaseio.com"
+              disabled={!isEditingFirebase}
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
           </div>
@@ -298,6 +418,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               value={firebaseConfig?.projectId || ""}
               onChange={(e) => handleFirebaseConfigChange("projectId", e.target.value)}
               placeholder="your-project-id"
+              disabled={!isEditingFirebase}
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
           </div>
@@ -311,6 +432,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               value={firebaseConfig?.storageBucket || ""}
               onChange={(e) => handleFirebaseConfigChange("storageBucket", e.target.value)}
               placeholder="your-project.appspot.com"
+              disabled={!isEditingFirebase}
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
           </div>
@@ -324,6 +446,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               value={firebaseConfig?.messagingSenderId || ""}
               onChange={(e) => handleFirebaseConfigChange("messagingSenderId", e.target.value)}
               placeholder="123456789"
+              disabled={!isEditingFirebase}
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
           </div>
@@ -337,6 +460,7 @@ const LiveTestimoniesSettings: React.FC = () => {
               value={firebaseConfig?.appId || ""}
               onChange={(e) => handleFirebaseConfigChange("appId", e.target.value)}
               placeholder="1:123456789:web:abc123"
+              disabled={!isEditingFirebase}
               style={{ width: "100%", padding: "var(--spacing-2)" }}
             />
           </div>

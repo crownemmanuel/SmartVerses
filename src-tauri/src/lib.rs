@@ -99,6 +99,7 @@ pub struct TimerState {
 pub struct DisplayScripture {
     pub verse_text: String,
     pub reference: String,
+    pub translation_short_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,6 +316,7 @@ lazy_static::lazy_static! {
             scripture: DisplayScripture {
                 verse_text: String::new(),
                 reference: String::new(),
+                translation_short_name: None,
             },
             slides: Vec::new(),
             settings: serde_json::json!({}),
@@ -1271,7 +1273,34 @@ fn get_available_monitors_safe(
     window: tauri::WebviewWindow,
 ) -> Result<Vec<SafeMonitorInfo>, String> {
     match window.available_monitors() {
-        Ok(monitors) => {
+        Ok(mut monitors) => {
+            monitors.sort_by(|a, b| {
+                let a_pos = a.position();
+                let b_pos = b.position();
+                let a_primary = a_pos.x == 0 && a_pos.y == 0;
+                let b_primary = b_pos.x == 0 && b_pos.y == 0;
+                if a_primary != b_primary {
+                    return if a_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                }
+                if a_pos.x != b_pos.x {
+                    return a_pos.x.cmp(&b_pos.x);
+                }
+                if a_pos.y != b_pos.y {
+                    return a_pos.y.cmp(&b_pos.y);
+                }
+                let a_size = a.size();
+                let b_size = b.size();
+                if a_size.width != b_size.width {
+                    return a_size.width.cmp(&b_size.width);
+                }
+                if a_size.height != b_size.height {
+                    return a_size.height.cmp(&b_size.height);
+                }
+                let a_name = a.name().map(|s| s.as_str()).unwrap_or("");
+                let b_name = b.name().map(|s| s.as_str()).unwrap_or("");
+                a_name.cmp(&b_name)
+            });
+
             let mut safe_monitors = Vec::new();
             for monitor in monitors {
                 let pos = monitor.position();
@@ -1307,10 +1336,17 @@ fn open_audience_display_window(
 
     // Check if window already exists
     if let Some(existing_window) = app_handle.get_webview_window(WINDOW_LABEL) {
-        // Window exists, just focus it
-        if let Err(e) = existing_window.set_focus() {
-            eprintln!("[Display] Error focusing audience display window: {:?}", e);
-            return Err(format!("Failed to focus window: {:?}", e));
+        // Window exists, avoid focusing on macOS to prevent Space jumps.
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Err(e) = existing_window.set_focus() {
+                eprintln!("[Display] Error focusing audience display window: {:?}", e);
+                return Err(format!("Failed to focus window: {:?}", e));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = existing_window;
         }
         return Ok(());
     }
@@ -1336,7 +1372,34 @@ fn open_audience_display_window(
     let (new_x, new_y, width, height, is_fullscreen, physical_x, physical_y, physical_width, physical_height) = if let Some(index) = monitor_index {
         // Try to find the monitor by index
         match parent_window.available_monitors() {
-            Ok(monitors) => {
+            Ok(mut monitors) => {
+                monitors.sort_by(|a, b| {
+                    let a_pos = a.position();
+                    let b_pos = b.position();
+                    let a_primary = a_pos.x == 0 && a_pos.y == 0;
+                    let b_primary = b_pos.x == 0 && b_pos.y == 0;
+                    if a_primary != b_primary {
+                        return if a_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                    }
+                    if a_pos.x != b_pos.x {
+                        return a_pos.x.cmp(&b_pos.x);
+                    }
+                    if a_pos.y != b_pos.y {
+                        return a_pos.y.cmp(&b_pos.y);
+                    }
+                    let a_size = a.size();
+                    let b_size = b.size();
+                    if a_size.width != b_size.width {
+                        return a_size.width.cmp(&b_size.width);
+                    }
+                    if a_size.height != b_size.height {
+                        return a_size.height.cmp(&b_size.height);
+                    }
+                    let a_name = a.name().map(|s| s.as_str()).unwrap_or("");
+                    let b_name = b.name().map(|s| s.as_str()).unwrap_or("");
+                    a_name.cmp(&b_name)
+                });
+
                 if let Some(monitor) = monitors.get(index) {
                     let pos = monitor.position();
                     let size = monitor.size();
@@ -1464,6 +1527,142 @@ fn open_audience_display_window(
             Err(format!("Failed to create window: {:?}", e))
         }
     }
+}
+
+// ============================================================================
+// Monitor Identify Window (for identifying monitors in settings)
+// ============================================================================
+
+#[tauri::command]
+fn show_monitor_identify_window(
+    app_handle: tauri::AppHandle,
+    monitor_index: usize,
+) -> Result<(), String> {
+    use tauri::{Manager, WebviewWindowBuilder};
+
+    const WINDOW_LABEL: &str = "monitor-identify";
+
+    // Close existing identify window if it exists (prevents duplicates)
+    if let Some(existing_window) = app_handle.get_webview_window(WINDOW_LABEL) {
+        let _ = existing_window.close();
+        // Small delay to ensure window is fully closed before creating new one
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    // Get the target monitor
+    let mut monitors = app_handle
+        .available_monitors()
+        .map_err(|e| format!("Failed to get monitors: {:?}", e))?;
+
+    monitors.sort_by(|a, b| {
+        let a_pos = a.position();
+        let b_pos = b.position();
+        let a_primary = a_pos.x == 0 && a_pos.y == 0;
+        let b_primary = b_pos.x == 0 && b_pos.y == 0;
+        if a_primary != b_primary {
+            return if a_primary { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+        }
+        if a_pos.x != b_pos.x {
+            return a_pos.x.cmp(&b_pos.x);
+        }
+        if a_pos.y != b_pos.y {
+            return a_pos.y.cmp(&b_pos.y);
+        }
+        let a_size = a.size();
+        let b_size = b.size();
+        if a_size.width != b_size.width {
+            return a_size.width.cmp(&b_size.width);
+        }
+        if a_size.height != b_size.height {
+            return a_size.height.cmp(&b_size.height);
+        }
+        let a_name = a.name().map(|s| s.as_str()).unwrap_or("");
+        let b_name = b.name().map(|s| s.as_str()).unwrap_or("");
+        a_name.cmp(&b_name)
+    });
+
+    let monitor = monitors
+        .get(monitor_index)
+        .ok_or_else(|| format!("Monitor index {} not found", monitor_index))?;
+
+    let pos = monitor.position();
+    let size = monitor.size();
+    let scale = monitor.scale_factor();
+
+    println!(
+        "[Identify] Opening on monitor {}: pos=({},{}), size={}x{}, scale={}",
+        monitor_index, pos.x, pos.y, size.width, size.height, scale
+    );
+
+    // Calculate position and size - platform-specific coordinate handling
+    #[cfg(target_os = "windows")]
+    let (x, y, width, height) = (
+        pos.x as f64,
+        pos.y as f64,
+        size.width as f64,
+        size.height as f64,
+    );
+
+    #[cfg(not(target_os = "windows"))]
+    let (x, y, width, height) = (
+        pos.x as f64 / scale,
+        pos.y as f64 / scale,
+        size.width as f64 / scale,
+        size.height as f64 / scale,
+    );
+
+    // Build the identify window
+    #[allow(unused_variables)]
+    let window = WebviewWindowBuilder::new(
+        &app_handle,
+        WINDOW_LABEL,
+        tauri::WebviewUrl::App("/monitor-identify".into()),
+    )
+    .title("Monitor Identify")
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .inner_size(width, height)
+    .position(x, y)
+    .visible(true)
+    .focused(false) // Don't steal focus from main window
+    .build()
+    .map_err(|e| format!("Failed to create identify window: {:?}", e))?;
+
+    // Ensure fullscreen coverage on the monitor (Windows needs explicit repositioning)
+    #[cfg(target_os = "windows")]
+    {
+        if let Err(e) = window.set_position(tauri::Position::Physical(
+            tauri::PhysicalPosition::new(pos.x, pos.y),
+        )) {
+            eprintln!("[Identify] Failed to set window position: {:?}", e);
+        }
+        if let Err(e) = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            size.width,
+            size.height,
+        ))) {
+            eprintln!("[Identify] Failed to set window size: {:?}", e);
+        }
+    }
+
+    println!("[Identify] Window shown on monitor {}", monitor_index);
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_monitor_identify_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    const WINDOW_LABEL: &str = "monitor-identify";
+
+    if let Some(window) = app_handle.get_webview_window(WINDOW_LABEL) {
+        window
+            .close()
+            .map_err(|e| format!("Failed to close identify window: {:?}", e))?;
+        println!("[Identify] Window hidden");
+    }
+    Ok(())
 }
 
 // ============================================================================
@@ -3510,6 +3709,7 @@ async fn update_timer_state(
 async fn update_display_state(
     verse_text: String,
     reference: String,
+    translation_short_name: Option<String>,
     slides: Vec<String>,
     settings: serde_json::Value,
 ) -> Result<(), String> {
@@ -3521,6 +3721,7 @@ async fn update_display_state(
         display_state.scripture = DisplayScripture {
             verse_text: verse_text.clone(),
             reference: reference.clone(),
+            translation_short_name: translation_short_name.clone(),
         };
         display_state.slides = slides.clone();
         display_state.settings = settings.clone();
@@ -3531,6 +3732,7 @@ async fn update_display_state(
         scripture: DisplayScripture {
             verse_text,
             reference,
+            translation_short_name,
         },
         slides,
         settings,
@@ -3699,7 +3901,7 @@ pub struct MidiDevice {
 fn list_midi_output_devices() -> Result<Vec<MidiDevice>, String> {
     use midir::MidiOutput;
     
-    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+    let midi_out = MidiOutput::new("SmartVerses MIDI Output")
         .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
     
     let ports = midi_out.ports();
@@ -3743,7 +3945,7 @@ fn send_midi_note(
         return Err("Velocity must be between 0 and 127".to_string());
     }
     
-    let midi_out = MidiOutput::new("ProAssist MIDI Output")
+    let midi_out = MidiOutput::new("SmartVerses MIDI Output")
         .map_err(|e| format!("Failed to create MIDI output: {}", e))?;
     
     let ports = midi_out.ports();
@@ -3757,7 +3959,7 @@ fn send_midi_note(
     let port = &ports[device_index];
     
     // Create connection
-    let mut conn_out = midi_out.connect(port, "proassist-midi-out")
+    let mut conn_out = midi_out.connect(port, "smartverses-midi-out")
         .map_err(|e| format!("Failed to connect to MIDI device: {}", e))?;
     
     // Send Note On message: 0x90 + channel (0-15), note (0-127), velocity (0-127)
@@ -3808,6 +4010,8 @@ pub fn run() {
             toggle_devtools,
             get_available_monitors_safe,
             open_audience_display_window,
+            show_monitor_identify_window,
+            hide_monitor_identify_window,
             open_dialog,
             close_dialog,
             get_available_system_fonts,

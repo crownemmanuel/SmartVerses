@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" type="image/png" href="/ProAssist.png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ProAssist Browser Transcription</title>
+  <title>SmartVerses Browser Transcription</title>
   <style>
     :root {
       --bg-primary: #0f0f0f;
@@ -285,7 +285,7 @@
         <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
         <line x1="12" y1="19" x2="12" y2="22"/>
       </svg>
-      <h1>ProAssist Browser Transcription</h1>
+      <h1>SmartVerses Browser Transcription</h1>
     </div>
     <div id="statusBadge" class="status-badge idle">
       <span class="status-dot"></span>
@@ -314,7 +314,7 @@
       </div>
       
       <div id="apiKeyFromApp" class="info-message" style="display: none;">
-        ✓ Using API key from ProAssist app
+        ✓ Using API key from SmartVerses app
       </div>
       
       <div class="controls">
@@ -330,7 +330,7 @@
         </div>
         <div class="connection-item">
           <span id="proassistDot" class="dot disconnected"></span>
-          <span>ProAssist</span>
+          <span>SmartVerses</span>
         </div>
       </div>
     </div>
@@ -368,7 +368,7 @@
     const wsHost = urlParams.get('wsHost') || 'localhost';
     const wsPort = urlParams.get('wsPort') || '9876';
     const prefillApiKey = urlParams.get('apiKey') || '';
-    const prefillToken = urlParams.get('token') || ''; // Temporary token from ProAssist app
+    const prefillToken = urlParams.get('token') || ''; // Temporary token from SmartVerses app
     
     // DOM elements
     const micSelect = document.getElementById('micSelect');
@@ -395,7 +395,7 @@
       const apiKeyFromApp = document.getElementById('apiKeyFromApp');
       
       if (prefillToken || prefillApiKey) {
-        // Token or API key provided from ProAssist app - hide the input field
+        // Token or API key provided from SmartVerses app - hide the input field
         // We prefer token (no CORS issues) over API key
         if (prefillToken) {
           // Store token in a hidden way (we'll use it directly)
@@ -457,24 +457,24 @@
     }
     
     // =============================================================================
-    // PROASSIST WEBSOCKET
+    // SMARTVERSES WEBSOCKET
     // =============================================================================
     
     function connectToProAssist() {
       const wsUrl = `ws://${wsHost}:${wsPort}/ws`;
-      console.log('Connecting to ProAssist:', wsUrl);
+      console.log('Connecting to SmartVerses:', wsUrl);
       
       try {
         proassistSocket = new WebSocket(wsUrl);
         
         proassistSocket.onopen = () => {
-          console.log('Connected to ProAssist');
+          console.log('Connected to SmartVerses');
           proassistDot.classList.remove('disconnected');
           proassistDot.classList.add('connected');
         };
         
         proassistSocket.onclose = () => {
-          console.log('Disconnected from ProAssist');
+          console.log('Disconnected from SmartVerses');
           proassistDot.classList.remove('connected');
           proassistDot.classList.add('disconnected');
           // Try to reconnect after 3 seconds
@@ -482,10 +482,10 @@
         };
         
         proassistSocket.onerror = (error) => {
-          console.error('ProAssist WebSocket error:', error);
+          console.error('SmartVerses WebSocket error:', error);
         };
       } catch (error) {
-        console.error('Failed to connect to ProAssist:', error);
+        console.error('Failed to connect to SmartVerses:', error);
       }
     }
     
@@ -513,9 +513,9 @@
         let token;
         
         if (prefilledToken) {
-          // Use the pre-generated token from ProAssist app (no CORS issues!)
+          // Use the pre-generated token from SmartVerses app (no CORS issues!)
           token = prefilledToken;
-          console.log('Using pre-generated token from ProAssist app');
+          console.log('Using pre-generated token from SmartVerses app');
         } else {
           // Fall back to getting token via API (may have CORS issues)
           // v3 uses GET with query params instead of POST with JSON body
@@ -702,7 +702,7 @@
           interimText = '';
           updateTranscriptDisplay();
           
-          // Send final to ProAssist
+          // Send final to SmartVerses
           sendToProAssist({
             type: 'transcription_stream',
             kind: 'final',
@@ -716,7 +716,7 @@
           interimText = transcript;
           updateTranscriptDisplay();
           
-          // Send interim to ProAssist
+          // Send interim to SmartVerses
           sendToProAssist({
             type: 'transcription_stream',
             kind: 'interim',

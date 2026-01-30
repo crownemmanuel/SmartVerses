@@ -1,6 +1,47 @@
 # Changelog
 
-All notable changes to ProAssist will be documented in this file.
+All notable changes to SmartVerses will be documented in this file.
+
+## [0.7.4] - 2026-01-30
+
+### Fixed
+- **MediaView Firebase subscription**: Removed redundant cleanup block that caused TypeScript error (ref narrow to never)
+
+### Changed
+- Version bump to 0.7.4
+
+## [0.7.3] - 2026-01-29
+
+### Added
+- **Offline Paraphrase**: Introduction of offline paraphrase for Bible search and transcription (direct quoting support)
+- **Monitor Identification**: Option to identify a second monitor; onboarding monitor selector for dual-screen setup
+- **Transcription Status in Remote**: Handle `transcription_status` in remote WebSocket so clients see stopped notification
+
+### Fixed
+- **Cloud Tab Provider**: Cloud tab now updates provider correctly when switching from offline
+- **Keypoint Extraction Test**: Keypoint extraction test no longer blocks when offline Bible search is enabled
+- **Monitor Identify Window**: Fix monitor identify window stuck on quick click; fix dual-screen window opening off screen
+- **Recorder Cleanup**: Fix recorder cleanup pending count reset; use write chain instead of promise array for long recordings to prevent issues
+- **Transcription Time Limit**: Clearer copy for transcription time limit; no auto-stop for remote source
+- **Whisper Overlap**: Whisper overlap handling fix; Vitest overlap tests added
+
+### Changed
+- **Paraphrasing UI**: Paraphrase/offline UI, defaults, and settings order improvements in SmartVerses
+- **Duplicate Paraphrase Detection**: Refactored duplicate paraphrase detection into helper function; removed unused `groqHasKey` state from ParaphrasingSetupScreen
+- **TranscriptionStatusUpdate**: Deduplicated `TranscriptionStatusUpdate` type
+
+### Technical
+- Apple Silicon (aarch64) build: enable i8mm for whisper-rs/ggml (PR #25)
+
+## [0.7.2] - 2026-01-29
+
+### Changed
+- Version bump to 0.7.2
+
+## [0.7.1] - 2026-01-29
+
+### Changed
+- Version bump to 0.7.1
 
 ## [0.7.0] - 2026-01-27
 
@@ -198,10 +239,10 @@ All notable changes to ProAssist will be documented in this file.
   - Auto-scroll checkbox repositioned to top right of transcription display area
   - Scripture refs and Key points checkboxes checked by default
   - Auto-scroll checkbox styling improved (no border/background, reduced padding)
-- **Favicon Updates**: Updated favicon to ProAssist icon across all pages
-  - Live Notepad page now uses ProAssist icon
-  - Remote timer page now uses ProAssist icon
-  - Browser transcription page now uses ProAssist icon
+- **Favicon Updates**: Updated favicon to SmartVerses icon across all pages
+  - Live Notepad page now uses SmartVerses icon
+  - Remote timer page now uses SmartVerses icon
+  - Browser transcription page now uses SmartVerses icon
 
 ## [0.5.5] - 2026-01-16
 
