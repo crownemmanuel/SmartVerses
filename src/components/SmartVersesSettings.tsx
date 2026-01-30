@@ -1026,7 +1026,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             </span>
           </label>
           <p style={helpTextStyle}>
-            Connect to another ProAssist instance that is already capturing
+            Connect to another SmartVerses instance that is already capturing
             audio and streaming transcriptions. This will disable local mic
             capture.
           </p>

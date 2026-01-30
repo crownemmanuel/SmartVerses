@@ -1,5 +1,5 @@
 /**
- * Screen 12: ProAssist Additional Features
+ * Screen 12: SmartVerses Additional Features
  */
 
 import React from "react";
@@ -75,11 +75,10 @@ const AdditionalFeaturesScreen: React.FC<AdditionalFeaturesScreenProps> = ({
   return (
     <div className="onboarding-screen">
       <div className="onboarding-content">
-        <h1 className="onboarding-title">More ProAssist Tools</h1>
+        <h1 className="onboarding-title">More SmartVerses Tools</h1>
         <p className="onboarding-body">
-          ProAssist includes other tools to support your media workflow. Turn on
-          any features you plan to use. These selections should match the toggles
-          on the Settings page.
+          SmartVerses includes other tools to support your media workflow. Turn on
+          any features you plan to use.
         </p>
 
         {/* Feature Cards with Toggles */}
@@ -193,7 +192,7 @@ const AdditionalFeaturesScreen: React.FC<AdditionalFeaturesScreenProps> = ({
                   color: "var(--app-text-color-secondary)",
                 }}
               >
-                Capture audio or services directly inside ProAssist for later use.
+                Capture audio or services directly inside SmartVerses for later use.
               </p>
             </div>
             <label className="toggle-switch">

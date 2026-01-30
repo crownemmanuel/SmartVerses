@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>ProAssist needs microphone access for SmartVerses transcription and audio recording.</string>
+    <string>SmartVerses needs microphone access for transcription and audio recording.</string>
     <key>NSCameraUsageDescription</key>
-    <string>ProAssist needs camera access for video recording.</string>
+    <string>SmartVerses needs camera access for video recording.</string>
 </dict>
 </plist>

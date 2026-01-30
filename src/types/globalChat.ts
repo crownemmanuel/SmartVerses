@@ -2,7 +2,7 @@
  * Global Chat Assistant Types
  * 
  * Types for the comprehensive AI chat assistant that can control
- * both the ProAssist app and ProPresenter directly.
+ * both the SmartVerses app and ProPresenter directly.
  */
 
 import { LayoutType } from "./index";

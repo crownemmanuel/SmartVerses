@@ -620,7 +620,7 @@ const LiveSlidesNotepad: React.FC = () => {
     localStorage.setItem("liveSlidesNotepadTheme", newTheme ? "dark" : "light");
   }, [isDarkMode]);
 
-  // Set favicon to ProAssist icon
+  // Set favicon to SmartVerses icon
   useEffect(() => {
     const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
     if (link) {

@@ -21,6 +21,11 @@ const MonitorSelectDropdown: React.FC<MonitorSelectDropdownProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [identifyingIndex, setIdentifyingIndex] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Tracks the current identify state synchronously to avoid stale closures between
+  // onMouseDown/onMouseUp (or touchstart/touchend) before React re-renders.
+  const identifyingIndexRef = useRef<number | null>(null);
+  // Used to invalidate an in-flight "show" when identify ends quickly (prevents show-after-hide).
+  const identifyRequestIdRef = useRef(0);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -56,23 +61,39 @@ const MonitorSelectDropdown: React.FC<MonitorSelectDropdownProps> = ({
     e.stopPropagation();
 
     try {
+      identifyRequestIdRef.current += 1;
+      const requestId = identifyRequestIdRef.current;
+
+      identifyingIndexRef.current = index;
       setIdentifyingIndex(index);
       await invoke("show_monitor_identify_window", { monitorIndex: index });
+
+      // If the user released before show completed, hide immediately.
+      if (
+        identifyRequestIdRef.current !== requestId ||
+        identifyingIndexRef.current !== index
+      ) {
+        invoke("hide_monitor_identify_window").catch((err) =>
+          console.warn("[MonitorSelect] Post-show hide failed:", err)
+        );
+      }
     } catch (error) {
       console.error("[MonitorSelect] Failed to show identify window:", error);
+      identifyingIndexRef.current = null;
       setIdentifyingIndex(null);
     }
   };
 
   const handleIdentifyEnd = async () => {
-    if (identifyingIndex === null) return;
+    if (identifyingIndexRef.current === null) return;
+    identifyingIndexRef.current = null;
+    identifyRequestIdRef.current += 1;
+    setIdentifyingIndex(null);
 
     try {
       await invoke("hide_monitor_identify_window");
     } catch (error) {
       console.error("[MonitorSelect] Failed to hide identify window:", error);
-    } finally {
-      setIdentifyingIndex(null);
     }
   };
 
