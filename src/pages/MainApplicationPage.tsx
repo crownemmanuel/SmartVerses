@@ -54,7 +54,10 @@ import {
   WsTranscriptionStream,
 } from "../types/liveSlides";
 import { TranscriptionStatus } from "../types/smartVerses";
-import { stripBulletPrefix } from "../utils/liveSlideParser";
+import {
+  stripBulletPrefix,
+  parseRawTextListStyle,
+} from "../utils/liveSlideParser";
 import { triggerPresentationOnConnections } from "../services/propresenterService";
 import { useNetworkSync } from "../hooks/useNetworkSync";
 import { loadNetworkSyncSettings } from "../services/networkSyncService";
@@ -336,12 +339,33 @@ const MainApplicationPage: React.FC = () => {
   >({});
 
   const buildRawTextFromSlides = (slides: Slide[]): string => {
-    return slides
+    const sorted = slides
       .slice()
       .sort((a, b) => a.order - b.order)
-      .map((s) => (s.text || "").trim())
-      .filter((t) => t.length > 0)
-      .join("\n\n");
+      .filter((s) => (s.text || "").trim().length > 0);
+    if (sorted.length === 0) return "";
+    const lines: string[] = [];
+    const BULLET = "•";
+    for (const s of sorted) {
+      const slideLines = (s.text || "").trim().split("\n").filter((t) => t.length > 0);
+      const meta = s.liveSlidesItemMeta;
+      if (meta && meta.length >= slideLines.length && (s.liveSlidesListStyle === "bullet" || s.liveSlidesListStyle === "numbered")) {
+        for (let i = 0; i < slideLines.length; i++) {
+          const item = meta[i];
+          const prefix = item.isSubItem ? "\t" : "";
+          const stylePrefix =
+            s.liveSlidesListStyle === "bullet"
+              ? `${prefix}${BULLET} `
+              : s.liveSlidesListStyle === "numbered" && item.listNumber != null
+                ? `${prefix}${item.listNumber}. `
+                : "";
+          lines.push(stylePrefix + slideLines[i]);
+        }
+      } else {
+        lines.push(slideLines.join("\n"));
+      }
+    }
+    return lines.join("\n\n");
   };
 
   const ensureLiveSlidesSocket = useCallback(
@@ -846,10 +870,23 @@ const MainApplicationPage: React.FC = () => {
 
     // Freeze this slide from incoming notepad updates while it is live.
     if (isLiveSlidesItem) {
+      const sid = playlistItem.liveSlidesSessionId as string;
       setLiveSlidesLockBySession((prev) => ({
         ...prev,
-        [playlistItem.liveSlidesSessionId as string]: slide.order,
+        [sid]: slide.order,
       }));
+      // Notify notepad so it can lock that slide's lines and show "Currently live".
+      try {
+        await invoke("broadcast_live_slides_message", {
+          message: JSON.stringify({
+            type: "live_slide_index",
+            session_id: sid,
+            slide_index: slide.order - 1,
+          } as const),
+        });
+      } catch (_) {
+        // Server may not be running or no clients; ignore.
+      }
     }
 
     const liveSlidesSettings = isLiveSlidesItem
@@ -1337,6 +1374,7 @@ const MainApplicationPage: React.FC = () => {
     }
 
     if (isLiveSlidesItem) {
+      const sid = playlistItem.liveSlidesSessionId as string;
       const shouldClear =
         (liveSlidesRule?.clearTextFileOnTakeOff ??
           liveSlidesSettings?.proPresenterActivation?.clearTextFileOnTakeOff) !==
@@ -1350,6 +1388,23 @@ const MainApplicationPage: React.FC = () => {
         if (basePath && prefix) {
           await clearTextFiles(basePath, prefix);
         }
+      }
+      // Clear live lock and notify notepad so it can unlock that slide's lines.
+      setLiveSlidesLockBySession((prev) => {
+        const next = { ...prev };
+        delete next[sid];
+        return next;
+      });
+      try {
+        await invoke("broadcast_live_slides_message", {
+          message: JSON.stringify({
+            type: "live_slide_index",
+            session_id: sid,
+            slide_index: null,
+          } as const),
+        });
+      } catch (_) {
+        // Server may not be running; ignore.
       }
     }
   };
@@ -1852,7 +1907,7 @@ const MainApplicationPage: React.FC = () => {
     }
   };
 
-  const handleDetachCurrentLiveSlides = () => {
+  const handleDetachCurrentLiveSlides = async () => {
     if (!currentPlaylist || !currentPlaylistItem) return;
     const sid = currentPlaylistItem.liveSlidesSessionId;
     if (!sid) return;
@@ -1879,6 +1934,17 @@ const MainApplicationPage: React.FC = () => {
       delete next[sid];
       return next;
     });
+    try {
+      await invoke("broadcast_live_slides_message", {
+        message: JSON.stringify({
+          type: "live_slide_index",
+          session_id: sid,
+          slide_index: null,
+        } as const),
+      });
+    } catch (_) {
+      // Server may not be running; ignore.
+    }
 
     // Clear any edit lock/raw text cache for this session once detached.
     setLiveSlidesEditLockBySession((prev) => {
@@ -2077,8 +2143,13 @@ const MainApplicationPage: React.FC = () => {
     return (
       sessionId: string,
       _templateName: string,
-      liveSlides: LiveSlide[]
+      liveSlides: LiveSlide[],
+      rawText?: string
     ): Slide[] => {
+      const listMeta =
+        rawText != null && rawText.trim().length > 0
+          ? parseRawTextListStyle(rawText)
+          : null;
       return liveSlides.map((liveSlide, idx) => {
         // Strip bullet characters (visual-only in notepad) when converting
         const text = liveSlide.items
@@ -2089,13 +2160,25 @@ const MainApplicationPage: React.FC = () => {
         const candidate = `${getLayoutName(itemCount)}-line` as LayoutType;
         const layout: LayoutType = candidate;
 
-        return {
+        const slide: Slide = {
           id: `live-${sessionId}-${idx}`,
           order: idx + 1,
           text,
           layout,
           isAutoScripture: false,
         };
+        if (
+          listMeta &&
+          idx < listMeta.length &&
+          listMeta[idx].items.length === liveSlide.items.length
+        ) {
+          slide.liveSlidesListStyle = listMeta[idx].listStyle;
+          slide.liveSlidesItemMeta = listMeta[idx].items.map((item) => ({
+            isSubItem: item.isSubItem,
+            listNumber: item.listNumber,
+          }));
+        }
+        return slide;
       });
     };
   }, [templates]);
@@ -2280,10 +2363,15 @@ const MainApplicationPage: React.FC = () => {
                 !(it.liveSlidesLinked ?? true)
               )
                 return it;
+              const rawFromNotepad =
+                typeof update.raw_text === "string" && update.raw_text.trim().length > 0
+                  ? update.raw_text
+                  : undefined;
               let nextSlides = convertLiveSlidesToSlidesForItem(
                 sid,
                 it.templateName,
-                update.slides as unknown as LiveSlide[]
+                update.slides as unknown as LiveSlide[],
+                rawFromNotepad
               );
               // Use refs to get current lock state without causing re-renders
               const lockOrders = [
@@ -2303,12 +2391,12 @@ const MainApplicationPage: React.FC = () => {
               const nextCached = buildRawTextFromSlides(nextSlides);
               setLiveSlidesRawTextBySession((prevRaw) => ({
                 ...prevRaw,
-                [sid]: update.raw_text || nextCached,
+                [sid]: rawFromNotepad ?? nextCached,
               }));
               return {
                 ...it,
                 slides: nextSlides,
-                liveSlidesCachedRawText: nextCached,
+                liveSlidesCachedRawText: rawFromNotepad ?? nextCached,
               };
             }),
           }))

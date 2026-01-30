@@ -12,7 +12,7 @@ import {
   calculateSlideBoundaries,
   SlideBoundary,
 } from "../utils/liveSlideParser";
-import { LiveSlide, WsSlidesUpdate, WsTranscriptionStream } from "../types/liveSlides";
+import { LiveSlide, WsSlidesUpdate, WsTranscriptionStream, WsLiveSlideIndex } from "../types/liveSlides";
 import TranscriptOptionsMenu from "../components/transcription/TranscriptOptionsMenu";
 import { saveTranscriptFile } from "../utils/transcriptDownload";
 import "../App.css";
@@ -476,8 +476,13 @@ const LiveSlidesNotepad: React.FC = () => {
   const [autoScrollPaused, setAutoScrollPaused] = useState(false);
   const [cursorLineIndex, setCursorLineIndex] = useState(0);
   const [showSlideDividers, setShowSlideDividers] = useState(true);
+  /** 0-based slide index that is currently live on the app (null = none). Used to lock that slide's lines in the notepad. */
+  const [liveSlideIndex, setLiveSlideIndex] = useState<number | null>(null);
+  /** Soft notification when user clicks or tries to edit a live (locked) slide. */
+  const [showLiveLockNotification, setShowLiveLockNotification] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const liveLockNotificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const colorIndicatorsRef = useRef<HTMLDivElement>(null);
   const slideDividersRef = useRef<HTMLDivElement>(null);
@@ -492,6 +497,7 @@ const LiveSlidesNotepad: React.FC = () => {
   const pendingRemoteApplyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+  const liveLineSetRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     textRef.current = text;
@@ -724,9 +730,16 @@ const LiveSlidesNotepad: React.FC = () => {
       }
     });
 
+    const unsubscribeLiveSlideIndex = ws.onMessage((message) => {
+      if (message.type !== "live_slide_index" || message.session_id !== sessionId) return;
+      const m = message as WsLiveSlideIndex;
+      setLiveSlideIndex(m.slide_index ?? null);
+    });
+
     return () => {
       unsubscribe();
       unsubscribeTranscription();
+      unsubscribeLiveSlideIndex();
       if (pendingRemoteApplyTimeoutRef.current) {
         clearTimeout(pendingRemoteApplyTimeoutRef.current);
         pendingRemoteApplyTimeoutRef.current = null;
@@ -736,10 +749,43 @@ const LiveSlidesNotepad: React.FC = () => {
     };
   }, [sessionId, wsUrl]);
 
+  // Show soft "live lock" notification and schedule auto-hide (used on click-in-live-line and on rejected edit)
+  const showLiveLockMessage = useCallback(() => {
+    if (liveLockNotificationTimeoutRef.current) {
+      clearTimeout(liveLockNotificationTimeoutRef.current);
+      liveLockNotificationTimeoutRef.current = null;
+    }
+    setShowLiveLockNotification(true);
+    liveLockNotificationTimeoutRef.current = setTimeout(() => {
+      setShowLiveLockNotification(false);
+      liveLockNotificationTimeoutRef.current = null;
+    }, 4500);
+  }, []);
+
   // Update boundaries when text changes
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newText = e.target.value;
+      const liveLines = liveLineSetRef.current;
+      if (liveLines.size > 0) {
+        const prevLines = textRef.current.split("\n");
+        const nextLines = newText.split("\n");
+        const maxLen = Math.max(prevLines.length, nextLines.length);
+        for (let i = 0; i < maxLen; i++) {
+          const prevLine = prevLines[i] ?? "";
+          const nextLine = nextLines[i] ?? "";
+          if (prevLine !== nextLine && liveLines.has(i)) {
+            // Edit touches a line that is currently live; reject and keep previous value
+            e.target.value = textRef.current;
+            e.target.setSelectionRange(
+              e.target.selectionStart ?? 0,
+              e.target.selectionEnd ?? 0
+            );
+            showLiveLockMessage();
+            return;
+          }
+        }
+      }
       lastLocalEditAtRef.current = Date.now();
       setText(newText);
 
@@ -749,7 +795,7 @@ const LiveSlidesNotepad: React.FC = () => {
       // Send update to WebSocket
       wsRef.current?.sendTextUpdate(newText);
     },
-    []
+    [showLiveLockMessage]
   );
 
   const applyTextUpdate = useCallback(
@@ -1222,19 +1268,24 @@ const LiveSlidesNotepad: React.FC = () => {
     ]
   );
 
-  // Track cursor position to detect if on bullet line
+  // Show soft "live lock" notification and schedule auto-hide
+  // Track cursor position to detect if on bullet line; show live-lock message when clicking in a live line
   const handleSelectionChange = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
-    
+
     const value = el.value;
     const cursorPos = el.selectionStart ?? 0;
-    
+
     // Calculate line index
     const textBeforeCursor = value.slice(0, cursorPos);
     const lineIndex = textBeforeCursor.split("\n").length - 1;
     setCursorLineIndex(lineIndex);
-  }, []);
+
+    if (liveLineSetRef.current.has(lineIndex)) {
+      showLiveLockMessage();
+    }
+  }, [showLiveLockMessage]);
 
   // Check if current line is a bullet line
   const isCurrentLineBulleted = useMemo(() => {
@@ -1286,6 +1337,41 @@ const LiveSlidesNotepad: React.FC = () => {
     
     return Array.from(endLines).sort((a, b) => a - b);
   }, [boundaries]);
+
+  // Set of line indices that belong to the currently live slide (for locking and visual cue)
+  const liveLineSet = useMemo(() => {
+    if (liveSlideIndex === null || boundaries.length === 0) return new Set<number>();
+    const boundary = boundaries.find((b) => b.slideIndex === liveSlideIndex);
+    if (!boundary) return new Set<number>();
+    const set = new Set<number>();
+    for (let i = boundary.startLine; i <= boundary.endLine; i++) set.add(i);
+    return set;
+  }, [liveSlideIndex, boundaries]);
+
+  useEffect(() => {
+    liveLineSetRef.current = liveLineSet;
+  }, [liveLineSet]);
+
+  // Hide live-lock notification when no slide is live
+  useEffect(() => {
+    if (liveSlideIndex === null) {
+      setShowLiveLockNotification(false);
+      if (liveLockNotificationTimeoutRef.current) {
+        clearTimeout(liveLockNotificationTimeoutRef.current);
+        liveLockNotificationTimeoutRef.current = null;
+      }
+    }
+  }, [liveSlideIndex]);
+
+  // Clear notification timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (liveLockNotificationTimeoutRef.current) {
+        clearTimeout(liveLockNotificationTimeoutRef.current);
+        liveLockNotificationTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Copy URL to clipboard
   const handleCopyUrl = useCallback(async () => {
@@ -1662,13 +1748,52 @@ This is the title of all the slide below
           style={{
             ...notepadStyles.lineNumbers,
             overflowY: "hidden",
+            ...(liveSlideIndex !== null
+              ? { minWidth: "72px", width: "72px" }
+              : {}),
           }}
         >
-          {lineNumbers.map((num) => (
-            <div key={num} style={{ height: `${lineHeight}px` }}>
-              {num}
-            </div>
-          ))}
+          {lineNumbers.map((num) => {
+            const lineIdx = num - 1;
+            const isLiveLine = liveLineSet.has(lineIdx);
+            const boundary = boundaries.find(
+              (b) => lineIdx >= b.startLine && lineIdx <= b.endLine
+            );
+            const isFirstLineOfLiveSlide =
+              isLiveLine && boundary && lineIdx === boundary.startLine;
+            return (
+              <div
+                key={num}
+                style={{
+                  height: `${lineHeight}px`,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  backgroundColor: isLiveLine
+                    ? isDarkMode
+                      ? "rgba(34, 197, 94, 0.15)"
+                      : "rgba(34, 197, 94, 0.12)"
+                    : undefined,
+                  paddingLeft: isFirstLineOfLiveSlide ? "4px" : undefined,
+                }}
+              >
+                <span style={{ flexShrink: 0 }}>{num}</span>
+                {isFirstLineOfLiveSlide && (
+                  <span
+                    style={{
+                      fontSize: "0.65rem",
+                      fontWeight: 600,
+                      color: "#22c55e",
+                      whiteSpace: "nowrap",
+                    }}
+                    title="This line is currently live on the app and cannot be edited here"
+                  >
+                    Live
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Textarea */}
@@ -1677,6 +1802,7 @@ This is the title of all the slide below
           {showSlideDividers && (
             <div
               ref={slideDividersRef}
+              className="live-slides-divider-overlay"
               style={{
                 position: "absolute",
                 top: 0,
@@ -1684,8 +1810,12 @@ This is the title of all the slide below
                 right: 0,
                 bottom: 0,
                 pointerEvents: "none",
-                overflow: "hidden",
+                overflowY: "scroll",
+                overflowX: "hidden",
                 paddingTop: "16px",
+                paddingBottom: "16px",
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
               }}
             >
               {lineNumbers.map((_, idx) => {
@@ -2074,6 +2204,58 @@ Result: Slide 1 = Title, Slide 2 = Title + Sub-item 1, Slide 3 = Title + Sub-ite
           50% { opacity: 0.5; }
         }
       `}</style>
+
+      {/* Soft notification when user clicks or tries to edit a live (locked) slide */}
+      {showLiveLockNotification && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            bottom: "16px",
+            left: "16px",
+            zIndex: 900,
+            maxWidth: "min(360px, calc(100vw - 32px))",
+            padding: "12px 16px",
+            borderRadius: "8px",
+            backgroundColor: isDarkMode ? "rgba(26, 26, 26, 0.96)" : "rgba(255, 255, 255, 0.96)",
+            color: isDarkMode ? "#e0e0e0" : "#1a1a1a",
+            border: `1px solid ${isDarkMode ? "rgba(245, 158, 11, 0.5)" : "rgba(217, 119, 6, 0.5)"}`,
+            boxShadow: isDarkMode ? "0 4px 12px rgba(0,0,0,0.4)" : "0 4px 12px rgba(0,0,0,0.12)",
+            fontSize: "0.875rem",
+            lineHeight: 1.4,
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: "4px", color: "#d97706" }}>
+            This line is currently live.
+          </div>
+          <div style={{ color: isDarkMode ? "#999" : "#666" }}>
+            You cannot edit it until it goes off live. You can go ahead and still edit other parts of this document.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowLiveLockNotification(false);
+              if (liveLockNotificationTimeoutRef.current) {
+                clearTimeout(liveLockNotificationTimeoutRef.current);
+                liveLockNotificationTimeoutRef.current = null;
+              }
+            }}
+            style={{
+              marginTop: "10px",
+              padding: "4px 10px",
+              fontSize: "0.8rem",
+              backgroundColor: isDarkMode ? "#2a2a2a" : "#e8e8e8",
+              color: isDarkMode ? "#e0e0e0" : "#1a1a1a",
+              border: `1px solid ${isDarkMode ? "#3a3a3a" : "#d0d0d0"}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Click outside to close help popup */}
       {showHelpPopup && (

@@ -1353,6 +1353,11 @@ body.theme-light ::-webkit-scrollbar-thumb:hover {
   border-color: var(--app-bg-color);
 }
 
+/* Live Slides notepad: hide scrollbar on divider overlay so it scrolls in sync without double scrollbar */
+.live-slides-divider-overlay::-webkit-scrollbar {
+  display: none;
+}
+
 /* Global Chat Assistant Animations */
 @keyframes fadeIn {
   from {

@@ -301,7 +301,9 @@ const SmartVersesPage: React.FC = () => {
   const [translationDropdownQuery, setTranslationDropdownQuery] = useState("");
   const [inlineTranslationOverride, setInlineTranslationOverride] = useState<string | null>(null);
   const [searchTranslationPickerOpen, setSearchTranslationPickerOpen] = useState(false);
+  const [searchTranslationPickerQuery, setSearchTranslationPickerQuery] = useState("");
   const [verseCardPickerRefId, setVerseCardPickerRefId] = useState<string | null>(null);
+  const [verseCardPickerQuery, setVerseCardPickerQuery] = useState("");
   const [activeTranslationCueId, setActiveTranslationCueId] = useState<string | null>(null);
   const translationMenuRef = useRef<HTMLDivElement | null>(null);
   const searchTranslationTagRef = useRef<HTMLDivElement | null>(null);
@@ -633,6 +635,38 @@ const SmartVersesPage: React.FC = () => {
       return haystack.includes(query);
     });
   }, [translationDropdownQuery, translationOptions]);
+
+  const filteredSearchTranslationOptions = useMemo(() => {
+    const query = searchTranslationPickerQuery.trim().toLowerCase();
+    if (!query) return translationOptions;
+    return translationOptions.filter((translation) => {
+      const haystack = [
+        translation.id,
+        translation.shortName,
+        translation.fullName,
+        ...(translation.aliases || []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [searchTranslationPickerQuery, translationOptions]);
+
+  const filteredVerseCardTranslationOptions = useMemo(() => {
+    const query = verseCardPickerQuery.trim().toLowerCase();
+    if (!query) return translationOptions;
+    return translationOptions.filter((translation) => {
+      const haystack = [
+        translation.id,
+        translation.shortName,
+        translation.fullName,
+        ...(translation.aliases || []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [verseCardPickerQuery, translationOptions]);
 
   const getTranslationLabel = useCallback(
     (translationId?: string) => {
@@ -1374,7 +1408,7 @@ const SmartVersesPage: React.FC = () => {
   // GO LIVE FUNCTIONALITY
   // =============================================================================
 
-  const handleGoLive = useCallback(async (reference: DetectedBibleReference) => {
+  const handleGoLive = useCallback(async (reference: DetectedBibleReference, fromAutoTrigger?: boolean) => {
     console.log("Going live with:", reference);
     console.log("Verse text:", reference.verseText);
     console.log("Display ref:", reference.displayRef);
@@ -1478,13 +1512,15 @@ const SmartVersesPage: React.FC = () => {
         }
       }
 
-      // Add system message
-      setChatHistory(prev => [...prev, {
-        id: `live-${Date.now()}`,
-        type: "system",
-        content: `Went live: ${reference.displayRef}`,
-        timestamp: Date.now(),
-      }]);
+      // Add "Went live" to chat history only when triggered by auto-trigger (transcription/paraphrase detection)
+      if (fromAutoTrigger) {
+        setChatHistory(prev => [...prev, {
+          id: `live-${Date.now()}`,
+          type: "system",
+          content: `Went live: ${reference.displayRef}`,
+          timestamp: Date.now(),
+        }]);
+      }
 
       // Auto-clear text AFTER a delay (do NOT clear immediately at 0ms; that causes blank files)
       const clearDelay = settings.clearTextDelay ?? 0;
@@ -1584,7 +1620,7 @@ const SmartVersesPage: React.FC = () => {
       });
 
       if (autoTriggerOnDetectionRef.current) {
-        handleGoLive(updatedRef);
+        handleGoLive(updatedRef, true);
       }
     },
     [handleGoLive, settings.autoAddDetectedToHistory]
@@ -1734,7 +1770,7 @@ const SmartVersesPage: React.FC = () => {
       }
 
       if (settings.autoTriggerOnDetection && deduped.length > 0) {
-        handleGoLive(deduped[0]);
+        handleGoLive(deduped[0], true);
       }
 
       return deduped;
@@ -2094,7 +2130,7 @@ const SmartVersesPage: React.FC = () => {
 
               // Auto-trigger if enabled
               if (autoTriggerOnDetectionRef.current && directRefs.length > 0) {
-                handleGoLive(directRefs[0]);
+                handleGoLive(directRefs[0], true);
               }
             }
           });
@@ -2270,7 +2306,7 @@ const SmartVersesPage: React.FC = () => {
               const resolvedDirect = await resolveReferencesFromList(
                 scriptureReferences,
                 m.text,
-                activeTranslationId
+                transcriptionTranslationIdRef.current
               );
               if (resolvedDirect.length > 0) {
                 setDetectedReferences((prev) => [...prev, ...resolvedDirect]);
@@ -2289,7 +2325,7 @@ const SmartVersesPage: React.FC = () => {
                 }
 
                 if (autoTriggerOnDetectionRef.current) {
-                  handleGoLive(resolvedDirect[0]);
+                  handleGoLive(resolvedDirect[0], true);
                 }
               }
             }
@@ -2297,7 +2333,7 @@ const SmartVersesPage: React.FC = () => {
             if (paraphrasedVerses.length > 0) {
               const resolvedRefs = await resolveParaphrasedVerses(
                 paraphrasedVerses,
-                activeTranslationId
+                transcriptionTranslationIdRef.current
               );
               if (resolvedRefs.length > 0) {
                 const deduped = applyParaphraseDetections(
@@ -2321,7 +2357,7 @@ const SmartVersesPage: React.FC = () => {
               paraphrasedVerses.length === 0 &&
               (settings.enableParaphraseDetection || settings.enableKeyPointExtraction)
             ) {
-              const result = await runParaphraseDetection(m.text, segment, "remote", activeTranslationId);
+              const result = await runParaphraseDetection(m.text, segment, "remote", transcriptionTranslationIdRef.current);
               scriptureReferences = Array.from(
                 new Set([
                   ...scriptureReferences,
@@ -2565,7 +2601,7 @@ const SmartVersesPage: React.FC = () => {
 
               // Auto-trigger if enabled
               if (autoTriggerOnDetectionRef.current && directRefs.length > 0) {
-                handleGoLive(directRefs[0]);
+                handleGoLive(directRefs[0], true);
               }
             } else if (settings.enableParaphraseDetection || settings.enableKeyPointExtraction) {
               const result = await runParaphraseDetection(text, segment, "local", activeTranslationId);
@@ -3157,7 +3193,14 @@ const SmartVersesPage: React.FC = () => {
               >
                 <button
                   type="button"
-                  onClick={() => setVerseCardPickerRefId((prev) => (prev === ref.id ? null : ref.id))}
+                  onClick={() => {
+                    if (verseCardPickerRefId === ref.id) {
+                      setVerseCardPickerRefId(null);
+                    } else {
+                      setVerseCardPickerQuery("");
+                      setVerseCardPickerRefId(ref.id);
+                    }
+                  }}
                   title={translationsById.get(translationId)?.fullName ?? translationId}
                   style={{
                     fontSize: "0.7rem",
@@ -3178,45 +3221,81 @@ const SmartVersesPage: React.FC = () => {
                       position: "absolute",
                       top: "calc(100% + 4px)",
                       left: 0,
-                      minWidth: "200px",
+                      minWidth: "320px",
+                      width: "320px",
                       backgroundColor: "var(--app-bg-color)",
                       border: "1px solid var(--app-border-color)",
                       borderRadius: "8px",
                       boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
                       zIndex: 50,
-                      maxHeight: "200px",
-                      overflowY: "auto",
+                      maxHeight: "320px",
+                      display: "flex",
+                      flexDirection: "column",
+                      overflow: "hidden",
                     }}
                   >
-                    {translationOptions.map((translation) => (
-                      <button
-                        key={translation.id}
-                        type="button"
-                        onClick={() => {
-                          handleReferenceTranslationChange(ref, translation.id);
-                          setVerseCardPickerRefId(null);
-                        }}
+                    <div style={{ padding: "var(--spacing-2)", borderBottom: "1px solid var(--app-border-color)", flexShrink: 0 }}>
+                      <input
+                        type="text"
+                        value={verseCardPickerQuery}
+                        onChange={(e) => setVerseCardPickerQuery(e.target.value)}
+                        placeholder="Search translations..."
+                        autoFocus
                         style={{
                           width: "100%",
-                          textAlign: "left",
                           padding: "8px 12px",
-                          background: "transparent",
-                          border: "none",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: "8px",
-                          color: "var(--app-text-color)",
-                          fontSize: "0.8rem",
+                          fontSize: "0.9rem",
+                          border: "1px solid var(--app-border-color)",
+                          borderRadius: "6px",
+                          backgroundColor: "var(--app-input-bg-color)",
+                          color: "var(--app-input-text-color)",
+                          outline: "none",
                         }}
-                      >
-                        <span style={{ fontWeight: 600 }}>{translation.shortName}</span>
-                        <span style={{ fontSize: "0.75rem", color: "var(--app-text-color-secondary)" }}>
-                          {translation.fullName}
-                        </span>
-                      </button>
-                    ))}
+                      />
+                    </div>
+                    <div style={{ overflowY: "auto", flex: 1, maxHeight: "260px" }}>
+                      {filteredVerseCardTranslationOptions.length === 0 ? (
+                        <div
+                          style={{
+                            padding: "var(--spacing-3)",
+                            fontSize: "0.85rem",
+                            color: "var(--app-text-color-secondary)",
+                          }}
+                        >
+                          No translations match "{verseCardPickerQuery}"
+                        </div>
+                      ) : (
+                        filteredVerseCardTranslationOptions.map((translation) => (
+                          <button
+                            key={translation.id}
+                            type="button"
+                            onClick={() => {
+                              handleReferenceTranslationChange(ref, translation.id);
+                              setVerseCardPickerRefId(null);
+                            }}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "8px 12px",
+                              background: "transparent",
+                              border: "none",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "8px",
+                              color: "var(--app-text-color)",
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            <span style={{ fontWeight: 600 }}>{translation.shortName}</span>
+                            <span style={{ fontSize: "0.75rem", color: "var(--app-text-color-secondary)" }}>
+                              {translation.fullName}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -3698,7 +3777,12 @@ const SmartVersesPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setTranslationDropdownOpen(false);
-                  setSearchTranslationPickerOpen((prev) => !prev);
+                  if (!searchTranslationPickerOpen) {
+                    setSearchTranslationPickerQuery("");
+                    setSearchTranslationPickerOpen(true);
+                  } else {
+                    setSearchTranslationPickerOpen(false);
+                  }
                 }}
                 title={translationsById.get(searchTranslationId)?.fullName ?? searchTranslationId}
                 style={{
@@ -3720,44 +3804,80 @@ const SmartVersesPage: React.FC = () => {
                     position: "absolute",
                     top: "calc(100% + 6px)",
                     left: 0,
-                    minWidth: "220px",
+                    minWidth: "320px",
+                    width: "320px",
                     backgroundColor: "var(--app-bg-color)",
                     border: "1px solid var(--app-border-color)",
                     borderRadius: "8px",
                     boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
                     zIndex: 50,
-                    maxHeight: "220px",
-                    overflowY: "auto",
+                    maxHeight: "320px",
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
                   }}
                 >
-                  {translationOptions.map((translation) => (
-                    <button
-                      key={translation.id}
-                      type="button"
-                      onClick={() => {
-                        handleDefaultTranslationChange(translation.id);
-                        setSearchTranslationPickerOpen(false);
-                      }}
+                  <div style={{ padding: "var(--spacing-2)", borderBottom: "1px solid var(--app-border-color)", flexShrink: 0 }}>
+                    <input
+                      type="text"
+                      value={searchTranslationPickerQuery}
+                      onChange={(e) => setSearchTranslationPickerQuery(e.target.value)}
+                      placeholder="Search translations..."
+                      autoFocus
                       style={{
                         width: "100%",
-                        textAlign: "left",
-                        padding: "10px 12px",
-                        background: "transparent",
-                        border: "none",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "8px",
-                        color: "var(--app-text-color)",
+                        padding: "8px 12px",
+                        fontSize: "0.9rem",
+                        border: "1px solid var(--app-border-color)",
+                        borderRadius: "6px",
+                        backgroundColor: "var(--app-input-bg-color)",
+                        color: "var(--app-input-text-color)",
+                        outline: "none",
                       }}
-                    >
-                      <span style={{ fontWeight: 600 }}>{translation.shortName}</span>
-                      <span style={{ fontSize: "0.8rem", color: "var(--app-text-color-secondary)" }}>
-                        {translation.fullName}
-                      </span>
-                    </button>
-                  ))}
+                    />
+                  </div>
+                  <div style={{ overflowY: "auto", flex: 1, maxHeight: "260px" }}>
+                    {filteredSearchTranslationOptions.length === 0 ? (
+                      <div
+                        style={{
+                          padding: "var(--spacing-3)",
+                          fontSize: "0.85rem",
+                          color: "var(--app-text-color-secondary)",
+                        }}
+                      >
+                        No translations match "{searchTranslationPickerQuery}"
+                      </div>
+                    ) : (
+                      filteredSearchTranslationOptions.map((translation) => (
+                        <button
+                          key={translation.id}
+                          type="button"
+                          onClick={() => {
+                            handleDefaultTranslationChange(translation.id);
+                            setSearchTranslationPickerOpen(false);
+                          }}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "10px 12px",
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "8px",
+                            color: "var(--app-text-color)",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{translation.shortName}</span>
+                          <span style={{ fontSize: "0.8rem", color: "var(--app-text-color-secondary)" }}>
+                            {translation.fullName}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -3901,6 +4021,7 @@ const SmartVersesPage: React.FC = () => {
         }}>
           <div style={{
             display: "flex",
+            alignItems: "center",
             gap: "var(--spacing-2)",
             marginBottom: "var(--spacing-2)",
           }}>
@@ -4031,7 +4152,13 @@ const SmartVersesPage: React.FC = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "var(--spacing-3) var(--spacing-4)",
+                width: 44,
+                height: 44,
+                minWidth: 44,
+                minHeight: 44,
+                padding: 0,
+                borderRadius: "50%",
+                flexShrink: 0,
               }}
             >
               <FaPaperPlane />

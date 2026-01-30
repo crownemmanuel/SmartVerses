@@ -95,7 +95,7 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
   const [aiCode, setAiCode] = useState("");
   const [aiFormat, setAiFormat] = useState<string | null>(null);
   const [aiNotes, setAiNotes] = useState<string | null>(null);
-  const [aiMetadataSuggestion, setAiMetadataSuggestion] = useState<
+  const [, setAiMetadataSuggestion] = useState<
     Partial<BibleConversionMetadata> | null
   >(null);
   const [aiError, setAiError] = useState<string | null>(null);
