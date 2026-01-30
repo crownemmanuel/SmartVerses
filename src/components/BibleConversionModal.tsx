@@ -627,6 +627,15 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
                 setIsLoadingXml(false);
                 setConversionResult(null);
                 setConversionError(null);
+                setUseAI(false);
+                setShortName("");
+                setFullName("");
+                setLanguage("");
+                setTranslationId("");
+                setSourceInfo("");
+                setAliases("");
+                setIdTouched(false);
+                setFullNameTouched(false);
               }}
               style={{
                 flex: 1,

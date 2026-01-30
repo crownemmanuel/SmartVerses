@@ -23,7 +23,6 @@ const BIBLE_BOOKS = [
   "Proverbs",
   "Ecclesiastes",
   "Song of Solomon",
-  "Song of Songs",
   "Isaiah",
   "Jeremiah",
   "Lamentations",
@@ -76,21 +75,6 @@ function getBookNameByNumber(bookNumber: number): string | null {
     return BIBLE_BOOKS[index];
   }
   return null;
-}
-
-interface XMLBook {
-  number: number;
-  chapters: XMLChapter[];
-}
-
-interface XMLChapter {
-  number: number;
-  verses: XMLVerse[];
-}
-
-interface XMLVerse {
-  number: number;
-  text: string;
 }
 
 export interface XmlBibleMetadata {
