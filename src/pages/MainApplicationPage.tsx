@@ -350,6 +350,7 @@ const MainApplicationPage: React.FC = () => {
       const slideLines = (s.text || "").trim().split("\n").filter((t) => t.length > 0);
       const meta = s.liveSlidesItemMeta;
       if (meta && meta.length >= slideLines.length && (s.liveSlidesListStyle === "bullet" || s.liveSlidesListStyle === "numbered")) {
+        const formatted: string[] = [];
         for (let i = 0; i < slideLines.length; i++) {
           const item = meta[i];
           const prefix = item.isSubItem ? "\t" : "";
@@ -359,8 +360,9 @@ const MainApplicationPage: React.FC = () => {
               : s.liveSlidesListStyle === "numbered" && item.listNumber != null
                 ? `${prefix}${item.listNumber}. `
                 : "";
-          lines.push(stylePrefix + slideLines[i]);
+          formatted.push(stylePrefix + slideLines[i]);
         }
+        lines.push(formatted.join("\n"));
       } else {
         lines.push(slideLines.join("\n"));
       }

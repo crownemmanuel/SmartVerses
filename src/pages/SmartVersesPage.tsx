@@ -118,6 +118,25 @@ function saveChatHistory(history: SmartVersesChatMessage[]): void {
   }
 }
 
+function filterTranslationsByQuery(
+  query: string,
+  options: BibleTranslationSummary[]
+): BibleTranslationSummary[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return options;
+  return options.filter((translation) => {
+    const haystack = [
+      translation.id,
+      translation.shortName,
+      translation.fullName,
+      ...(translation.aliases || []),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
 const SMART_VERSES_TRANSCRIPT_DISPLAY_KEY = "proassist-smartverses-transcript-display";
 
 type TranscriptDisplayOptions = {
@@ -620,53 +639,20 @@ const SmartVersesPage: React.FC = () => {
     return map;
   }, [translationOptions]);
 
-  const filteredTranslationOptions = useMemo(() => {
-    const query = translationDropdownQuery.trim().toLowerCase();
-    if (!query) return translationOptions;
-    return translationOptions.filter((translation) => {
-      const haystack = [
-        translation.id,
-        translation.shortName,
-        translation.fullName,
-        ...(translation.aliases || []),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [translationDropdownQuery, translationOptions]);
+  const filteredTranslationOptions = useMemo(
+    () => filterTranslationsByQuery(translationDropdownQuery, translationOptions),
+    [translationDropdownQuery, translationOptions]
+  );
 
-  const filteredSearchTranslationOptions = useMemo(() => {
-    const query = searchTranslationPickerQuery.trim().toLowerCase();
-    if (!query) return translationOptions;
-    return translationOptions.filter((translation) => {
-      const haystack = [
-        translation.id,
-        translation.shortName,
-        translation.fullName,
-        ...(translation.aliases || []),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [searchTranslationPickerQuery, translationOptions]);
+  const filteredSearchTranslationOptions = useMemo(
+    () => filterTranslationsByQuery(searchTranslationPickerQuery, translationOptions),
+    [searchTranslationPickerQuery, translationOptions]
+  );
 
-  const filteredVerseCardTranslationOptions = useMemo(() => {
-    const query = verseCardPickerQuery.trim().toLowerCase();
-    if (!query) return translationOptions;
-    return translationOptions.filter((translation) => {
-      const haystack = [
-        translation.id,
-        translation.shortName,
-        translation.fullName,
-        ...(translation.aliases || []),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [verseCardPickerQuery, translationOptions]);
+  const filteredVerseCardTranslationOptions = useMemo(
+    () => filterTranslationsByQuery(verseCardPickerQuery, translationOptions),
+    [verseCardPickerQuery, translationOptions]
+  );
 
   const getTranslationLabel = useCallback(
     (translationId?: string) => {
