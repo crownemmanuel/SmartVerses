@@ -69,20 +69,21 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
   const updateProviderAvailability = useCallback((settings: ReturnType<typeof loadSmartVersesSettings>) => {
     const appSettings = getAppSettings();
     
-    // If offline is selected, don't show AI provider
-    if (
-      settings.bibleSearchProvider === "offline" ||
-      settings.paraphraseDetectionMode === "offline"
-    ) {
-      setAiProviderAvailable(false);
-      setAiProviderLabel(null);
-      return;
+    // For paraphrase detection: if offline mode is selected, don't show AI provider
+    // For keypoint extraction: always check for default AI provider even if bibleSearchProvider is offline
+    // (keypoint extraction always requires AI, but can fall back to defaultAIProvider)
+    
+    // Determine the provider to use
+    let provider: string | undefined;
+    
+    if (settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline") {
+      provider = settings.bibleSearchProvider;
+    } else if (settings.bibleSearchProvider === "offline") {
+      // Even if bibleSearchProvider is offline, check for default AI provider for keypoint extraction
+      provider = appSettings.defaultAIProvider ?? undefined;
+    } else {
+      provider = appSettings.defaultAIProvider ?? undefined;
     }
-
-    const provider =
-      settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline"
-        ? settings.bibleSearchProvider
-        : appSettings.defaultAIProvider;
 
     const hasKey =
       provider === "openai"
@@ -93,8 +94,17 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
         ? !!appSettings.groqConfig?.apiKey
         : false;
 
-    setAiProviderAvailable(hasKey);
-    setAiProviderLabel(provider ? provider.toUpperCase() : null);
+    // For paraphrase detection: if offline mode is enabled, don't show AI provider
+    // For keypoint extraction: show AI provider if available (even if bibleSearchProvider is offline)
+    if (settings.paraphraseDetectionMode === "offline") {
+      // Paraphrase detection uses offline mode, so don't show AI provider for paraphrase
+      // But still allow keypoint extraction if default AI provider is available
+      setAiProviderAvailable(hasKey);
+      setAiProviderLabel(hasKey && provider ? provider.toUpperCase() : null);
+    } else {
+      setAiProviderAvailable(hasKey);
+      setAiProviderLabel(provider ? provider.toUpperCase() : null);
+    }
   }, []);
 
   const stopTranscription = useCallback(async () => {
@@ -136,11 +146,8 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
       setActiveTest(mode);
 
       const settings = loadSmartVersesSettings();
-      if (mode === "keypoint" && settings.bibleSearchProvider === "offline") {
-        setError("Key point extraction is not available with Offline Search (Experimental).");
-        await stopTranscription();
-        return;
-      }
+      // Note: Keypoint extraction can still work with defaultAIProvider even if bibleSearchProvider is "offline"
+      // The analysis logic (lines 230-233) will fall back to defaultAIProvider
       if (mode === "scripture") {
         setScriptureResult(null);
         setParaphraseResult(null);
@@ -192,7 +199,7 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
             const aiProvider =
               settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline"
                 ? settings.bibleSearchProvider
-                : appSettings.defaultAIProvider;
+                : appSettings.defaultAIProvider ?? undefined;
 
             const analysis =
               paraphraseMode === "offline"
@@ -230,7 +237,7 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
             const aiProvider =
               settings.bibleSearchProvider && settings.bibleSearchProvider !== "offline"
                 ? settings.bibleSearchProvider
-                : appSettings.defaultAIProvider;
+                : appSettings.defaultAIProvider ?? undefined;
 
             const analysis = await analyzeTranscriptChunk(
               text,
@@ -508,7 +515,7 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
                     <p style={{ margin: "0 0 var(--spacing-2)", fontSize: "0.85rem", color: "var(--onboarding-text-secondary)" }}>
                       Using: Offline Search (Experimental)
                     </p>
-                  ) : aiProviderAvailable && latestSettings.paraphraseDetectionMode !== "offline" ? (
+                  ) : aiProviderAvailable ? (
                     <p style={{ margin: "0 0 var(--spacing-2)", fontSize: "0.85rem" }}>
                       Using AI provider: {aiProviderLabel || "Configured provider"}
                     </p>
@@ -598,10 +605,11 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
                 )}
               </h3>
 
-              {latestSettings.bibleSearchProvider === "offline" && (
+              {latestSettings.bibleSearchProvider === "offline" && !aiProviderAvailable && (
                 <div className="onboarding-message onboarding-message-warning">
                   Key point extraction requires AI Search. Offline Search
-                  (Experimental) does not support key points.
+                  (Experimental) does not support key points. Please configure an AI provider
+                  in Settings → AI Configuration to use key point extraction.
                 </div>
               )}
 
@@ -612,7 +620,14 @@ const TestSmartVersesScreen: React.FC<TestSmartVersesScreenProps> = ({
                 </div>
               )}
 
-              {aiProviderAvailable && latestSettings.bibleSearchProvider !== "offline" && (
+              {latestSettings.bibleSearchProvider === "offline" && aiProviderAvailable && (
+                <div className="onboarding-message onboarding-message-info">
+                  Using default AI provider ({aiProviderLabel || "configured provider"}) for key point extraction.
+                  Offline Search (Experimental) is only used for Bible search, not key point extraction.
+                </div>
+              )}
+
+              {aiProviderAvailable && (
                 <>
                   <p style={{ margin: "0 0 var(--spacing-3)", fontSize: "0.9rem" }}>
                     Read this example aloud:
