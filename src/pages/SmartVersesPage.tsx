@@ -37,6 +37,7 @@ import {
   parseVerseReference,
   lookupVerse,
 } from "../services/smartVersesBibleService";
+import { getTranslationById } from "../services/bibleLibraryService";
 import {
   loadSmartVersesSettings,
   saveSmartVersesSettings,
@@ -51,6 +52,7 @@ import {
   searchBibleWithAI,
   resolveParaphrasedVerses,
 } from "../services/smartVersesAIService";
+import { BUILTIN_KJV_ID, findTranslationCue, getAvailableTranslations, resolveTranslationToken } from "../services/bibleLibraryService";
 import { searchBibleTextAsReferences } from "../services/bibleTextSearchService";
 import {
   loadDisplaySettings,
@@ -65,6 +67,7 @@ import { WsTranscriptionStream } from "../types/liveSlides";
 import { mapAudioLevel } from "../utils/audioMeter";
 import { saveTranscriptFile } from "../utils/transcriptDownload";
 import TranscriptOptionsMenu from "../components/transcription/TranscriptOptionsMenu";
+import type { BibleTranslationSummary } from "../types/bible";
 import "../App.css";
 
 // =============================================================================
@@ -168,15 +171,16 @@ function saveTranscriptDisplayOptions(options: TranscriptDisplayOptions): void {
 
 async function resolveReferencesFromList(
   references: string[],
-  transcriptText: string
+  transcriptText: string,
+  translationId: string
 ): Promise<DetectedBibleReference[]> {
   const results: DetectedBibleReference[] = [];
   const now = Date.now();
 
   for (const reference of references) {
-    const parsed = parseVerseReference(reference);
+    const parsed = parseVerseReference(reference, translationId);
     if (!parsed || parsed.length === 0) continue;
-    const verseText = await lookupVerse(parsed[0]);
+    const verseText = await lookupVerse(parsed[0], translationId);
     if (!verseText) continue;
 
     results.push({
@@ -187,6 +191,7 @@ async function resolveReferencesFromList(
       source: "direct",
       transcriptText,
       timestamp: now,
+      translationId,
       book: parsed[0].book,
       chapter: parsed[0].chapter,
       verse: parsed[0].startVerse,
@@ -277,6 +282,22 @@ const SmartVersesPage: React.FC = () => {
   const [inputValue, setInputValue] = useState("");
   const [isAISearchEnabled, setIsAISearchEnabled] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+
+  // Translation state
+  const [availableTranslations, setAvailableTranslations] = useState<BibleTranslationSummary[]>([]);
+  const [transcriptionTranslationId, setTranscriptionTranslationId] = useState<string>(BUILTIN_KJV_ID);
+  const transcriptionTranslationIdRef = useRef<string>(BUILTIN_KJV_ID);
+  const lastDefaultTranslationIdRef = useRef<string>(BUILTIN_KJV_ID);
+  const [translationDropdownOpen, setTranslationDropdownOpen] = useState(false);
+  const [translationDropdownQuery, setTranslationDropdownQuery] = useState("");
+  const [inlineTranslationOverride, setInlineTranslationOverride] = useState<string | null>(null);
+  const [searchTranslationPickerOpen, setSearchTranslationPickerOpen] = useState(false);
+  const [verseCardPickerRefId, setVerseCardPickerRefId] = useState<string | null>(null);
+  const translationMenuRef = useRef<HTMLDivElement | null>(null);
+  const searchTranslationTagRef = useRef<HTMLDivElement | null>(null);
+  const verseCardPickerContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchTranslationId =
+    settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
 
   // Transcription state
   const [transcriptionStatus, setTranscriptionStatus] = useState<TranscriptionStatus>("idle");
@@ -470,6 +491,105 @@ const SmartVersesPage: React.FC = () => {
     };
   }, [reloadSettings]);
 
+  const loadTranslations = useCallback(async () => {
+    try {
+      const list = await getAvailableTranslations();
+      setAvailableTranslations(list);
+    } catch (error) {
+      console.warn("[SmartVerses] Failed to load translations:", error);
+      setAvailableTranslations([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTranslations();
+    const handleRefresh = () => loadTranslations();
+    window.addEventListener("bible-library-refreshed", handleRefresh);
+    return () => window.removeEventListener("bible-library-refreshed", handleRefresh);
+  }, [loadTranslations]);
+
+  useEffect(() => {
+    if (!availableTranslations.length) return;
+    const ids = new Set(availableTranslations.map((t) => t.id));
+    const defaultId = settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+    const safeDefault = ids.has(defaultId) ? defaultId : BUILTIN_KJV_ID;
+
+    if (defaultId !== safeDefault) {
+      setSettings((prev) => {
+        const next = { ...prev, defaultBibleTranslationId: safeDefault };
+        saveSmartVersesSettings(next);
+        window.dispatchEvent(
+          new CustomEvent("smartverses-settings-changed", { detail: next })
+        );
+        return next;
+      });
+    }
+
+    const lastDefault = lastDefaultTranslationIdRef.current;
+    if (
+      !ids.has(transcriptionTranslationId) ||
+      transcriptionTranslationId === lastDefault
+    ) {
+      setTranscriptionTranslationId(safeDefault);
+    }
+
+    lastDefaultTranslationIdRef.current = safeDefault;
+  }, [
+    availableTranslations,
+    transcriptionTranslationId,
+    settings.defaultBibleTranslationId,
+  ]);
+
+  useEffect(() => {
+    transcriptionTranslationIdRef.current = transcriptionTranslationId;
+  }, [transcriptionTranslationId]);
+
+  const translationOptions = useMemo<BibleTranslationSummary[]>(() => {
+    if (availableTranslations.length > 0) return availableTranslations;
+    return [
+      {
+        id: BUILTIN_KJV_ID,
+        shortName: "KJV",
+        fullName: "King James Version",
+        language: "en",
+        isBuiltin: true,
+      },
+    ];
+  }, [availableTranslations]);
+
+  const translationsById = useMemo(() => {
+    const map = new Map<string, BibleTranslationSummary>();
+    translationOptions.forEach((translation) => {
+      map.set(translation.id, translation);
+    });
+    return map;
+  }, [translationOptions]);
+
+  const filteredTranslationOptions = useMemo(() => {
+    const query = translationDropdownQuery.trim().toLowerCase();
+    if (!query) return translationOptions;
+    return translationOptions.filter((translation) => {
+      const haystack = [
+        translation.id,
+        translation.shortName,
+        translation.fullName,
+        ...(translation.aliases || []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [translationDropdownQuery, translationOptions]);
+
+  const getTranslationLabel = useCallback(
+    (translationId?: string) => {
+      if (!translationId) return "";
+      const translation = translationsById.get(translationId);
+      return translation?.shortName || translationId.toUpperCase();
+    },
+    [translationsById]
+  );
+
   useEffect(() => {
     const win = window as Window & { __smartVersesActive?: boolean };
     win.__smartVersesActive = true;
@@ -540,6 +660,7 @@ const SmartVersesPage: React.FC = () => {
         try {
         const refs = await detectAndLookupReferences(tail, {
           aggressiveSpeechNormalization: true,
+          translationId: transcriptionTranslationIdRef.current,
         });
           if (!refs.length) return;
 
@@ -644,6 +765,46 @@ const SmartVersesPage: React.FC = () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [transcriptMenuOpen]);
+
+  useEffect(() => {
+    if (!translationDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!translationMenuRef.current) return;
+      if (!translationMenuRef.current.contains(event.target as Node)) {
+        setTranslationDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [translationDropdownOpen]);
+
+  useEffect(() => {
+    if (!searchTranslationPickerOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!searchTranslationTagRef.current) return;
+      if (!searchTranslationTagRef.current.contains(event.target as Node)) {
+        setSearchTranslationPickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [searchTranslationPickerOpen]);
+
+  useEffect(() => {
+    if (!verseCardPickerRefId) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!verseCardPickerContainerRef.current) return;
+      if (!verseCardPickerContainerRef.current.contains(event.target as Node)) {
+        setVerseCardPickerRefId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [verseCardPickerRefId]);
 
   useEffect(() => {
     saveTranscriptDisplayOptions(transcriptDisplayOptions);
@@ -836,18 +997,45 @@ const SmartVersesPage: React.FC = () => {
   // BIBLE SEARCH HANDLERS
   // =============================================================================
 
-  const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim()) return [];
+  const handleSearch = useCallback(async (query: string, overrideTranslationId?: string) => {
+    const rawQuery = query.trim();
+    if (!rawQuery) return [];
+
+    const defaultTranslationId =
+      settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+    let activeTranslationId =
+      overrideTranslationId ||
+      inlineTranslationOverride ||
+      searchTranslationId ||
+      defaultTranslationId;
+    let normalizedQuery = rawQuery;
+
+    if (!overrideTranslationId && !inlineTranslationOverride) {
+      const tokenMatch = rawQuery.match(/(?:^|\s)@([^\s]+)/);
+      if (tokenMatch) {
+        const token = tokenMatch[1];
+        const resolved = await resolveTranslationToken(token);
+        if (resolved) {
+          activeTranslationId = resolved;
+          normalizedQuery = rawQuery.replace(tokenMatch[0], " ").trim();
+        }
+      }
+    }
+
+    if (!normalizedQuery.trim()) return [];
 
     const queryMessage: SmartVersesChatMessage = {
       id: `query-${Date.now()}`,
       type: "query",
-      content: query,
+      content: rawQuery,
       timestamp: Date.now(),
     };
 
     setChatHistory(prev => [...prev, queryMessage]);
     setInputValue("");
+    setInlineTranslationOverride(null);
+    setTranslationDropdownOpen(false);
+    setTranslationDropdownQuery("");
     setIsSearching(true);
 
     // Add loading message
@@ -866,8 +1054,10 @@ const SmartVersesPage: React.FC = () => {
     try {
       // STEP 1: Try direct Bible reference parsing (bcv_parser)
       // This handles: "John 3:16", "John 3:1-4, Romans 3:3", etc.
-      console.log("🔍 Step 1: Direct reference parsing for:", query);
-      references = await detectAndLookupReferences(query);
+      console.log("🔍 Step 1: Direct reference parsing for:", normalizedQuery);
+      references = await detectAndLookupReferences(normalizedQuery, {
+        translationId: activeTranslationId,
+      });
       console.log("🔍 Direct parsing found:", references.length, "references");
 
       // STEP 2: If no direct references found, try secondary search
@@ -888,10 +1078,11 @@ const SmartVersesPage: React.FC = () => {
             console.log("🤖 Step 2: AI search with", provider, model || "(default model)");
             searchMethod = "ai";
             references = await searchBibleWithAI(
-              query, 
+              normalizedQuery,
               appSettings,
               provider as 'openai' | 'gemini' | 'groq',
-              model
+              model,
+              activeTranslationId
             );
             console.log("🤖 AI search found:", references.length, "references");
           } else {
@@ -899,14 +1090,22 @@ const SmartVersesPage: React.FC = () => {
             // Fall back to text search
             console.log("📝 Falling back to text search (AI not properly configured)");
             searchMethod = "text";
-            references = await searchBibleTextAsReferences(query, 5);
+            references = await searchBibleTextAsReferences(
+              normalizedQuery,
+              5,
+              activeTranslationId
+            );
             console.log("📝 Text search found:", references.length, "references");
           }
         } else {
           // Use text search (FlexSearch) as fallback
           console.log("📝 Step 2: Text search (AI disabled)");
           searchMethod = "text";
-          references = await searchBibleTextAsReferences(query, 5);
+          references = await searchBibleTextAsReferences(
+            normalizedQuery,
+            5,
+            activeTranslationId
+          );
           console.log("📝 Text search found:", references.length, "references");
         }
       }
@@ -959,7 +1158,80 @@ const SmartVersesPage: React.FC = () => {
     } finally {
       setIsSearching(false);
     }
-  }, [isAISearchEnabled, appSettings, settings]);
+  }, [
+    appSettings,
+    inlineTranslationOverride,
+    isAISearchEnabled,
+    searchTranslationId,
+    settings,
+  ]);
+
+  const resolveReferenceTranslationId = useCallback(
+    (ref?: DetectedBibleReference) =>
+      ref?.translationId ||
+      searchTranslationId ||
+      settings.defaultBibleTranslationId ||
+      BUILTIN_KJV_ID,
+    [searchTranslationId, settings.defaultBibleTranslationId]
+  );
+
+  const handleReferenceTranslationChange = useCallback(
+    async (ref: DetectedBibleReference, translationId: string) => {
+      if (!ref.book || !ref.chapter || !ref.verse) return;
+      const verseData = await loadVerseByComponents(
+        ref.book,
+        ref.chapter,
+        ref.verse,
+        translationId
+      );
+      if (!verseData) return;
+
+      const updated: DetectedBibleReference = {
+        ...ref,
+        reference: verseData.displayRef,
+        displayRef: verseData.displayRef,
+        verseText: verseData.verseText,
+        translationId,
+      };
+
+      setDetectedReferences((prev) =>
+        prev.map((item) => (item.id === ref.id ? updated : item))
+      );
+      setChatHistory((prev) =>
+        prev.map((msg) => {
+          if (!msg.references) return msg;
+          return {
+            ...msg,
+            references: msg.references.map((item) =>
+              item.id === ref.id ? updated : item
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
+  const handleInputChange = (value: string) => {
+    setInputValue(value);
+    const match = value.match(/@([^\s]*)$/);
+    if (match) {
+      setSearchTranslationPickerOpen(false);
+      setTranslationDropdownOpen(true);
+      setTranslationDropdownQuery(match[1] || "");
+    } else {
+      setTranslationDropdownOpen(false);
+      setTranslationDropdownQuery("");
+    }
+  };
+
+  const handleSelectTranslationToken = (translationId: string) => {
+    setInlineTranslationOverride(translationId);
+    setInputValue((prev) => prev.replace(/@([^\s]*)$/, "").trimStart());
+    setTranslationDropdownOpen(false);
+    setTranslationDropdownQuery("");
+    inputRef.current?.focus();
+  };
 
   const handleInputKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -974,6 +1246,35 @@ const SmartVersesPage: React.FC = () => {
       resetParseContext();
     }
   };
+
+  const resolveTranslationShortName = useCallback(
+    async (translationId?: string): Promise<string | null> => {
+      if (!translationId) return null;
+      try {
+        const translation = await getTranslationById(translationId);
+        return translation?.shortName || translationId.toUpperCase();
+      } catch (error) {
+        console.warn("[SmartVerses] Failed to load translation metadata:", error);
+        return translationId.toUpperCase();
+      }
+    },
+    []
+  );
+
+  const formatReferenceWithTranslation = useCallback(
+    (
+      referenceText: string,
+      translationShortName?: string | null,
+      enabled?: boolean
+    ): string => {
+      if (!enabled || !translationShortName) return referenceText;
+      const trimmed = referenceText.trim();
+      if (!trimmed) return referenceText;
+      const suffix = ` (${translationShortName})`;
+      return trimmed.endsWith(suffix) ? referenceText : `${trimmed}${suffix}`;
+    },
+    []
+  );
 
   // =============================================================================
   // GO LIVE FUNCTIONALITY
@@ -1002,9 +1303,17 @@ const SmartVersesPage: React.FC = () => {
       const basePath = settings.bibleOutputPath?.replace(/\/?$/, "/") || "";
       const verseText = reference.verseText || "";
       const displayRef = reference.displayRef || "";
+      const translationShortName = await resolveTranslationShortName(
+        reference.translationId
+      );
       
       // Update audience display if enabled (don't block on file output or ProPresenter)
       const displaySettings = loadDisplaySettings();
+      const outputReference = formatReferenceWithTranslation(
+        displayRef,
+        translationShortName,
+        settings.appendTranslationToReference
+      );
       const shouldUpdateDisplay =
         displaySettings.enabled ||
         displaySettings.webEnabled ||
@@ -1021,6 +1330,7 @@ const SmartVersesPage: React.FC = () => {
           await sendScriptureToDisplay({
             verseText,
             reference: displayRef,
+            translationShortName: translationShortName || undefined,
           });
         } catch (error) {
           console.warn("[Display] Failed to update audience screen:", error);
@@ -1044,11 +1354,13 @@ const SmartVersesPage: React.FC = () => {
       // Write reference to file
       if (basePath && settings.bibleReferenceFileName) {
         const refFilePath = `${basePath}${settings.bibleReferenceFileName}`;
-        console.log(`Writing reference to: ${refFilePath}, Content: "${displayRef}"`);
+        console.log(
+          `Writing reference to: ${refFilePath}, Content: "${outputReference}"`
+        );
         try {
           await invoke("write_text_to_file", {
             filePath: refFilePath,
-            content: displayRef,
+            content: outputReference,
           });
         } catch (error) {
           console.warn("[SmartVerses] Failed to write reference file:", error);
@@ -1122,7 +1434,7 @@ const SmartVersesPage: React.FC = () => {
     } catch (error) {
       console.error("Error going live:", error);
     }
-  }, [settings]);
+  }, [formatReferenceWithTranslation, resolveTranslationShortName, settings]);
 
   // Handle taking a verse off live
   const handleOffLive = useCallback(async () => {
@@ -1316,7 +1628,7 @@ const SmartVersesPage: React.FC = () => {
       console.log("[SmartVerses] Connected to WebSocket for browser transcriptions");
 
       // Listen for transcription messages from the browser
-      ws.onMessage((message) => {
+      ws.onMessage(async (message) => {
         if (message.type !== "transcription_stream") return;
 
         const m = message as WsTranscriptionStream;
@@ -1354,6 +1666,16 @@ const SmartVersesPage: React.FC = () => {
           
           setTranscriptHistory(prev => [...prev, segment]);
 
+          const cueTranslationId = await findTranslationCue(m.text || "");
+          const activeTranslationId =
+            cueTranslationId || transcriptionTranslationIdRef.current;
+          if (
+            cueTranslationId &&
+            cueTranslationId !== transcriptionTranslationIdRef.current
+          ) {
+            setTranscriptionTranslationId(cueTranslationId);
+          }
+
           if (m.key_points?.length) {
             const normalizedKeyPoints: KeyPoint[] = m.key_points.map((point) => ({
               text: point.text,
@@ -1370,6 +1692,7 @@ const SmartVersesPage: React.FC = () => {
           // Detect Bible references in the transcript
           detectAndLookupReferences(m.text, {
             aggressiveSpeechNormalization: true,
+            translationId: activeTranslationId,
           }).then(async (directRefs) => {
             if (directRefs.length > 0) {
               setDetectedReferences(prev => [...prev, ...directRefs]);
@@ -1538,7 +1861,8 @@ const SmartVersesPage: React.FC = () => {
             if (scriptureReferences.length > 0) {
               const resolvedDirect = await resolveReferencesFromList(
                 scriptureReferences,
-                m.text
+                m.text,
+                activeTranslationId
               );
               if (resolvedDirect.length > 0) {
                 setDetectedReferences((prev) => [...prev, ...resolvedDirect]);
@@ -1563,7 +1887,10 @@ const SmartVersesPage: React.FC = () => {
             }
 
             if (paraphrasedVerses.length > 0) {
-              const resolvedRefs = await resolveParaphrasedVerses(paraphrasedVerses);
+              const resolvedRefs = await resolveParaphrasedVerses(
+                paraphrasedVerses,
+                activeTranslationId
+              );
               if (resolvedRefs.length > 0) {
                 const resolvedWithTranscript = resolvedRefs.map((r) => ({
                   ...r,
@@ -1802,9 +2129,21 @@ const SmartVersesPage: React.FC = () => {
             setTranscriptHistory(prev => [...prev, segment]);
             setInterimTranscript("");
 
+            // Detect translation switches in the transcript (Phase 3)
+            const cueTranslationId = await findTranslationCue(text);
+            const activeTranslationId =
+              cueTranslationId || transcriptionTranslationIdRef.current;
+            if (
+              cueTranslationId &&
+              cueTranslationId !== transcriptionTranslationIdRef.current
+            ) {
+              setTranscriptionTranslationId(cueTranslationId);
+            }
+
             // Detect Bible references in the transcript
             const directRefs = await detectAndLookupReferences(text, {
               aggressiveSpeechNormalization: true,
+              translationId: activeTranslationId,
             });
             let keyPoints: KeyPoint[] = [];
             let scriptureReferences: string[] = [];
@@ -1865,7 +2204,10 @@ const SmartVersesPage: React.FC = () => {
               }
 
               if (settings.enableParaphraseDetection && analysis.paraphrasedVerses.length > 0) {
-                const resolvedRefs = await resolveParaphrasedVerses(analysis.paraphrasedVerses);
+                const resolvedRefs = await resolveParaphrasedVerses(
+                  analysis.paraphrasedVerses,
+                  activeTranslationId
+                );
                 if (resolvedRefs.length > 0) {
                   console.log("[SmartVerses][Paraphrase] Resolved refs:", resolvedRefs.map(r => r.displayRef));
                   // Attach paraphrase-detected refs to the same transcript segment so the UI can
@@ -2235,6 +2577,18 @@ const SmartVersesPage: React.FC = () => {
     });
   }, []);
 
+  const handleDefaultTranslationChange = useCallback((translationId: string) => {
+    setSettings((prev) => {
+      if (prev.defaultBibleTranslationId === translationId) return prev;
+      const next = { ...prev, defaultBibleTranslationId: translationId };
+      saveSmartVersesSettings(next);
+      window.dispatchEvent(
+        new CustomEvent("smartverses-settings-changed", { detail: next })
+      );
+      return next;
+    });
+  }, []);
+
   const toggleDetectedExpanded = useCallback((id: string) => {
     setExpandedDetectedIds((prev) => {
       const next = new Set(prev);
@@ -2323,29 +2677,35 @@ const SmartVersesPage: React.FC = () => {
   // Load navigation info when a reference is displayed
   const loadNavigationInfo = useCallback(async (ref: DetectedBibleReference) => {
     if (!ref.book || !ref.chapter || !ref.verse) return;
-    
-    const navKey = `${ref.book}-${ref.chapter}-${ref.verse}`;
+    const translationId = resolveReferenceTranslationId(ref);
+    const navKey = `${translationId}-${ref.book}-${ref.chapter}-${ref.verse}`;
     if (verseNavigation[navKey]) return; // Already loaded
     
-    const nav = await getVerseNavigation(ref.book, ref.chapter, ref.verse);
+    const nav = await getVerseNavigation(
+      ref.book,
+      ref.chapter,
+      ref.verse,
+      translationId
+    );
     setVerseNavigation(prev => ({
       ...prev,
       [navKey]: nav,
     }));
-  }, [verseNavigation]);
+  }, [resolveReferenceTranslationId, verseNavigation]);
 
   // Handle navigating to previous verse - prepends to the same message's references
   const handlePreviousVerse = useCallback(async (ref: DetectedBibleReference, messageId: string) => {
     if (!ref.book || !ref.chapter || !ref.verse) return;
-    
-    const navKey = `${ref.book}-${ref.chapter}-${ref.verse}`;
+    const translationId = resolveReferenceTranslationId(ref);
+    const navKey = `${translationId}-${ref.book}-${ref.chapter}-${ref.verse}`;
     const nav = verseNavigation[navKey];
     if (!nav?.previous) return;
     
     const prevVerse = await loadVerseByComponents(
       nav.previous.book,
       nav.previous.chapter,
-      nav.previous.verse
+      nav.previous.verse,
+      translationId
     );
     
     if (prevVerse) {
@@ -2356,6 +2716,7 @@ const SmartVersesPage: React.FC = () => {
         verseText: prevVerse.verseText,
         source: 'direct',
         timestamp: Date.now(),
+        translationId,
         book: prevVerse.book,
         chapter: prevVerse.chapter,
         verse: prevVerse.verse,
@@ -2373,20 +2734,21 @@ const SmartVersesPage: React.FC = () => {
         return msg;
       }));
     }
-  }, [verseNavigation]);
+  }, [resolveReferenceTranslationId, verseNavigation]);
 
   // Handle navigating to next verse - appends to the same message's references
   const handleNextVerse = useCallback(async (ref: DetectedBibleReference, messageId: string) => {
     if (!ref.book || !ref.chapter || !ref.verse) return;
-    
-    const navKey = `${ref.book}-${ref.chapter}-${ref.verse}`;
+    const translationId = resolveReferenceTranslationId(ref);
+    const navKey = `${translationId}-${ref.book}-${ref.chapter}-${ref.verse}`;
     const nav = verseNavigation[navKey];
     if (!nav?.next) return;
     
     const nextVerse = await loadVerseByComponents(
       nav.next.book,
       nav.next.chapter,
-      nav.next.verse
+      nav.next.verse,
+      translationId
     );
     
     if (nextVerse) {
@@ -2397,6 +2759,7 @@ const SmartVersesPage: React.FC = () => {
         verseText: nextVerse.verseText,
         source: 'direct',
         timestamp: Date.now(),
+        translationId,
         book: nextVerse.book,
         chapter: nextVerse.chapter,
         verse: nextVerse.verse,
@@ -2414,7 +2777,7 @@ const SmartVersesPage: React.FC = () => {
         return msg;
       }));
     }
-  }, [verseNavigation]);
+  }, [resolveReferenceTranslationId, verseNavigation]);
 
   // =============================================================================
   // RENDER HELPERS
@@ -2427,6 +2790,9 @@ const SmartVersesPage: React.FC = () => {
       ? settings.paraphraseReferenceColor 
       : settings.directReferenceColor;
     const isLive = liveReferenceId === ref.id;
+    const translationId = resolveReferenceTranslationId(ref);
+    const translationLabel = getTranslationLabel(translationId);
+    const canSwitchTranslation = !!ref.book && !!ref.chapter && !!ref.verse;
 
     return (
       <div
@@ -2453,6 +2819,91 @@ const SmartVersesPage: React.FC = () => {
             gap: "var(--spacing-2)",
           }}>
             {ref.displayRef}
+            {translationLabel && canSwitchTranslation && (
+              <div
+                ref={ref.id === verseCardPickerRefId ? verseCardPickerContainerRef : undefined}
+                style={{ position: "relative", display: "inline-flex" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setVerseCardPickerRefId((prev) => (prev === ref.id ? null : ref.id))}
+                  title={translationsById.get(translationId)?.fullName ?? translationId}
+                  style={{
+                    fontSize: "0.7rem",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    backgroundColor: "rgba(59, 130, 246, 0.2)",
+                    color: "var(--app-input-text-color)",
+                    fontWeight: 600,
+                    border: "1px solid var(--app-border-color)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {translationLabel}
+                </button>
+                {verseCardPickerRefId === ref.id && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 4px)",
+                      left: 0,
+                      minWidth: "200px",
+                      backgroundColor: "var(--app-bg-color)",
+                      border: "1px solid var(--app-border-color)",
+                      borderRadius: "8px",
+                      boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
+                      zIndex: 50,
+                      maxHeight: "200px",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {translationOptions.map((translation) => (
+                      <button
+                        key={translation.id}
+                        type="button"
+                        onClick={() => {
+                          handleReferenceTranslationChange(ref, translation.id);
+                          setVerseCardPickerRefId(null);
+                        }}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "8px 12px",
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                          color: "var(--app-text-color)",
+                          fontSize: "0.8rem",
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{translation.shortName}</span>
+                        <span style={{ fontSize: "0.75rem", color: "var(--app-text-color-secondary)" }}>
+                          {translation.fullName}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {!canSwitchTranslation && translationLabel && (
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  backgroundColor: "rgba(59, 130, 246, 0.2)",
+                  color: "var(--app-input-text-color)",
+                  fontWeight: 600,
+                }}
+              >
+                {translationLabel}
+              </span>
+            )}
             {isParaphrase && ref.confidence && (
               <span style={{
                 fontSize: "0.75rem",
@@ -2466,7 +2917,7 @@ const SmartVersesPage: React.FC = () => {
             )}
           </div>
           {showGoLive && (
-            <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
+            <div style={{ display: "flex", gap: "var(--spacing-2)", alignItems: "center" }}>
               <button
                 onClick={() => !isLive && handleGoLive(ref)}
                 className={isLive ? "" : "primary"}
@@ -2613,7 +3064,7 @@ const SmartVersesPage: React.FC = () => {
             )}
           </div>
 
-          <div style={{ display: "flex", gap: "6px", flex: "0 0 auto" }}>
+          <div style={{ display: "flex", gap: "6px", flex: "0 0 auto", alignItems: "center" }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -2715,11 +3166,14 @@ const SmartVersesPage: React.FC = () => {
       loadNavigationInfo(lastRef);
     }
 
+    const firstTranslationId = resolveReferenceTranslationId(firstRef);
+    const lastTranslationId = resolveReferenceTranslationId(lastRef);
+
     const firstNavKey = firstRef.book && firstRef.chapter && firstRef.verse 
-      ? `${firstRef.book}-${firstRef.chapter}-${firstRef.verse}` 
+      ? `${firstTranslationId}-${firstRef.book}-${firstRef.chapter}-${firstRef.verse}` 
       : null;
     const lastNavKey = lastRef.book && lastRef.chapter && lastRef.verse 
-      ? `${lastRef.book}-${lastRef.chapter}-${lastRef.verse}` 
+      ? `${lastTranslationId}-${lastRef.book}-${lastRef.chapter}-${lastRef.verse}` 
       : null;
 
     const firstNav = firstNavKey ? verseNavigation[firstNavKey] : null;
@@ -2908,6 +3362,74 @@ const SmartVersesPage: React.FC = () => {
           <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
             <FaSearch />
             Bible Search
+            <div ref={searchTranslationTagRef} style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setTranslationDropdownOpen(false);
+                  setSearchTranslationPickerOpen((prev) => !prev);
+                }}
+                title={translationsById.get(searchTranslationId)?.fullName ?? searchTranslationId}
+                style={{
+                  fontSize: "0.7rem",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  backgroundColor: "var(--app-input-bg-color)",
+                  color: "var(--app-text-color-secondary)",
+                  fontWeight: 600,
+                  border: "1px solid var(--app-border-color)",
+                  cursor: "pointer",
+                }}
+              >
+                {getTranslationLabel(searchTranslationId)}
+              </button>
+              {searchTranslationPickerOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    left: 0,
+                    minWidth: "220px",
+                    backgroundColor: "var(--app-bg-color)",
+                    border: "1px solid var(--app-border-color)",
+                    borderRadius: "8px",
+                    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
+                    zIndex: 50,
+                    maxHeight: "220px",
+                    overflowY: "auto",
+                  }}
+                >
+                  {translationOptions.map((translation) => (
+                    <button
+                      key={translation.id}
+                      type="button"
+                      onClick={() => {
+                        handleDefaultTranslationChange(translation.id);
+                        setSearchTranslationPickerOpen(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        color: "var(--app-text-color)",
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{translation.shortName}</span>
+                      <span style={{ fontSize: "0.8rem", color: "var(--app-text-color-secondary)" }}>
+                        {translation.fullName}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </h3>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-2)", position: "relative" }}>
             {liveReferenceId && (
@@ -3035,6 +3557,7 @@ const SmartVersesPage: React.FC = () => {
         {/* Input */}
         <div style={{
           padding: "var(--spacing-3) var(--spacing-4)",
+          paddingBottom: "var(--spacing-6)",
           borderTop: "1px solid var(--app-border-color)",
           backgroundColor: "var(--app-header-bg)",
         }}>
@@ -3043,24 +3566,125 @@ const SmartVersesPage: React.FC = () => {
             gap: "var(--spacing-2)",
             marginBottom: "var(--spacing-2)",
           }}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleInputKeyDown}
-              placeholder="Search Bible reference or phrase..."
-              disabled={isSearching}
-              style={{
-                flex: 1,
-                padding: "var(--spacing-3)",
-                borderRadius: "8px",
-                border: "1px solid var(--app-border-color)",
-                backgroundColor: "var(--app-input-bg-color)",
-                color: "var(--app-input-text-color)",
-                fontSize: "1rem",
-              }}
-            />
+            <div style={{ flex: 1, position: "relative" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--spacing-2)",
+                  padding: "var(--spacing-2) var(--spacing-3)",
+                  borderRadius: "8px",
+                  border: "1px solid var(--app-border-color)",
+                  backgroundColor: "var(--app-input-bg-color)",
+                }}
+              >
+                {inlineTranslationOverride && (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "2px 6px",
+                      borderRadius: "6px",
+                      backgroundColor: "rgba(59, 130, 246, 0.2)",
+                      color: "var(--app-input-text-color)",
+                      fontSize: "0.8rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    @{getTranslationLabel(inlineTranslationOverride)}
+                    <button
+                      onClick={() => setInlineTranslationOverride(null)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "inherit",
+                        cursor: "pointer",
+                        fontSize: "0.9rem",
+                        lineHeight: 1,
+                      }}
+                      title="Clear translation override"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
+                  placeholder="Search Bible reference or phrase..."
+                  disabled={isSearching}
+                  style={{
+                    flex: 1,
+                    border: "none",
+                    outline: "none",
+                    backgroundColor: "transparent",
+                    color: "var(--app-input-text-color)",
+                    fontSize: "1rem",
+                  }}
+                />
+              </div>
+              {translationDropdownOpen && (
+                <div
+                  ref={translationMenuRef}
+                  style={{
+                    position: "absolute",
+                    bottom: "calc(100% + 6px)",
+                    left: 0,
+                    right: 0,
+                    backgroundColor: "var(--app-bg-color)",
+                    border: "1px solid var(--app-border-color)",
+                    borderRadius: "8px",
+                    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
+                    zIndex: 40,
+                    maxHeight: "220px",
+                    overflowY: "auto",
+                  }}
+                >
+                  {filteredTranslationOptions.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "var(--spacing-3)",
+                        fontSize: "0.85rem",
+                        color: "var(--app-text-color-secondary)",
+                      }}
+                    >
+                      No translations match "{translationDropdownQuery}"
+                    </div>
+                  ) : (
+                    filteredTranslationOptions.map((translation) => (
+                      <button
+                        key={translation.id}
+                        onClick={() => handleSelectTranslationToken(translation.id)}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                          color: "var(--app-text-color)",
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>
+                          {translation.shortName}
+                        </span>
+                        <span style={{ fontSize: "0.8rem", color: "var(--app-text-color-secondary)" }}>
+                          {translation.fullName}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             <button
               onClick={() => handleSearch(inputValue)}
               disabled={!inputValue.trim() || isSearching}
@@ -3075,11 +3699,19 @@ const SmartVersesPage: React.FC = () => {
               <FaPaperPlane />
             </button>
           </div>
+          <p style={{
+            fontSize: "0.75rem",
+            color: "var(--app-text-color-secondary)",
+            margin: "4px 0 var(--spacing-3) 0",
+          }}>
+            Type @ to override translation eg @KJV
+          </p>
           {/* AI Search Toggle */}
           <div style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            marginBottom: "var(--spacing-3)",
           }}>
             <label style={{
               display: "flex",
