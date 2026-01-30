@@ -23,7 +23,6 @@ import {
   generateConversionScript,
   runConversionScript,
 } from "../services/bibleConversionAIService";
-import { getApiKey } from "../services/smartVersesAIService";
 import "../App.css";
 
 const SAMPLE_SOURCE_JSON = {
@@ -70,7 +69,6 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
 
   const [useAI, setUseAI] = useState(false);
   const [aiAvailable, setAiAvailable] = useState(false);
-  const [aiProviderLabel, setAiProviderLabel] = useState<string | null>(null);
   const [aiProgress, setAiProgress] = useState<string[]>([]);
   const [aiCode, setAiCode] = useState("");
   const [aiFormat, setAiFormat] = useState<string | null>(null);
@@ -148,16 +146,6 @@ const BibleConversionModal: React.FC<BibleConversionModalProps> = ({
       !!appSettings.geminiConfig?.apiKey ||
       !!appSettings.groqConfig?.apiKey;
     setAiAvailable(available);
-
-    let providerLabel: string | null = null;
-    if (appSettings.defaultAIProvider) {
-      const apiKey = getApiKey(appSettings.defaultAIProvider, appSettings);
-      if (apiKey) providerLabel = appSettings.defaultAIProvider.toUpperCase();
-    }
-    if (!providerLabel && appSettings.openAIConfig?.apiKey) providerLabel = "OPENAI";
-    if (!providerLabel && appSettings.geminiConfig?.apiKey) providerLabel = "GEMINI";
-    if (!providerLabel && appSettings.groqConfig?.apiKey) providerLabel = "GROQ";
-    setAiProviderLabel(providerLabel);
 
     setUseAI(available);
     setTemplates(loadBibleConversionTemplates());

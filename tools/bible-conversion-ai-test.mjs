@@ -40,9 +40,7 @@ if (!apiKey) {
   process.exit(1);
 }
 
-console.log("API Key loaded:", apiKey ? `${apiKey.substring(0, 20)}...` : "NOT FOUND");
-console.log("API Key length:", apiKey ? apiKey.length : 0);
-console.log("API Key ends with:", apiKey ? apiKey.substring(apiKey.length - 10) : "N/A");
+console.log("API Key loaded:", apiKey ? "[REDACTED]" : "NOT FOUND");
 console.log("Model:", model);
 
 const rawText = fs.readFileSync(filePath, "utf-8");

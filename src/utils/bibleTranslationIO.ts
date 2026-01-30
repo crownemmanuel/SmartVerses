@@ -38,7 +38,7 @@ export async function saveBibleTranslationToDefaultDir(
     const home = await homeDir();
     const targetDir = await join(home, ...DEFAULT_BIBLE_DIR_SEGMENTS);
     try {
-      await (fs as any).createDir(targetDir, { recursive: true });
+      await (fs as any).mkdir(targetDir, { recursive: true });
     } catch (error) {
       console.warn("[BibleConversion] Failed to ensure bible dir:", error);
     }
