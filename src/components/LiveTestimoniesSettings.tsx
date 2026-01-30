@@ -279,6 +279,7 @@ const LiveTestimoniesSettings: React.FC = () => {
 
   const handleImportConfig = (config: FirebaseConfig) => {
     setFirebaseConfig(config);
+    setSavedFirebaseConfig(config);
     setIsEditingFirebase(true);
     setSaveMessage({ text: "Firebase configuration imported successfully", type: "success" });
     setTimeout(() => setSaveMessage({ text: "", type: "" }), 3000);
