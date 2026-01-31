@@ -25,7 +25,7 @@ interface ProPresenterConnectionScreenProps {
 type TestStatus = "idle" | "testing" | "success" | "error";
 
 const DEFAULT_HOST = "localhost";
-const DEFAULT_PORT = "59343";
+const DEFAULT_PORT = "1025";
 
 const parseConnectionHostPort = (apiUrl: string) => {
   try {
@@ -78,7 +78,7 @@ const ProPresenterConnectionScreen: React.FC<
 
     if (
       !hasSelectedConnection &&
-      activeConnection.apiUrl === "http://localhost:1025"
+      activeConnection.apiUrl === "http://localhost:59343"
     ) {
       activeConnection = {
         ...activeConnection,

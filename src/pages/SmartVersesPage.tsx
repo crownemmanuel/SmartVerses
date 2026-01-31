@@ -1913,13 +1913,24 @@ const SmartVersesPage: React.FC = () => {
   );
 
   useEffect(() => {
+    const resolveApiTranslation = async (translation?: string): Promise<string | undefined> => {
+      const trimmed = String(translation ?? "").trim();
+      if (!trimmed) return undefined;
+      const resolved = await resolveTranslationToken(trimmed);
+      if (resolved) return resolved;
+      const byId = await getTranslationById(trimmed);
+      if (byId) return trimmed;
+      return undefined;
+    };
+
     const handleApiGoLive: EventListener = (event) => {
-      const detail = (event as CustomEvent<{ reference?: string }>).detail;
+      const detail = (event as CustomEvent<{ reference?: string; translation?: string }>).detail;
       const reference = String(detail?.reference ?? "").trim();
       if (!reference) return;
       void (async () => {
+        const translationId = await resolveApiTranslation(detail?.translation);
         setInputValue(reference);
-        const references = await handleSearch(reference);
+        const references = await handleSearch(reference, translationId);
         if (references[0]) {
           await handleGoLive(references[0]);
         }

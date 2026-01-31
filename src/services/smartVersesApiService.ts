@@ -1,7 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { DetectedBibleReference, SmartVersesSettings } from "../types/smartVerses";
 import { loadSmartVersesSettings } from "./transcriptionService";
-import { BUILTIN_KJV_ID } from "./bibleLibraryService";
+import {
+  BUILTIN_KJV_ID,
+  getTranslationById,
+  resolveTranslationToken,
+} from "./bibleLibraryService";
 import { detectAndLookupReferences } from "./smartVersesBibleService";
 import { searchBibleTextAsReferences } from "./bibleTextSearchService";
 import { triggerPresentationOnConnections } from "./propresenterService";
@@ -83,15 +87,32 @@ async function goLiveReference(
   }
 }
 
+async function resolveApiTranslationId(
+  overrideTranslation?: string
+): Promise<string> {
+  const settings = loadSmartVersesSettings();
+  const fallback = settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+  const trimmed = overrideTranslation?.trim();
+  if (!trimmed) return fallback;
+
+  const resolved = await resolveTranslationToken(trimmed);
+  if (resolved) return resolved;
+
+  const byId = await getTranslationById(trimmed);
+  if (byId) return trimmed;
+
+  return fallback;
+}
+
 export async function goLiveScriptureReference(
-  query: string
+  query: string,
+  translationOverride?: string
 ): Promise<DetectedBibleReference | null> {
   const trimmed = query.trim();
   if (!trimmed) return null;
 
   const settings = loadSmartVersesSettings();
-  const translationId =
-    settings.defaultBibleTranslationId || BUILTIN_KJV_ID;
+  const translationId = await resolveApiTranslationId(translationOverride);
   const references = await resolveReferences(trimmed, translationId);
   if (!references.length) return null;
 

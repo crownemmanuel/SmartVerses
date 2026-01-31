@@ -116,6 +116,7 @@ pub struct DisplayState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiScriptureGoLiveRequest {
     pub reference: String,
+    pub translation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -823,9 +824,24 @@ async fn run_combined_server(port: u16, app: tauri::AppHandle) -> Result<(), Str
                     ));
                 }
 
+                let translation = body
+                    .translation
+                    .as_deref()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let translation = if translation.is_empty() {
+                    None
+                } else {
+                    Some(translation)
+                };
+
                 if let Err(err) = app_clone.emit(
                     "api-scripture-go-live",
-                    serde_json::json!({ "reference": reference }),
+                    serde_json::json!({
+                        "reference": reference,
+                        "translation": translation,
+                    }),
                 ) {
                     return Ok::<_, warp::Rejection>(json_response(
                         serde_json::json!({
@@ -909,6 +925,83 @@ async fn run_combined_server(port: u16, app: tauri::AppHandle) -> Result<(), Str
                 ))
             }
         });
+
+    // Helper macro to create simple event-emitting API routes
+    macro_rules! create_event_route {
+        ($state:expr, $app:expr, $($segment:expr),+ => $event:expr) => {
+            {
+                let state_clone = $state.clone();
+                let app_clone = $app.clone();
+                let event_name = $event;
+                warp::path("api")
+                    $(.and(warp::path($segment)))+
+                    .and(warp::path::end())
+                    .and(warp::post())
+                    .and_then(move || {
+                        let state_inner = state_clone.clone();
+                        let app_inner = app_clone.clone();
+                        let event = event_name;
+                        async move {
+                            if !*state_inner.api_enabled.read().await {
+                                return Ok::<_, warp::Rejection>(json_response(
+                                    serde_json::json!({ "error": "api_disabled" }),
+                                    StatusCode::FORBIDDEN,
+                                ));
+                            }
+
+                            if let Err(err) = app_inner.emit(event, serde_json::json!({})) {
+                                return Ok::<_, warp::Rejection>(json_response(
+                                    serde_json::json!({
+                                        "error": "emit_failed",
+                                        "detail": err.to_string()
+                                    }),
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                ));
+                            }
+
+                            Ok::<_, warp::Rejection>(json_response(
+                                serde_json::json!({ "status": "queued" }),
+                                StatusCode::OK,
+                            ))
+                        }
+                    })
+            }
+        };
+    }
+
+    // API v1: Timer stop
+    let api_timer_stop_route = create_event_route!(
+        state,
+        app,
+        "v1", "timer", "stop" => "api-timer-stop"
+    );
+
+    // API v1: Video recording start/stop
+    let api_video_recording_start_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "video", "start" => "api-video-recording-start"
+    );
+
+    let api_video_recording_stop_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "video", "stop" => "api-video-recording-stop"
+    );
+
+    // API v1: Audio recording start/stop
+    let api_audio_recording_start_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "audio", "start" => "api-audio-recording-start"
+    );
+
+    let api_audio_recording_stop_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "audio", "stop" => "api-audio-recording-stop"
+    );
+
 
     // API docs route - serve api-docs.html
     let api_docs_route = warp::path("api")
@@ -1085,6 +1178,11 @@ async fn run_combined_server(port: u16, app: tauri::AppHandle) -> Result<(), Str
         .or(transcription_pin_route)
         .or(api_scripture_route)
         .or(api_timer_route)
+        .or(api_timer_stop_route)
+        .or(api_video_recording_start_route)
+        .or(api_video_recording_stop_route)
+        .or(api_audio_recording_start_route)
+        .or(api_audio_recording_stop_route)
         .or(api_docs_route)
         .or(api_openapi_route)
         .or(schedule_view_route)

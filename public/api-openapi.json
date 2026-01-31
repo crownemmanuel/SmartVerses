@@ -24,6 +24,11 @@
                   "reference": {
                     "type": "string",
                     "example": "John 3:16"
+                  },
+                  "translation": {
+                    "type": "string",
+                    "example": "NIV",
+                    "description": "Optional translation id or alias (e.g., NIV, ESV)."
                   }
                 },
                 "required": ["reference"]
@@ -86,6 +91,116 @@
             }
           },
           "400": { "description": "Invalid request" },
+          "403": { "description": "API disabled" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/v1/timer/stop": {
+      "post": {
+        "summary": "Stop the active timer",
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "API disabled" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/v1/recording/video/start": {
+      "post": {
+        "summary": "Start video recording",
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "API disabled" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/v1/recording/video/stop": {
+      "post": {
+        "summary": "Stop video recording",
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "API disabled" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/v1/recording/audio/start": {
+      "post": {
+        "summary": "Start audio recording",
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "API disabled" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/v1/recording/audio/stop": {
+      "post": {
+        "summary": "Stop audio recording",
+        "responses": {
+          "200": {
+            "description": "Command accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
           "403": { "description": "API disabled" },
           "500": { "description": "Server error" }
         }

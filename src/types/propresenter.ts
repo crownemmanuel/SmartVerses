@@ -163,6 +163,16 @@ export type ScheduleItemAutomation =
       payload?: string; // JSON payload as string (validated before save)
     };
 
+// Recording automation types constant
+export const RECORDING_AUTOMATION_TYPES = [
+  "startVideoRecording",
+  "stopVideoRecording",
+  "startAudioRecording",
+  "stopAudioRecording",
+  "startBothRecording",
+  "stopBothRecording",
+] as const;
+
 // Smart automation rule - trigger based on session name matching
 export interface SmartAutomationRule {
   id: string;

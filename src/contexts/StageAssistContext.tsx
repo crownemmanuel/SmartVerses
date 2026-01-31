@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ScheduleItem, TimerState, TimeAdjustmentMode, ScheduleItemAutomation } from "../types/propresenter";
+import { ScheduleItem, TimerState, TimeAdjustmentMode, ScheduleItemAutomation, RECORDING_AUTOMATION_TYPES } from "../types/propresenter";
 import { startTimerOnAllEnabled, stopTimerOnAllEnabled } from "../services/propresenterService";
 import { saveDisplayTimerState } from "../services/displayService";
 import { loadNetworkSyncSettings, networkSyncManager } from "../services/networkSyncService";
@@ -13,16 +13,6 @@ import {
 const SCHEDULE_STORAGE_KEY = "proassist-stage-assist-schedule";
 const SETTINGS_STORAGE_KEY = "proassist-stage-assist-settings";
 const RUNTIME_STORAGE_KEY = "proassist-stage-assist-runtime";
-
-// Recording automation types
-const RECORDING_AUTOMATION_TYPES = [
-  "startVideoRecording",
-  "stopVideoRecording",
-  "startAudioRecording",
-  "stopAudioRecording",
-  "startBothRecording",
-  "stopBothRecording",
-] as const;
 
 function normalizeAutomation(raw: any): ScheduleItemAutomation | null {
   if (!raw || typeof raw !== "object") return null;
@@ -787,6 +777,25 @@ export const StageAssistProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setTimerState((prev) => ({ ...prev, isRunning: false }));
     return await stopTimerOnAllEnabled();
   }, []);
+
+  useEffect(() => {
+    let unlisten: null | (() => void) = null;
+
+    (async () => {
+      try {
+        const events = await import("@tauri-apps/api/event");
+        unlisten = await events.listen("api-timer-stop", async () => {
+          await stopTimer();
+        });
+      } catch (error) {
+        console.warn("[API] Failed to listen for timer stop events:", error);
+      }
+    })();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [stopTimer]);
 
   // Mark a session as triggered
   const markSessionTriggered = useCallback((sessionId: number) => {

@@ -1801,10 +1801,10 @@ const MainApplicationPage: React.FC = () => {
     templateName: string,
     slidesFromModal: Pick<Slide, "text" | "layout" | "isAutoScripture">[],
     options?: { liveSlidesSessionId?: string; liveSlidesLinked?: boolean }
-  ) => {
+  ): boolean => {
     if (!selectedPlaylistId) {
       alert("No playlist selected to add the imported item to.");
-      return;
+      return false;
     }
 
     const isLiveSlidesItem = !!options?.liveSlidesSessionId;
@@ -1814,7 +1814,7 @@ const MainApplicationPage: React.FC = () => {
     if (!isLiveSlidesItem && !selectedTemplate) {
       alert(`Template "${templateName}" not found. Cannot import.`);
       setIsImportModalOpen(false);
-      return;
+      return false;
     }
     const templateColorUsed = isLiveSlidesItem
       ? "#2563eb"
@@ -1862,6 +1862,8 @@ const MainApplicationPage: React.FC = () => {
         broadcastPlaylistItem(selectedPlaylistId, newPlaylistItem, "create");
       }
     }
+
+    return true;
   };
 
   const handleCreateBlankPresentation = (title: string) => {

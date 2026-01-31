@@ -2,18 +2,9 @@ import {
   ScheduleItem,
   ScheduleItemAutomation,
   SmartAutomationRule,
+  RECORDING_AUTOMATION_TYPES,
 } from "../types/propresenter";
 import { loadSmartAutomations } from "./testimoniesStorage";
-
-// Recording automation types
-const RECORDING_AUTOMATION_TYPES = [
-  "startVideoRecording",
-  "stopVideoRecording",
-  "startAudioRecording",
-  "stopAudioRecording",
-  "startBothRecording",
-  "stopBothRecording",
-] as const;
 
 function normalizeSessionKey(session: string | undefined | null): string {
   return (session ?? "").trim().toLowerCase();
@@ -31,7 +22,7 @@ function normalizeAutomationList(
   return list.filter(Boolean) as ScheduleItemAutomation[];
 }
 
-function normalizeScheduleItemAutomations(item: ScheduleItem): ScheduleItemAutomation[] {
+export function normalizeScheduleItemAutomations(item: ScheduleItem): ScheduleItemAutomation[] {
   const rawList = Array.isArray(item.automations)
     ? item.automations
     : (item as any).automation

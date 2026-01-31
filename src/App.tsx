@@ -378,23 +378,24 @@ function AppContent({
     (async () => {
       try {
         const events = await import("@tauri-apps/api/event");
-        unlisten = await events.listen<{ reference?: string }>(
+        unlisten = await events.listen<{ reference?: string; translation?: string }>(
           "api-scripture-go-live",
           async (event) => {
             const reference = String(event.payload?.reference ?? "").trim();
+            const translation = String(event.payload?.translation ?? "").trim();
             if (!reference) return;
 
             if (isSmartVersesActive()) {
               window.dispatchEvent(
                 new CustomEvent("smartverses-api-go-live", {
-                  detail: { reference },
+                  detail: { reference, translation },
                 })
               );
               return;
             }
 
             try {
-              const result = await goLiveScriptureReference(reference);
+              const result = await goLiveScriptureReference(reference, translation);
               if (!result) {
                 console.warn("[API] No scripture match for:", reference);
               }
@@ -410,6 +411,40 @@ function AppContent({
 
     return () => {
       if (unlisten) unlisten();
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlistenStartVideo: null | (() => void) = null;
+    let unlistenStopVideo: null | (() => void) = null;
+    let unlistenStartAudio: null | (() => void) = null;
+    let unlistenStopAudio: null | (() => void) = null;
+
+    (async () => {
+      try {
+        const events = await import("@tauri-apps/api/event");
+        unlistenStartVideo = await events.listen("api-video-recording-start", () => {
+          window.dispatchEvent(new CustomEvent("automation-start-video-recording"));
+        });
+        unlistenStopVideo = await events.listen("api-video-recording-stop", () => {
+          window.dispatchEvent(new CustomEvent("automation-stop-video-recording"));
+        });
+        unlistenStartAudio = await events.listen("api-audio-recording-start", () => {
+          window.dispatchEvent(new CustomEvent("automation-start-audio-recording"));
+        });
+        unlistenStopAudio = await events.listen("api-audio-recording-stop", () => {
+          window.dispatchEvent(new CustomEvent("automation-stop-audio-recording"));
+        });
+      } catch (error) {
+        console.warn("[API] Failed to listen for recording events:", error);
+      }
+    })();
+
+    return () => {
+      if (unlistenStartVideo) unlistenStartVideo();
+      if (unlistenStopVideo) unlistenStopVideo();
+      if (unlistenStartAudio) unlistenStartAudio();
+      if (unlistenStopAudio) unlistenStopAudio();
     };
   }, []);
 
