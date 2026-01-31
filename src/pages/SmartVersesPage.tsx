@@ -389,6 +389,7 @@ const SmartVersesPage: React.FC = () => {
 
   // UI refs
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatHistoryLengthRef = useRef(0);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -820,9 +821,16 @@ const SmartVersesPage: React.FC = () => {
     ]
   );
 
-  // Scroll to bottom of chat
+  // Scroll to bottom of chat only when a new message is added (not on in-place updates like translation change on a card)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const prevLen = chatHistoryLengthRef.current;
+    const currLen = chatHistory.length;
+    if (currLen > prevLen) {
+      chatHistoryLengthRef.current = currLen;
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } else {
+      chatHistoryLengthRef.current = currLen;
+    }
   }, [chatHistory]);
 
   useEffect(() => {
