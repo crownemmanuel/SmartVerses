@@ -26,6 +26,7 @@ import {
   FaFilter,
   FaClock,
   FaBroadcastTower,
+  FaBook,
 } from "react-icons/fa";
 import {
   SmartVersesSettings as SmartVersesSettingsType,
@@ -64,6 +65,7 @@ import {
   fetchGeminiModels,
   fetchGroqModels,
 } from "../services/aiService";
+import { bibleManager, BibleTranslation } from "../services/BibleManager";
 import { formatGroqModelLabel } from "../utils/groqModelLimits";
 import { useDebouncedEffect } from "../hooks/useDebouncedEffect";
 import { isDevModeEnabled } from "../utils/devFlags";
@@ -95,10 +97,30 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
     null
   );
 
+  // Bible Translations state
+  const [availableBibles, setAvailableBibles] = useState<BibleTranslation[]>([]);
+  const [selectedBibleId, setSelectedBibleId] = useState<string>("kjv");
+
   // Bible Search AI model state
   const [bibleSearchModels, setBibleSearchModels] = useState<string[]>([]);
   const [bibleSearchModelsLoading, setBibleSearchModelsLoading] =
     useState(false);
+
+  // Load Bible Translations
+  useEffect(() => {
+    const loadBibles = async () => {
+      await bibleManager.initialize();
+      setAvailableBibles(bibleManager.getAllTranslations());
+      setSelectedBibleId(bibleManager.getCurrentTranslation().id);
+    };
+    loadBibles();
+
+    const unsubscribe = bibleManager.subscribe(() => {
+       setAvailableBibles(bibleManager.getAllTranslations());
+       setSelectedBibleId(bibleManager.getCurrentTranslation().id);
+    });
+    return unsubscribe;
+  }, []);
 
   // Offline model manager state
   const [showModelManager, setShowModelManager] = useState(false);
@@ -2083,6 +2105,62 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
 
       {/* AI Settings */}
       {isSmartVersesMode && (
+        <>
+            {/* Bible Configuration Container */}
+            <div
+              style={{
+                padding: "var(--spacing-3)",
+                backgroundColor: "var(--app-bg-color)",
+                borderRadius: "8px",
+                marginBottom: "var(--spacing-4)",
+                border: "1px solid var(--app-border-color)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--spacing-2)",
+                  marginBottom: "var(--spacing-3)",
+                }}
+              >
+                <FaBook size={16} color="var(--app-primary-color)" />
+                <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>
+                  Bible Translation
+                </h4>
+              </div>
+
+               <div style={fieldStyle}>
+                <label style={labelStyle}>Selected Translation</label>
+                <div style={{ display: 'flex', gap: 'var(--spacing-2)' }}>
+                  <select
+                    value={selectedBibleId}
+                    onChange={(e) => {
+                       bibleManager.setTranslation(e.target.value);
+                    }}
+                    style={{ ...inputStyle, flex: 1 }}
+                  >
+                    {availableBibles.map((bible) => (
+                      <option key={bible.id} value={bible.id}>
+                        {bible.name} ({bible.source === 'built-in' ? 'Built-in' : 'User'})
+                      </option>
+                    ))}
+                  </select>
+                  <button 
+                    className="secondary btn-sm"
+                    onClick={() => bibleManager.loadUserBibles()}
+                    title="Refresh user bibles"
+                    type="button"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <p style={helpTextStyle}>
+                   User bibles are loaded from <code>~/Documents/ProAssist/Bibles</code> (.svjson format).
+                </p>
+              </div>
+            </div>
+
         <div style={sectionStyle}>
           <div style={sectionHeaderStyle}>
             <FaRobot />
@@ -2369,6 +2447,7 @@ const SmartVersesSettings: React.FC<SmartVersesSettingsProps> = ({
             </div>
           </div>
         </div>
+      </>
       )}
 
       {/* Display Settings */}

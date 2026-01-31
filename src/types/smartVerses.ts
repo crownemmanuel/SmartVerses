@@ -124,6 +124,7 @@ export interface DetectedBibleReference {
   isNavigationResult?: boolean;
   // Highlight words from AI search
   highlight?: string[];     // Words to highlight in the verse text
+  translationId?: string;   // The ID of the translation this verse is currently showing
 }
 
 // =============================================================================

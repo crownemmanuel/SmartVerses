@@ -37,6 +37,7 @@ import {
   parseVerseReference,
   lookupVerse,
 } from "../services/smartVersesBibleService";
+import { bibleManager, BibleTranslation } from "../services/BibleManager"; // Bible Manager import
 import {
   loadSmartVersesSettings,
   saveSmartVersesSettings,
@@ -276,6 +277,10 @@ const SmartVersesPage: React.FC = () => {
     DEFAULT_SMART_VERSES_SETTINGS.autoTriggerOnDetection
   );
 
+  // Bible state
+  const [availableBibles, setAvailableBibles] = useState<BibleTranslation[]>([]);
+  const [selectedBibleId, setSelectedBibleId] = useState<string>("kjv");
+
   // Chat state
   const [chatHistory, setChatHistory] = useState<SmartVersesChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -297,7 +302,50 @@ const SmartVersesPage: React.FC = () => {
   const transcriptionServiceRef = useRef<ITranscriptionService | null>(null);
   const detectedReferencesRef = useRef<DetectedBibleReference[]>([]);
   const transcriptionStartRef = useRef<number | null>(null);
-  const transcriptionNextPromptAtRef = useRef<number | null>(null);
+const transcriptionNextPromptAtRef = useRef<number | null>(null);
+
+  // Bible Dropdown State
+  const [showBibleDropdown, setShowBibleDropdown] = useState(false);
+  const [bibleDropdownFilter, setBibleDropdownFilter] = useState("");
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setInputValue(val);
+
+      if (val.startsWith("@")) {
+          // Check if there's a space, meaning token is complete
+          if (val.includes(" ")) {
+              setShowBibleDropdown(false);
+          } else {
+              setShowBibleDropdown(true);
+              setBibleDropdownFilter(val.substring(1));
+          }
+      } else {
+          setShowBibleDropdown(false);
+      }
+  };
+
+  const handleSelectTranslationFromDropdown = (id: string) => {
+      setInputValue(`@${id} `); // Insert token and space
+      setShowBibleDropdown(false);
+      inputRef.current?.focus();
+  };
+
+  // Initialize Bible Translations
+  useEffect(() => {
+    const loadBibles = async () => {
+      await bibleManager.initialize();
+      setAvailableBibles(bibleManager.getAllTranslations());
+      setSelectedBibleId(bibleManager.getCurrentTranslation().id);
+    };
+    loadBibles();
+
+    const unsubscribe = bibleManager.subscribe(() => {
+       setAvailableBibles(bibleManager.getAllTranslations());
+    });
+    return unsubscribe;
+  }, []);
+
   const transcriptionPromptTimeoutRef = useRef<number | null>(null);
   const transcriptionPromptReasonRef = useRef<"limit" | "snooze" | null>(null);
   const transcriptionStatusRef = useRef<TranscriptionStatus>("idle");
@@ -876,13 +924,33 @@ const SmartVersesPage: React.FC = () => {
   // BIBLE SEARCH HANDLERS
   // =============================================================================
 
-  const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim()) return [];
+  const handleSearch = useCallback(async (rawQuery: string) => {
+    if (!rawQuery.trim()) return [];
+
+    // Parse for @translation
+    let query = rawQuery;
+    let explicitTranslationId: string | undefined;
+
+    if (query.startsWith("@")) {
+        const match = query.match(/^@(\w+)\s+(.*)/);
+        if (match) {
+            const token = match[1].toLowerCase();
+            const rest = match[2];
+            
+            // Check if token matches a valid translation
+            const translation = bibleManager.getTranslation(token);
+            if (translation) {
+                explicitTranslationId = translation.id;
+                query = rest;
+            }
+            // If unknown token, we treat it as normal query text (fallback)
+        }
+    }
 
     const queryMessage: SmartVersesChatMessage = {
       id: `query-${Date.now()}`,
       type: "query",
-      content: query,
+      content: rawQuery, // Show original query in chat
       timestamp: Date.now(),
     };
 
@@ -907,7 +975,28 @@ const SmartVersesPage: React.FC = () => {
       // STEP 1: Try direct Bible reference parsing (bcv_parser)
       // This handles: "John 3:16", "John 3:1-4, Romans 3:3", etc.
       console.log("🔍 Step 1: Direct reference parsing for:", query);
+      // NOTE: detectAndLookupReferences does NOT currently support overriding the translation source.
+      // It currently calls lookupVerse which uses the singleton BibleManager default.
+      // We need to fetch the Text for these References using the specific translation if provided.
+      
       references = await detectAndLookupReferences(query);
+      
+      // Post-process references if explicit translation is requested
+      if (explicitTranslationId && references.length > 0) {
+         const translation = bibleManager.getTranslation(explicitTranslationId);
+         if (translation && translation.data) {
+             references = references.map(ref => {
+                 const key = `${ref.book} ${ref.chapter}:${ref.verse}`;
+                 const newText = translation.data![key];
+                 return {
+                     ...ref,
+                     verseText: newText || ref.verseText, // Fallback if missing in target translation
+                     translationId: explicitTranslationId
+                 };
+             });
+         }
+      }
+      
       console.log("🔍 Direct parsing found:", references.length, "references");
 
       // STEP 2: If still no references found, try AI/offline/text search
@@ -931,6 +1020,22 @@ const SmartVersesPage: React.FC = () => {
               references = await resolveParaphrasedVerses(
                 offlineAnalysis.paraphrasedVerses
               );
+              
+              if (explicitTranslationId && references.length > 0) {
+                 const translation = bibleManager.getTranslation(explicitTranslationId);
+                 if (translation && translation.data) {
+                     references = references.map(ref => {
+                         const key = `${ref.book} ${ref.chapter}:${ref.verse}`;
+                         const newText = translation.data![key];
+                         return {
+                             ...ref,
+                             verseText: newText || ref.verseText,
+                             translationId: explicitTranslationId
+                         };
+                     });
+                 }
+              }
+
               console.log(
                 "🧠 Offline paraphrase found:",
                 references.length,
@@ -940,6 +1045,21 @@ const SmartVersesPage: React.FC = () => {
               console.log("📝 Offline paraphrase empty, falling back to text search");
               searchMethod = "text";
               references = await searchBibleTextAsReferences(query, 5);
+              
+              if (explicitTranslationId && references.length > 0) {
+                 const translation = bibleManager.getTranslation(explicitTranslationId);
+                 if (translation && translation.data) {
+                     references = references.map(ref => {
+                         const key = `${ref.book} ${ref.chapter}:${ref.verse}`;
+                         const newText = translation.data![key];
+                         return {
+                             ...ref,
+                             verseText: newText || ref.verseText,
+                             translationId: explicitTranslationId
+                         };
+                     });
+                 }
+              }
             }
           } else {
           
@@ -959,6 +1079,22 @@ const SmartVersesPage: React.FC = () => {
                 provider as 'openai' | 'gemini' | 'groq',
                 model
               );
+              
+              if (explicitTranslationId && references.length > 0) {
+                 const translation = bibleManager.getTranslation(explicitTranslationId);
+                 if (translation && translation.data) {
+                     references = references.map(ref => {
+                         const key = `${ref.book} ${ref.chapter}:${ref.verse}`;
+                         const newText = translation.data![key];
+                         return {
+                             ...ref,
+                             verseText: newText || ref.verseText,
+                             translationId: explicitTranslationId
+                         };
+                     });
+                 }
+              }
+
               console.log("🤖 AI search found:", references.length, "references");
             } else {
               console.warn("⚠️ AI search enabled but not configured. Provider:", provider, "Has API key:", hasApiKey);
@@ -966,6 +1102,22 @@ const SmartVersesPage: React.FC = () => {
               console.log("📝 Falling back to text search (AI not properly configured)");
               searchMethod = "text";
               references = await searchBibleTextAsReferences(query, 5);
+              
+               if (explicitTranslationId && references.length > 0) {
+                 const translation = bibleManager.getTranslation(explicitTranslationId);
+                 if (translation && translation.data) {
+                     references = references.map(ref => {
+                         const key = `${ref.book} ${ref.chapter}:${ref.verse}`;
+                         const newText = translation.data![key];
+                         return {
+                             ...ref,
+                             verseText: newText || ref.verseText,
+                             translationId: explicitTranslationId
+                         };
+                     });
+                 }
+              }
+
               console.log("📝 Text search found:", references.length, "references");
             }
           }
@@ -974,6 +1126,21 @@ const SmartVersesPage: React.FC = () => {
           console.log("📝 Step 2: Text search (AI disabled)");
           searchMethod = "text";
           references = await searchBibleTextAsReferences(query, 5);
+          
+          if (explicitTranslationId && references.length > 0) {
+                 const translation = bibleManager.getTranslation(explicitTranslationId);
+                 if (translation && translation.data) {
+                     references = references.map(ref => {
+                         const key = `${ref.book} ${ref.chapter}:${ref.verse}`;
+                         const newText = translation.data![key];
+                         return {
+                             ...ref,
+                             verseText: newText || ref.verseText,
+                             translationId: explicitTranslationId
+                         };
+                     });
+                 }
+              }
           console.log("📝 Text search found:", references.length, "references");
         }
       }
@@ -2763,14 +2930,71 @@ const SmartVersesPage: React.FC = () => {
             </div>
           )}
         </div>
-        <p style={{
-          margin: 0,
-          fontSize: "0.9rem",
-          lineHeight: 1.5,
-          color: "var(--app-text-color)",
-        }}>
-          {renderHighlightedVerseText(ref.verseText, ref.highlight)}
-        </p>
+        <div style={{ marginBottom: "var(--spacing-3)" }}>
+           <p style={{
+              margin: 0,
+              fontSize: "0.9rem",
+              lineHeight: 1.5,
+              color: "var(--app-text-color)",
+            }}>
+              {renderHighlightedVerseText(ref.verseText, ref.highlight)}
+            </p>
+             {/* Per-card translation selector */}
+            <div style={{ marginTop: "4px", display: "flex", justifyContent: "flex-end" }}>
+               <select
+                 className="translation-selector-sm"
+                 style={{ 
+                    fontSize: "0.7rem", 
+                    padding: "2px 4px", 
+                    borderRadius: "4px",
+                    background: "var(--app-bg-color)",
+                    color: "var(--app-text-color-secondary)",
+                    border: "1px solid var(--app-border-color)"
+                 }}
+                 value={ref.translationId || selectedBibleId} // Fallback to page context if not specific
+                 fontSize="0.7rem"
+                 onClick={(e) => e.stopPropagation()} // Prevent card collapse
+                 onChange={async (e) => {
+                    const newTranslationId = e.target.value;
+                    const translation = bibleManager.getTranslation(newTranslationId);
+                    if (!translation) return;
+
+                    // Re-fetch verse text for this specific reference
+                    const verseRef = `${ref.book} ${ref.chapter}:${ref.verse}`;
+                    // We need a way to look up specific verse in specific translation.
+                    // The lookupVerse method currently uses global or internal state.
+                    // We need to implement direct lookup on BibleManager or similar.
+                    // Let's assume we can access translation data directly:
+                    
+                     let newText = "";
+                     if (translation.data) {
+                         // Need to handle lookup formats. Data is flattened "Book Chapter:Verse"
+                         // Ensure generic "John 3:16" matches key in data.
+                         // But lookupVerse handles various formats.
+                         // For now, let's try direct key access if data is "Book C:V".
+                         // Note: detectedReferences have standard book names
+                         newText = translation.data[verseRef] || "Verse not found in translation";
+                     }
+
+                    // Update state - we need to update 'detectedReferences' state immutably
+                    setDetectedReferences(prev => prev.map(r => {
+                        if (r.id === ref.id) {
+                            return { 
+                                ...r, 
+                                verseText: newText,
+                                translationId: newTranslationId
+                            };
+                        }
+                        return r;
+                    }));
+                 }}
+               >
+                 {availableBibles.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                 ))}
+               </select>
+            </div>
+        </div>
         {isParaphrase && ref.matchedPhrase && (
           <p style={{
             margin: "var(--spacing-2) 0 0",
@@ -3274,7 +3498,50 @@ const SmartVersesPage: React.FC = () => {
           padding: "var(--spacing-3) var(--spacing-4)",
           borderTop: "1px solid var(--app-border-color)",
           backgroundColor: "var(--app-header-bg)",
+          position: "relative" // For dropdown positioning
         }}>
+          {showBibleDropdown && (
+             <div style={{
+                position: "absolute",
+                bottom: "100%", 
+                left: "var(--spacing-4)",
+                right: "var(--spacing-4)",
+                maxHeight: "200px",
+                overflowY: "auto",
+                backgroundColor: "var(--app-bg-color)",
+                border: "1px solid var(--app-border-color)",
+                borderRadius: "8px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                marginBottom: "var(--spacing-2)",
+                zIndex: 10
+             }}>
+                {availableBibles
+                   .filter(b => {
+                       const filter = bibleDropdownFilter.toLowerCase();
+                       return b.id.includes(filter) || b.name.toLowerCase().includes(filter);
+                   })
+                   .map(b => (
+                    <div 
+                      key={b.id}
+                      onClick={() => handleSelectTranslationFromDropdown(b.id)}
+                      style={{
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        borderBottom: "1px solid var(--app-border-color)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      }}
+                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--app-header-bg)"}
+                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                    >
+                        <span><span style={{color: "var(--app-primary-color)", fontWeight: "bold"}}>@{b.id}</span> - {b.name}</span>
+                        {b.source === "user" && <span style={{fontSize: "0.7em", opacity: 0.7}}>User</span>}
+                    </div>
+                ))}
+             </div>
+          )}
+
           <div style={{
             display: "flex",
             gap: "var(--spacing-2)",
@@ -3284,9 +3551,9 @@ const SmartVersesPage: React.FC = () => {
               ref={inputRef}
               type="text"
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
-              placeholder="Search Bible reference or phrase..."
+              placeholder="Search Bible reference (e.g. '@kjv John 3:16')"
               disabled={isSearching}
               style={{
                 flex: 1,

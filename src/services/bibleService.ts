@@ -7,6 +7,7 @@
 import { bcv_parser } from "bible-passage-reference-parser/esm/bcv_parser";
 import * as en from "bible-passage-reference-parser/esm/lang/en";
 import { LayoutType } from "../types";
+import { bibleManager } from "./BibleManager";
 
 // Types for our Bible service
 export interface BibleReference {
@@ -36,10 +37,6 @@ export interface VerseSlide {
 
 // Singleton parser instance
 let bcvParser: bcv_parser | null = null;
-
-// Cached verses
-let versesCache: Record<string, string> | null = null;
-let versesLoadPromise: Promise<Record<string, string>> | null = null;
 
 // Book name mapping from OSIS to standard names
 const OSIS_TO_BOOK_NAME: Record<string, string> = {
@@ -127,34 +124,12 @@ function getParser(): bcv_parser {
 }
 
 /**
- * Load verses from the JSON file
+ * Load verses from the JSON file via BibleManager
  */
 export async function loadVerses(): Promise<Record<string, string>> {
-  if (versesCache) {
-    return versesCache;
-  }
-
-  if (versesLoadPromise) {
-    return versesLoadPromise;
-  }
-
-  versesLoadPromise = fetch("/data/verses-kjv.json")
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`Failed to load verses: ${response.statusText}`);
-      }
-      return response.json();
-    })
-    .then((data) => {
-      versesCache = data;
-      return data;
-    })
-    .catch((error) => {
-      versesLoadPromise = null;
-      throw error;
-    });
-
-  return versesLoadPromise;
+  await bibleManager.initialize();
+  const currentTranslation = bibleManager.getCurrentTranslation();
+  return currentTranslation.data || {};
 }
 
 /**
