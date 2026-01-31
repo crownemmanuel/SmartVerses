@@ -510,31 +510,68 @@ const RecorderPage: React.FC = () => {
     if (!settings) return;
     setCameraError(null);
     const requestSeq = ++videoPreviewRequestSeqRef.current;
-    try {
-      if (videoStreamRef.current) {
-        videoStreamRef.current.getTracks().forEach((t) => t.stop());
-        videoStreamRef.current = null;
-      }
-      const stream = await getVideoStream(
-        settings.selectedVideoDeviceId,
-        settings.videoResolution,
-        settings.selectedVideoAudioDeviceId ?? settings.selectedAudioDeviceId,
-        false
-      );
-
-      // If user disabled video while we were requesting permission, immediately stop.
-      if (!isVideoEnabled || requestSeq !== videoPreviewRequestSeqRef.current) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-
-      videoStreamRef.current = stream;
-      setVideoPreviewStream(stream);
-    } catch (err) {
-      console.error("Failed to start video preview:", err);
-      setCameraError(err instanceof Error ? err.message : "Failed to access camera");
+    if (videoStreamRef.current) {
+      videoStreamRef.current.getTracks().forEach((t) => t.stop());
+      videoStreamRef.current = null;
     }
-  }, [settings, isVideoEnabled]);
+
+    const audioDeviceId =
+      settings.selectedVideoAudioDeviceId ?? settings.selectedAudioDeviceId;
+    const selectedVideoDeviceId = settings.selectedVideoDeviceId ?? null;
+    const candidateDeviceIds = new Set<string | null>();
+    candidateDeviceIds.add(selectedVideoDeviceId);
+    videoDevices.forEach((device) => {
+      if (device.deviceId && device.deviceId !== selectedVideoDeviceId) {
+        candidateDeviceIds.add(device.deviceId);
+      }
+    });
+
+    let lastError: unknown = null;
+    for (const deviceId of candidateDeviceIds) {
+      try {
+        const stream = await getVideoStream(
+          deviceId,
+          settings.videoResolution,
+          audioDeviceId,
+          false
+        );
+
+        // If user disabled video while we were requesting permission, immediately stop.
+        if (!isVideoEnabled || requestSeq !== videoPreviewRequestSeqRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        videoStreamRef.current = stream;
+        setVideoPreviewStream(stream);
+        if (deviceId && deviceId !== settings.selectedVideoDeviceId) {
+          updateSettings({ selectedVideoDeviceId: deviceId });
+        }
+        return;
+      } catch (err) {
+        lastError = err;
+        const errorName =
+          err && typeof err === "object" && "name" in err
+            ? String((err as { name?: unknown }).name)
+            : undefined;
+        if (errorName !== "NotReadableError") {
+          break;
+        }
+      }
+    }
+
+    setVideoPreviewStream(null);
+    console.error("Failed to start video preview:", lastError);
+    const finalErrorName =
+      lastError && typeof lastError === "object" && "name" in lastError
+        ? String((lastError as { name?: unknown }).name)
+        : undefined;
+    if (finalErrorName === "NotReadableError") {
+      setCameraError("Camera is busy. Choose a different camera.");
+    } else {
+      setCameraError(lastError instanceof Error ? lastError.message : "Failed to access camera");
+    }
+  }, [settings, isVideoEnabled, videoDevices, updateSettings]);
 
   // Stop video preview
   const stopVideoPreview = useCallback(() => {

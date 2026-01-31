@@ -120,19 +120,37 @@ export function saveEnabledFeatures(features: EnabledFeatures): void {
 
 export async function getVideoDevices(): Promise<MediaDeviceOption[]> {
   try {
-    // Request permission first to get full device labels
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    stream.getTracks().forEach((track) => track.stop());
+    const buildOptions = (devices: MediaDeviceInfo[]) =>
+      devices
+        .filter((d) => d.kind === "videoinput")
+        .map((d, index) => ({
+          deviceId: d.deviceId,
+          label: d.label || `Camera ${index + 1}`,
+          kind: "videoinput" as const,
+          isDefault: index === 0,
+        }));
 
     const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices
-      .filter((d) => d.kind === "videoinput")
-      .map((d, index) => ({
-        deviceId: d.deviceId,
-        label: d.label || `Camera ${index + 1}`,
-        kind: "videoinput" as const,
-        isDefault: index === 0,
-      }));
+    const videoInputs = devices.filter((d) => d.kind === "videoinput");
+    if (videoInputs.length === 0) {
+      return [];
+    }
+
+    const labelsMissing = videoInputs.every((d) => !d.label);
+    if (!labelsMissing) {
+      return buildOptions(devices);
+    }
+
+    // Attempt to unlock labels if permission is available.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach((track) => track.stop());
+      const refreshed = await navigator.mediaDevices.enumerateDevices();
+      return buildOptions(refreshed);
+    } catch (err) {
+      console.warn("Video permission request failed; using unlabeled devices:", err);
+      return buildOptions(devices);
+    }
   } catch (err) {
     console.error("Failed to enumerate video devices:", err);
     return [];
@@ -142,19 +160,36 @@ export async function getVideoDevices(): Promise<MediaDeviceOption[]> {
 // WebRTC audio devices (fallback)
 export async function getAudioDevices(): Promise<MediaDeviceOption[]> {
   try {
-    // Request permission first to get full device labels
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach((track) => track.stop());
+    const buildOptions = (devices: MediaDeviceInfo[]) =>
+      devices
+        .filter((d) => d.kind === "audioinput")
+        .map((d, index) => ({
+          deviceId: d.deviceId,
+          label: d.label || `Microphone ${index + 1}`,
+          kind: "audioinput" as const,
+          isDefault: index === 0,
+        }));
 
     const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices
-      .filter((d) => d.kind === "audioinput")
-      .map((d, index) => ({
-        deviceId: d.deviceId,
-        label: d.label || `Microphone ${index + 1}`,
-        kind: "audioinput" as const,
-        isDefault: index === 0,
-      }));
+    const audioInputs = devices.filter((d) => d.kind === "audioinput");
+    if (audioInputs.length === 0) {
+      return [];
+    }
+
+    const labelsMissing = audioInputs.every((d) => !d.label);
+    if (!labelsMissing) {
+      return buildOptions(devices);
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      const refreshed = await navigator.mediaDevices.enumerateDevices();
+      return buildOptions(refreshed);
+    } catch (err) {
+      console.warn("Audio permission request failed; using unlabeled devices:", err);
+      return buildOptions(devices);
+    }
   } catch (err) {
     console.error("Failed to enumerate audio devices:", err);
     return [];
