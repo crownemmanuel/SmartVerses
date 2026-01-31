@@ -24,7 +24,7 @@ const ProPresenterEnableNetworkScreen: React.FC<
             control. Make sure the network port is enabled.
           </p>
           <p className="onboarding-body" style={{ fontSize: "0.95rem" }}>
-            Default port: <strong>59343</strong>
+            Default port: <strong>1025</strong>
           </p>
 
           <div className="onboarding-buttons">
