@@ -926,207 +926,81 @@ async fn run_combined_server(port: u16, app: tauri::AppHandle) -> Result<(), Str
             }
         });
 
-    // API v1: Timer stop
-    let api_timer_stop_state = state.clone();
-    let api_timer_stop_app = app.clone();
-    let api_timer_stop_route = warp::path("api")
-        .and(warp::path("v1"))
-        .and(warp::path("timer"))
-        .and(warp::path("stop"))
-        .and(warp::path::end())
-        .and(warp::post())
-        .and_then(move || {
-            let state_clone = api_timer_stop_state.clone();
-            let app_clone = api_timer_stop_app.clone();
-            async move {
-                if !*state_clone.api_enabled.read().await {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({ "error": "api_disabled" }),
-                        StatusCode::FORBIDDEN,
-                    ));
-                }
+    // Helper macro to create simple event-emitting API routes
+    macro_rules! create_event_route {
+        ($state:expr, $app:expr, $($segment:expr),+ => $event:expr) => {
+            {
+                let state_clone = $state.clone();
+                let app_clone = $app.clone();
+                let event_name = $event;
+                warp::path("api")
+                    $(.and(warp::path($segment)))+
+                    .and(warp::path::end())
+                    .and(warp::post())
+                    .and_then(move || {
+                        let state_inner = state_clone.clone();
+                        let app_inner = app_clone.clone();
+                        let event = event_name;
+                        async move {
+                            if !*state_inner.api_enabled.read().await {
+                                return Ok::<_, warp::Rejection>(json_response(
+                                    serde_json::json!({ "error": "api_disabled" }),
+                                    StatusCode::FORBIDDEN,
+                                ));
+                            }
 
-                if let Err(err) = app_clone.emit(
-                    "api-timer-stop",
-                    serde_json::json!({}),
-                ) {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({
-                            "error": "emit_failed",
-                            "detail": err.to_string()
-                        }),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    ));
-                }
+                            if let Err(err) = app_inner.emit(event, serde_json::json!({})) {
+                                return Ok::<_, warp::Rejection>(json_response(
+                                    serde_json::json!({
+                                        "error": "emit_failed",
+                                        "detail": err.to_string()
+                                    }),
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                ));
+                            }
 
-                Ok::<_, warp::Rejection>(json_response(
-                    serde_json::json!({ "status": "queued" }),
-                    StatusCode::OK,
-                ))
+                            Ok::<_, warp::Rejection>(json_response(
+                                serde_json::json!({ "status": "queued" }),
+                                StatusCode::OK,
+                            ))
+                        }
+                    })
             }
-        });
+        };
+    }
+
+    // API v1: Timer stop
+    let api_timer_stop_route = create_event_route!(
+        state,
+        app,
+        "v1", "timer", "stop" => "api-timer-stop"
+    );
 
     // API v1: Video recording start/stop
-    let api_video_start_state = state.clone();
-    let api_video_start_app = app.clone();
-    let api_video_recording_start_route = warp::path("api")
-        .and(warp::path("v1"))
-        .and(warp::path("recording"))
-        .and(warp::path("video"))
-        .and(warp::path("start"))
-        .and(warp::path::end())
-        .and(warp::post())
-        .and_then(move || {
-            let state_clone = api_video_start_state.clone();
-            let app_clone = api_video_start_app.clone();
-            async move {
-                if !*state_clone.api_enabled.read().await {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({ "error": "api_disabled" }),
-                        StatusCode::FORBIDDEN,
-                    ));
-                }
+    let api_video_recording_start_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "video", "start" => "api-video-recording-start"
+    );
 
-                if let Err(err) = app_clone.emit(
-                    "api-video-recording-start",
-                    serde_json::json!({}),
-                ) {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({
-                            "error": "emit_failed",
-                            "detail": err.to_string()
-                        }),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    ));
-                }
-
-                Ok::<_, warp::Rejection>(json_response(
-                    serde_json::json!({ "status": "queued" }),
-                    StatusCode::OK,
-                ))
-            }
-        });
-
-    let api_video_stop_state = state.clone();
-    let api_video_stop_app = app.clone();
-    let api_video_recording_stop_route = warp::path("api")
-        .and(warp::path("v1"))
-        .and(warp::path("recording"))
-        .and(warp::path("video"))
-        .and(warp::path("stop"))
-        .and(warp::path::end())
-        .and(warp::post())
-        .and_then(move || {
-            let state_clone = api_video_stop_state.clone();
-            let app_clone = api_video_stop_app.clone();
-            async move {
-                if !*state_clone.api_enabled.read().await {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({ "error": "api_disabled" }),
-                        StatusCode::FORBIDDEN,
-                    ));
-                }
-
-                if let Err(err) = app_clone.emit(
-                    "api-video-recording-stop",
-                    serde_json::json!({}),
-                ) {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({
-                            "error": "emit_failed",
-                            "detail": err.to_string()
-                        }),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    ));
-                }
-
-                Ok::<_, warp::Rejection>(json_response(
-                    serde_json::json!({ "status": "queued" }),
-                    StatusCode::OK,
-                ))
-            }
-        });
+    let api_video_recording_stop_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "video", "stop" => "api-video-recording-stop"
+    );
 
     // API v1: Audio recording start/stop
-    let api_audio_start_state = state.clone();
-    let api_audio_start_app = app.clone();
-    let api_audio_recording_start_route = warp::path("api")
-        .and(warp::path("v1"))
-        .and(warp::path("recording"))
-        .and(warp::path("audio"))
-        .and(warp::path("start"))
-        .and(warp::path::end())
-        .and(warp::post())
-        .and_then(move || {
-            let state_clone = api_audio_start_state.clone();
-            let app_clone = api_audio_start_app.clone();
-            async move {
-                if !*state_clone.api_enabled.read().await {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({ "error": "api_disabled" }),
-                        StatusCode::FORBIDDEN,
-                    ));
-                }
+    let api_audio_recording_start_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "audio", "start" => "api-audio-recording-start"
+    );
 
-                if let Err(err) = app_clone.emit(
-                    "api-audio-recording-start",
-                    serde_json::json!({}),
-                ) {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({
-                            "error": "emit_failed",
-                            "detail": err.to_string()
-                        }),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    ));
-                }
-
-                Ok::<_, warp::Rejection>(json_response(
-                    serde_json::json!({ "status": "queued" }),
-                    StatusCode::OK,
-                ))
-            }
-        });
-
-    let api_audio_stop_state = state.clone();
-    let api_audio_stop_app = app.clone();
-    let api_audio_recording_stop_route = warp::path("api")
-        .and(warp::path("v1"))
-        .and(warp::path("recording"))
-        .and(warp::path("audio"))
-        .and(warp::path("stop"))
-        .and(warp::path::end())
-        .and(warp::post())
-        .and_then(move || {
-            let state_clone = api_audio_stop_state.clone();
-            let app_clone = api_audio_stop_app.clone();
-            async move {
-                if !*state_clone.api_enabled.read().await {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({ "error": "api_disabled" }),
-                        StatusCode::FORBIDDEN,
-                    ));
-                }
-
-                if let Err(err) = app_clone.emit(
-                    "api-audio-recording-stop",
-                    serde_json::json!({}),
-                ) {
-                    return Ok::<_, warp::Rejection>(json_response(
-                        serde_json::json!({
-                            "error": "emit_failed",
-                            "detail": err.to_string()
-                        }),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    ));
-                }
-
-                Ok::<_, warp::Rejection>(json_response(
-                    serde_json::json!({ "status": "queued" }),
-                    StatusCode::OK,
-                ))
-            }
-        });
+    let api_audio_recording_stop_route = create_event_route!(
+        state,
+        app,
+        "v1", "recording", "audio", "stop" => "api-audio-recording-stop"
+    );
 
 
     // API docs route - serve api-docs.html

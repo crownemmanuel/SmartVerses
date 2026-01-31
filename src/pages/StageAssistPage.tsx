@@ -36,6 +36,7 @@ import { loadLiveSlidesSettings } from "../services/liveSlideService";
 import {
   applySmartAutomationsToSchedule,
   mergeScheduleWithLocalAutomations,
+  normalizeScheduleItemAutomations,
 } from "../utils/scheduleSync";
 import LoadScheduleModal from "../components/LoadScheduleModal";
 import ImageScheduleUploadModal from "../components/ImageScheduleUploadModal";
@@ -43,54 +44,6 @@ import RemoteAccessLinkModal from "../components/RemoteAccessLinkModal";
 import ScheduleAutomationModal from "../components/ScheduleAutomationModal";
 import TimerTemplatesModal from "../components/TimerTemplatesModal";
 import "../App.css";
-
-// Recording automation types
-const RECORDING_AUTOMATION_TYPES = [
-  "startVideoRecording",
-  "stopVideoRecording",
-  "startAudioRecording",
-  "stopAudioRecording",
-  "startBothRecording",
-  "stopBothRecording",
-] as const;
-
-function normalizeAutomations(item: ScheduleItem): ScheduleItemAutomation[] {
-  const rawList = Array.isArray(item.automations)
-    ? item.automations
-    : item.automation
-    ? [item.automation]
-    : [];
-
-  // unique by type (slide + stageLayout + recording types)
-  const byType = new Map<
-    ScheduleItemAutomation["type"],
-    ScheduleItemAutomation
-  >();
-  for (const a of rawList) {
-    // tolerate legacy slide automations missing `type` (older saved schedules)
-    const normalized =
-      (a as any)?.type === "slide" || 
-      (a as any)?.type === "stageLayout" ||
-      (a as any)?.type === "midi" ||
-      (a as any)?.type === "http" ||
-      RECORDING_AUTOMATION_TYPES.includes((a as any)?.type)
-        ? (a as ScheduleItemAutomation)
-        : (a as any)?.presentationUuid &&
-          typeof (a as any)?.slideIndex === "number"
-        ? ({
-            type: "slide",
-            presentationUuid: (a as any).presentationUuid,
-            slideIndex: (a as any).slideIndex,
-            presentationName: (a as any).presentationName,
-            activationClicks: (a as any).activationClicks,
-          } as ScheduleItemAutomation)
-        : null;
-
-    if (normalized) byType.set(normalized.type, normalized);
-  }
-
-  return Array.from(byType.values());
-}
 
 const StageAssistPage: React.FC = () => {
   const {
@@ -506,7 +459,7 @@ const StageAssistPage: React.FC = () => {
     }
 
     // Trigger ProPresenter automation(s) if configured
-    const sessionAutomations = normalizeAutomations(session);
+    const sessionAutomations = normalizeScheduleItemAutomations(session);
     if (sessionAutomations.length > 0) {
       try {
         // Run stage layout first (so the stage is set before slide triggers)
@@ -2283,7 +2236,7 @@ const StageAssistPage: React.FC = () => {
                       title={
                         (item.automations && item.automations.length > 0) ||
                         item.automation
-                          ? `Automation: ${normalizeAutomations(item)
+                          ? `Automation: ${normalizeScheduleItemAutomations(item)
                               .map((a) => {
                                 if (a.type === "slide") return "Slide";
                                 if (a.type === "stageLayout") return "Stage Layout";
@@ -2299,15 +2252,15 @@ const StageAssistPage: React.FC = () => {
                       style={{
                         padding: "var(--spacing-2) var(--spacing-3)",
                         backgroundColor:
-                          normalizeAutomations(item).length > 0
+                          normalizeScheduleItemAutomations(item).length > 0
                             ? "rgb(147, 51, 234)"
                             : "var(--app-button-bg-color)",
                         color:
-                          normalizeAutomations(item).length > 0
+                          normalizeScheduleItemAutomations(item).length > 0
                             ? "white"
                             : "var(--app-button-text-color)",
                         border:
-                          normalizeAutomations(item).length > 0
+                          normalizeScheduleItemAutomations(item).length > 0
                             ? "none"
                             : "1px solid var(--app-border-color)",
                         borderRadius: "6px",
@@ -2533,7 +2486,7 @@ const StageAssistPage: React.FC = () => {
           onSave={(automations) =>
             handleSaveAutomation(automationModalItem.id, automations)
           }
-          currentAutomations={normalizeAutomations(automationModalItem)}
+          currentAutomations={normalizeScheduleItemAutomations(automationModalItem)}
           sessionName={automationModalItem.session}
         />
       )}

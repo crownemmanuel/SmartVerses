@@ -28,6 +28,7 @@ import {
   ProPresenterStageLayout,
   ProPresenterConnection,
   HttpAutomationMethod,
+  RECORDING_AUTOMATION_TYPES,
 } from "../types/propresenter";
 import {
   loadSmartAutomations,
@@ -36,23 +37,8 @@ import {
 } from "../utils/testimoniesStorage";
 import "../App.css";
 
-// Recording automation types
-type RecordingAutomationType = 
-  | "startVideoRecording"
-  | "stopVideoRecording"
-  | "startAudioRecording"
-  | "stopAudioRecording"
-  | "startBothRecording"
-  | "stopBothRecording";
-
-const RECORDING_AUTOMATION_TYPES: RecordingAutomationType[] = [
-  "startVideoRecording",
-  "stopVideoRecording",
-  "startAudioRecording",
-  "stopAudioRecording",
-  "startBothRecording",
-  "stopBothRecording",
-];
+// Recording automation type derived from the shared constant
+type RecordingAutomationType = typeof RECORDING_AUTOMATION_TYPES[number];
 
 const HTTP_METHODS: HttpAutomationMethod[] = ["GET", "POST", "PUT", "DELETE"];
 

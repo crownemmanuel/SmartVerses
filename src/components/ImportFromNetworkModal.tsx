@@ -17,7 +17,7 @@ interface ImportFromNetworkModalProps {
     templateName: string,
     slides: Pick<Slide, "text" | "layout" | "isAutoScripture">[],
     options?: { liveSlidesSessionId?: string; liveSlidesLinked?: boolean }
-  ) => void;
+  ) => boolean;
 }
 
 const itemKey = (playlistId: string, itemId: string) =>
@@ -137,20 +137,46 @@ const ImportFromNetworkModal: React.FC<ImportFromNetworkModalProps> = ({
 
   const handleImport = () => {
     let imported = 0;
+    let attempted = 0;
+    const failedItems: string[] = [];
+
+    // Clear any previous errors
+    setError(null);
 
     masterPlaylists.forEach((playlist) => {
       playlist.items.forEach((item) => {
         const key = itemKey(playlist.id, item.id);
         if (selectedSessionIds.has(key)) {
+          attempted++;
           const slides = convertPlaylistItemSlides(item);
-          onImport(item.title, item.templateName, slides);
-          imported++;
+          const success = onImport(item.title, item.templateName, slides);
+          if (success) {
+            imported++;
+          } else {
+            failedItems.push(item.title);
+          }
         }
       });
     });
 
     setImportedCount(imported);
-    setShowSuccess(true);
+    // Show success if at least one item imported, or show error if all failed
+    if (imported > 0) {
+      setShowSuccess(true);
+      if (failedItems.length > 0) {
+        // Store failed items info for display
+        setError(
+          `Some items failed to import (missing templates): ${failedItems.join(", ")}`
+        );
+      }
+    } else if (attempted > 0) {
+      // All imports failed
+      setError(
+        `Failed to import ${attempted} item${attempted !== 1 ? "s" : ""}. ` +
+        `Template${failedItems.length !== 1 ? "s" : ""} not found: ${failedItems.join(", ")}`
+      );
+      setShowSuccess(false);
+    }
   };
 
   const totalItemsCount = masterPlaylists.reduce(
@@ -198,6 +224,21 @@ const ImportFromNetworkModal: React.FC<ImportFromNetworkModalProps> = ({
               Successfully imported {importedCount} item
               {importedCount !== 1 ? "s" : ""} from master.
             </div>
+            {error && (
+              <div
+                style={{
+                  marginTop: "12px",
+                  padding: "8px 12px",
+                  borderRadius: "6px",
+                  backgroundColor: "rgba(220, 38, 38, 0.1)",
+                  border: "1px solid rgba(220, 38, 38, 0.3)",
+                  color: "#EF4444",
+                  fontSize: "0.85em",
+                }}
+              >
+                {error}
+              </div>
+            )}
           </div>
         ) : (
           <>

@@ -24,7 +24,7 @@ interface ImportFromLiveSlidesModalProps {
     templateName: string,
     slides: Pick<Slide, "text" | "layout" | "isAutoScripture">[],
     options?: { liveSlidesSessionId?: string; liveSlidesLinked?: boolean }
-  ) => void;
+  ) => boolean;
   templates: Template[];
 }
 
