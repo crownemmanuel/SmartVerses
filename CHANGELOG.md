@@ -2,6 +2,11 @@
 
 All notable changes to SmartVerses will be documented in this file.
 
+## [0.7.7] - 2026-01-31
+
+### Changed
+- Version bump to 0.7.7
+
 ## [0.7.6] - 2026-01-30
 
 ### Changed
