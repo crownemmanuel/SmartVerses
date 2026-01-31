@@ -389,6 +389,7 @@ const SmartVersesPage: React.FC = () => {
 
   // UI refs
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatHistoryLengthRef = useRef(0);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -820,9 +821,16 @@ const SmartVersesPage: React.FC = () => {
     ]
   );
 
-  // Scroll to bottom of chat
+  // Scroll to bottom of chat only when a new message is added (not on in-place updates like translation change on a card)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const prevLen = chatHistoryLengthRef.current;
+    const currLen = chatHistory.length;
+    if (currLen > prevLen) {
+      chatHistoryLengthRef.current = currLen;
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } else {
+      chatHistoryLengthRef.current = currLen;
+    }
   }, [chatHistory]);
 
   useEffect(() => {
@@ -3674,7 +3682,9 @@ const SmartVersesPage: React.FC = () => {
   return (
     <div style={{
       display: "flex",
-      height: "calc(100vh - 60px)",
+      flex: 1,
+      minHeight: 0,
+      height: "100%",
       gap: "var(--spacing-4)",
       padding: "var(--spacing-4)",
       position: "relative",
@@ -3750,6 +3760,7 @@ const SmartVersesPage: React.FC = () => {
       {/* LEFT COLUMN - Bible Search Chat */}
       <div style={{
         flex: 1,
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
         backgroundColor: "var(--app-bg-color)",
@@ -3757,6 +3768,17 @@ const SmartVersesPage: React.FC = () => {
         border: "1px solid var(--app-border-color)",
         overflow: "hidden",
       }}>
+        {/* Sticky header: Bible Search + translation button */}
+        <div style={{
+          flexShrink: 0,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          backgroundColor: "var(--app-bg-color)",
+          paddingTop: "var(--spacing-2)",
+          minHeight: 52,
+          boxSizing: "border-box",
+        }}>
         {/* Header */}
         <div style={{
           padding: "var(--spacing-3) var(--spacing-4)",
@@ -3765,6 +3787,8 @@ const SmartVersesPage: React.FC = () => {
           justifyContent: "space-between",
           alignItems: "center",
           backgroundColor: "var(--app-header-bg)",
+          minHeight: 44,
+          boxSizing: "border-box",
         }}>
           <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
             <FaSearch />
@@ -3911,10 +3935,12 @@ const SmartVersesPage: React.FC = () => {
             </button>
           </div>
         </div>
+        </div>
 
-        {/* Chat Messages */}
+        {/* Chat Messages - scrollable; only this area scrolls */}
         <div style={{
           flex: 1,
+          minHeight: 0,
           overflowY: "auto",
           padding: "var(--spacing-4)",
         }}>
@@ -4257,6 +4283,7 @@ const SmartVersesPage: React.FC = () => {
       {/* RIGHT COLUMN - Live Transcription */}
       <div style={{
         flex: 1,
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
         backgroundColor: "var(--app-bg-color)",
@@ -4264,6 +4291,17 @@ const SmartVersesPage: React.FC = () => {
         border: "1px solid var(--app-border-color)",
         overflow: "hidden",
       }}>
+        {/* Sticky top header: Live Transcription + translation/settings + search */}
+        <div style={{
+          flexShrink: 0,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          backgroundColor: "var(--app-bg-color)",
+          paddingTop: "var(--spacing-2)",
+          minHeight: 52,
+          boxSizing: "border-box",
+        }}>
         {/* Header */}
         <div style={{
           padding: "var(--spacing-3) var(--spacing-4)",
@@ -4272,6 +4310,8 @@ const SmartVersesPage: React.FC = () => {
           justifyContent: "space-between",
           alignItems: "center",
           backgroundColor: "var(--app-header-bg)",
+          minHeight: 44,
+          boxSizing: "border-box",
         }}>
           <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "var(--spacing-2)" }}>
             <FaMicrophone />
@@ -4562,13 +4602,15 @@ const SmartVersesPage: React.FC = () => {
             </label>
           </div>
         </div>
+        </div>
 
-        {/* Transcript Display */}
+        {/* Transcript Display - scrollable; only this area scrolls */}
         <div
           ref={transcriptScrollContainerRef}
           onScroll={handleTranscriptScroll}
           style={{
           flex: 1,
+          minHeight: 0,
           overflowY: "auto",
           padding: "var(--spacing-4)",
         }}
@@ -4936,6 +4978,8 @@ const SmartVersesPage: React.FC = () => {
               style={{
                 maxHeight: detectedPanelCollapsed ? "52px" : "320px",
                 overflowY: detectedPanelCollapsed ? "hidden" : "auto",
+                display: "flex",
+                flexDirection: "column",
               }}
             >
               <div
@@ -4946,6 +4990,10 @@ const SmartVersesPage: React.FC = () => {
                   if (e.key === "Enter" || e.key === " ") setDetectedPanelCollapsed((v) => !v);
                 }}
                 style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 5,
+                  flexShrink: 0,
                   padding: "var(--spacing-2) var(--spacing-4)",
                   backgroundColor: "var(--app-header-bg)",
                   fontSize: "0.85rem",

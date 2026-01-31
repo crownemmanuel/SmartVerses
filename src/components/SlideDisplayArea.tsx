@@ -233,14 +233,9 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
     setLiveSlideId(null);
   };
 
-  const handleRightClick = (event: React.MouseEvent, slideId: string) => {
+  const handleRightClick = (event: React.MouseEvent, _slideId: string) => {
     event.preventDefault();
-    setContextMenu({
-      isOpen: true,
-      x: event.clientX,
-      y: event.clientY,
-      slideId,
-    });
+    // No context menu items for slides; prevent native menu only.
   };
 
   const closeContextMenu = () => {
@@ -250,11 +245,6 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
   const isLiveLinked =
     !!playlistItem?.liveSlidesSessionId &&
     (playlistItem?.liveSlidesLinked ?? true);
-
-  // Note: currentEditingSlide is not used currently; keeping the lookup inline where needed avoids unused var.
-  const currentContextMenuSlide = playlistItem?.slides.find(
-    (s) => s.id === contextMenu.slideId
-  );
 
   const allLayoutOptions: LayoutType[] = [
     "one-line",
@@ -267,19 +257,7 @@ const SlideDisplayArea: React.FC<SlideDisplayAreaProps> = ({
 
   // removed unused variable 'availableLayouts'
 
-  const contextMenuItems = currentContextMenuSlide
-    ? [
-        { label: "Edit", onClick: () => handleEdit(currentContextMenuSlide) },
-        {
-          label: "Delete",
-          onClick: () => {
-            if (currentContextMenuSlide) {
-              onDeleteSlide(currentContextMenuSlide.id);
-            }
-          },
-        },
-      ]
-    : [];
+  const contextMenuItems: { label?: string; onClick?: () => void }[] = [];
 
   // Simple text area styling, can be moved to CSS if not already there
   // Individual input styling can also be added to App.css

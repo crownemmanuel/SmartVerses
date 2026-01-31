@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   FaPlay,
   FaStop,
@@ -16,6 +16,9 @@ import {
   FaSave,
   FaFolderOpen,
   FaEraser,
+  FaChevronDown,
+  FaChevronRight,
+  FaCompress,
 } from "react-icons/fa";
 import {
   ScheduleItem,
@@ -128,6 +131,104 @@ const StageAssistPage: React.FC = () => {
   // Timer Templates Modal state
   const [showTimerTemplatesModal, setShowTimerTemplatesModal] = useState(false);
   const [timerTemplatesMode, setTimerTemplatesMode] = useState<"save" | "load">("load");
+
+  // Collapse state for timer sections (compact view collapses all)
+  const [compactView, setCompactView] = useState(() => {
+    try {
+      const stored = localStorage.getItem("proassist-timer-compact-view");
+      return stored === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [currentSectionCollapsed, setCurrentSectionCollapsed] = useState(false);
+  const [countdownTimerCollapsed, setCountdownTimerCollapsed] = useState(false);
+  const [countDownToTimeCollapsed, setCountDownToTimeCollapsed] = useState(false);
+  const [followMasterCollapsed, setFollowMasterCollapsed] = useState(false);
+
+  const isCurrentSectionCollapsed = compactView || currentSectionCollapsed;
+  const isCountdownTimerCollapsed = compactView || countdownTimerCollapsed;
+  const isCountDownToTimeCollapsed = compactView || countDownToTimeCollapsed;
+  const isFollowMasterCollapsed = compactView || followMasterCollapsed;
+
+  const toggleCompactView = () => {
+    if (compactView) {
+      setCompactView(false);
+      setCurrentSectionCollapsed(false);
+      setCountdownTimerCollapsed(false);
+      setCountDownToTimeCollapsed(false);
+      setFollowMasterCollapsed(false);
+    } else {
+      setCompactView(true);
+      setCurrentSectionCollapsed(true);
+      setCountdownTimerCollapsed(true);
+      setCountDownToTimeCollapsed(true);
+      setFollowMasterCollapsed(true);
+    }
+  };
+
+  const toggleCurrentSection = () => {
+    if (compactView) {
+      setCompactView(false);
+      setCurrentSectionCollapsed(false);
+    } else {
+      setCurrentSectionCollapsed((v) => !v);
+    }
+  };
+  const toggleCountdownTimer = () => {
+    if (compactView) {
+      setCompactView(false);
+      setCountdownTimerCollapsed(false);
+    } else {
+      setCountdownTimerCollapsed((v) => !v);
+    }
+  };
+  const toggleCountDownToTime = () => {
+    if (compactView) {
+      setCompactView(false);
+      setCountDownToTimeCollapsed(false);
+    } else {
+      setCountDownToTimeCollapsed((v) => !v);
+    }
+  };
+  const toggleFollowMasterSection = () => {
+    if (compactView) {
+      setCompactView(false);
+      setFollowMasterCollapsed(false);
+    } else {
+      setFollowMasterCollapsed((v) => !v);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("proassist-timer-compact-view", String(compactView));
+    } catch {
+      // Ignore storage failures (private mode, etc.)
+    }
+  }, [compactView]);
+
+  const compactCountdownRef = useRef<HTMLDivElement | null>(null);
+  const [compactTimerHeight, setCompactTimerHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!compactView) {
+      setCompactTimerHeight(null);
+      return;
+    }
+    const target = compactCountdownRef.current;
+    if (!target) return;
+
+    const updateHeight = () => {
+      const nextHeight = target.getBoundingClientRect().height;
+      setCompactTimerHeight(nextHeight > 0 ? nextHeight : null);
+    };
+
+    updateHeight();
+    const resizeObserver = new ResizeObserver(updateHeight);
+    resizeObserver.observe(target);
+    return () => resizeObserver.disconnect();
+  }, [compactView]);
 
   // Drag and drop state - using pointer events for stability
   const [draggedItemId, setDraggedItemId] = useState<number | null>(null);
@@ -988,15 +1089,20 @@ const StageAssistPage: React.FC = () => {
   return (
     <div
       style={{
+        display: "flex",
+        flexDirection: "column",
         padding: "var(--spacing-4)",
         minHeight: "calc(100vh - 51px)",
+        height: "100%",
         backgroundColor: "var(--app-bg-color)",
         color: "var(--app-text-color)",
+        overflow: "hidden",
       }}
     >
       {/* Header */}
       <div
         style={{
+          flexShrink: 0,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -1264,6 +1370,25 @@ const StageAssistPage: React.FC = () => {
           >
             <FaLink /> Remote Access Link
           </button>
+          <button
+            onClick={toggleCompactView}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 12px",
+              backgroundColor: compactView ? "var(--app-primary-color)" : "var(--app-button-bg-color)",
+              color: compactView ? "white" : "var(--app-button-text-color)",
+              border: "1px solid var(--app-border-color)",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+            }}
+            title={compactView ? "Show all sections" : "Collapse all sections, show only schedule"}
+          >
+            <FaCompress /> Compact
+          </button>
           {enabledConnectionsCount > 0 && (
             <span
               style={{
@@ -1280,111 +1405,176 @@ const StageAssistPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Timer Displays */}
+      {/* Timer Displays - collapsible; hidden entirely in compact view */}
+      {!compactView && (
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "var(--spacing-4)",
+          flexShrink: 0,
           marginBottom: "var(--spacing-4)",
+          backgroundColor: "var(--app-header-bg)",
+          borderRadius: "12px",
+          border: "1px solid var(--app-border-color)",
+          overflow: "hidden",
         }}
       >
-        {/* Next Session */}
-        <div
+        <button
+          type="button"
+          onClick={toggleCurrentSection}
           style={{
-            backgroundColor: "var(--timer-next-bg)",
-            borderRadius: "12px",
-            padding: "var(--spacing-6)",
-            textAlign: "center",
-            color: "white",
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "var(--spacing-2) var(--spacing-4)",
+            backgroundColor: "transparent",
+            border: "none",
+            color: "var(--app-text-color)",
+            cursor: "pointer",
+            fontSize: "0.95rem",
+            fontWeight: 600,
+            textAlign: "left",
           }}
+          title={isCurrentSectionCollapsed ? "Expand current / next" : "Collapse"}
         >
+          <span>Current / Next</span>
+          {isCurrentSectionCollapsed ? (
+            <FaChevronRight size={14} style={{ opacity: 0.8 }} />
+          ) : (
+            <FaChevronDown size={14} style={{ opacity: 0.8 }} />
+          )}
+        </button>
+        {!isCurrentSectionCollapsed && (
           <div
             style={{
-              fontSize: "1rem",
-              fontWeight: 600,
-              marginBottom: "var(--spacing-2)",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "var(--spacing-4)",
+              padding: "0 var(--spacing-4) var(--spacing-4)",
             }}
           >
-            NEXT
-          </div>
-          {nextSession ? (
-            <>
+            {/* Next Session */}
+            <div
+              style={{
+                backgroundColor: "var(--timer-next-bg)",
+                borderRadius: "12px",
+                padding: "var(--spacing-6)",
+                textAlign: "center",
+                color: "white",
+              }}
+            >
               <div
                 style={{
-                  fontSize: "1.25rem",
-                  marginBottom: "var(--spacing-1)",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  marginBottom: "var(--spacing-2)",
                 }}
               >
-                {nextSession.session}
+                NEXT
               </div>
-              <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>
-                {nextSession.startTime}
-              </div>
-            </>
-          ) : (
-            <div style={{ opacity: 0.7 }}>No next session</div>
-          )}
-        </div>
+              {nextSession ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: "1.25rem",
+                      marginBottom: "var(--spacing-1)",
+                    }}
+                  >
+                    {nextSession.session}
+                  </div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>
+                    {nextSession.startTime}
+                  </div>
+                </>
+              ) : (
+                <div style={{ opacity: 0.7 }}>No next session</div>
+              )}
+            </div>
 
-        {/* Current Timer */}
-        <div
-          style={{
-            backgroundColor: timerState.isOverrun
-              ? "#770a0a"
-              : "rgb(34, 197, 94)",
-            borderRadius: "12px",
-            padding: "var(--spacing-6)",
-            textAlign: "center",
-            color: "white",
-          }}
-        >
-          <div style={{ fontSize: "1rem", marginBottom: "var(--spacing-2)" }}>
-            {timerState.sessionName || "Timer"}
+            {/* Current Timer */}
+            <div
+              style={{
+                backgroundColor: timerState.isOverrun
+                  ? "#770a0a"
+                  : "rgb(34, 197, 94)",
+                borderRadius: "12px",
+                padding: "var(--spacing-6)",
+                textAlign: "center",
+                color: "white",
+              }}
+            >
+              <div style={{ fontSize: "1rem", marginBottom: "var(--spacing-2)" }}>
+                {timerState.sessionName || "Timer"}
+              </div>
+              <div
+                style={{
+                  fontSize: "4rem",
+                  fontWeight: 700,
+                  fontFamily: "monospace",
+                }}
+              >
+                {formatTime(timerState.timeLeft)}
+              </div>
+              <div style={{ fontSize: "0.875rem", opacity: 0.8 }}>
+                {timerState.endTime ? `Until ${timerState.endTime}` : "Current"}
+              </div>
+            </div>
           </div>
-          <div
-            style={{
-              fontSize: "4rem",
-              fontWeight: 700,
-              fontFamily: "monospace",
-            }}
-          >
-            {formatTime(timerState.timeLeft)}
-          </div>
-          <div style={{ fontSize: "0.875rem", opacity: 0.8 }}>
-            {timerState.endTime ? `Until ${timerState.endTime}` : "Current"}
-          </div>
-        </div>
+        )}
       </div>
+      )}
 
-      {/* Timer Controls */}
+      {/* Timer Controls - alignItems start so collapsed panels shrink; compact right panel matches left height via smaller padding/fonts */}
       <div
         style={{
+          flexShrink: 0,
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           gap: "var(--spacing-4)",
           marginBottom: "var(--spacing-4)",
+          alignItems: "start",
         }}
       >
-        {/* Countdown Timer */}
+        {/* Countdown Timer - in compact view always expanded; otherwise collapsible */}
         <div
+          ref={compactCountdownRef}
           style={{
             backgroundColor: "rgb(29, 78, 216)",
             borderRadius: "12px",
-            padding: "var(--spacing-4)",
+            padding: 0,
             color: "white",
+            overflow: "hidden",
           }}
         >
-          <div
+          {!compactView && (
+          <button
+            type="button"
+            onClick={toggleCountdownTimer}
             style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "var(--spacing-2) var(--spacing-4)",
+              backgroundColor: "rgba(0,0,0,0.15)",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
               fontSize: "1rem",
               fontWeight: 600,
-              marginBottom: "var(--spacing-3)",
-              textAlign: "center",
+              textAlign: "left",
             }}
+            title={isCountdownTimerCollapsed ? "Expand countdown timer" : "Collapse"}
           >
-            Count Down Timer
-          </div>
+            <span>Count Down Timer</span>
+            {isCountdownTimerCollapsed ? (
+              <FaChevronRight size={14} style={{ opacity: 0.9 }} />
+            ) : (
+              <FaChevronDown size={14} style={{ opacity: 0.9 }} />
+            )}
+          </button>
+          )}
+          {(compactView || !isCountdownTimerCollapsed) && (
+          <div style={{ padding: "var(--spacing-4)" }}>
           <div
             style={{
               display: "flex",
@@ -1595,27 +1785,84 @@ const StageAssistPage: React.FC = () => {
               </button>
             </div>
           </div>
+          </div>
+          )}
         </div>
 
-        {/* Countdown to Time */}
+        {/* Compact view: current session card (name + countdown + until). Otherwise: Count Down to Time */}
+        {compactView ? (
+          <div
+            style={{
+              backgroundColor: timerState.isOverrun
+                ? "#770a0a"
+                : "rgb(34, 197, 94)",
+              borderRadius: "12px",
+              padding: "var(--spacing-3)",
+              color: "white",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              gap: "2px",
+              height: compactTimerHeight ? `${compactTimerHeight}px` : "auto",
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>
+              {timerState.sessionName || "Timer"}
+            </div>
+            <div
+              style={{
+                fontSize: "2rem",
+                fontWeight: 700,
+                fontFamily: "monospace",
+                lineHeight: 1.1,
+              }}
+            >
+              {formatTime(timerState.timeLeft)}
+            </div>
+            <div style={{ fontSize: "0.75rem", opacity: 0.9 }}>
+              {timerState.endTime ? `Until ${timerState.endTime}` : "Current"}
+            </div>
+          </div>
+        ) : (
         <div
           style={{
             backgroundColor: "rgb(29, 78, 216)",
             borderRadius: "12px",
-            padding: "var(--spacing-4)",
+            padding: 0,
             color: "white",
+            overflow: "hidden",
           }}
         >
-          <div
+          <button
+            type="button"
+            onClick={toggleCountDownToTime}
             style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "var(--spacing-2) var(--spacing-4)",
+              backgroundColor: "rgba(0,0,0,0.15)",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
               fontSize: "1rem",
               fontWeight: 600,
-              marginBottom: "var(--spacing-3)",
-              textAlign: "center",
+              textAlign: "left",
             }}
+            title={isCountDownToTimeCollapsed ? "Expand count down to time" : "Collapse"}
           >
-            Count Down to Time
-          </div>
+            <span>Count Down to Time</span>
+            {isCountDownToTimeCollapsed ? (
+              <FaChevronRight size={14} style={{ opacity: 0.9 }} />
+            ) : (
+              <FaChevronDown size={14} style={{ opacity: 0.9 }} />
+            )}
+          </button>
+          {!isCountDownToTimeCollapsed && (
+          <div style={{ padding: "var(--spacing-4)" }}>
           <div
             style={{
               display: "flex",
@@ -1764,15 +2011,18 @@ const StageAssistPage: React.FC = () => {
               </button>
             </div>
           </div>
+          </div>
+          )}
         </div>
+        )}
       </div>
 
-      {/* Follow Master Toggle (display-only mode) */}
+      {/* Follow Master Toggle (display-only mode) - collapsible */}
       {(networkSyncSettings.mode === "slave" || networkSyncSettings.mode === "peer") && (
         <div
           style={{
+            flexShrink: 0,
             marginBottom: "var(--spacing-4)",
-            padding: "12px 14px",
             borderRadius: "10px",
             border: isFollowingMaster
               ? "1px solid rgba(34, 197, 94, 0.45)"
@@ -1780,16 +2030,46 @@ const StageAssistPage: React.FC = () => {
             backgroundColor: isFollowingMaster
               ? "rgba(34, 197, 94, 0.08)"
               : "var(--app-input-bg-color)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
+            overflow: "hidden",
           }}
         >
+          <button
+            type="button"
+            onClick={toggleFollowMasterSection}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "12px 14px",
+              backgroundColor: "transparent",
+              border: "none",
+              color: "var(--app-text-color)",
+              cursor: "pointer",
+              fontSize: "0.95rem",
+              fontWeight: 700,
+              textAlign: "left",
+            }}
+            title={isFollowMasterCollapsed ? "Expand Follow Master Timer" : "Collapse"}
+          >
+            <span>Follow Master Timer</span>
+            {isFollowMasterCollapsed ? (
+              <FaChevronRight size={14} style={{ opacity: 0.8 }} />
+            ) : (
+              <FaChevronDown size={14} style={{ opacity: 0.8 }} />
+            )}
+          </button>
+          {!isFollowMasterCollapsed && (
+          <div
+            style={{
+              padding: "0 14px 12px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+            }}
+          >
           <div>
-            <div style={{ fontWeight: 700, marginBottom: "2px" }}>
-              Follow Master Timer
-            </div>
             <div
               style={{
                 fontSize: "0.9em",
@@ -1833,23 +2113,37 @@ const StageAssistPage: React.FC = () => {
               type="checkbox"
               checked={isFollowingMaster}
               onChange={handleToggleFollowMaster}
+              onClick={(e) => e.stopPropagation()}
               style={{ transform: "scale(1.1)" }}
             />
             {isFollowingMaster ? "On" : "Off"}
           </label>
+          </div>
+          )}
         </div>
       )}
 
-      {/* Schedule Table */}
+      {/* Schedule Table - scrollable */}
       <div
         style={{
-          backgroundColor: "var(--app-header-bg)",
-          borderRadius: "12px",
-          border: "1px solid var(--app-border-color)",
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
           marginBottom: "var(--spacing-4)",
           overflow: "hidden",
         }}
       >
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            backgroundColor: "var(--app-header-bg)",
+            borderRadius: "12px",
+            border: "1px solid var(--app-border-color)",
+            overflow: "auto",
+          }}
+        >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ backgroundColor: "rgba(0,0,0,0.2)" }}>
@@ -2303,11 +2597,13 @@ const StageAssistPage: React.FC = () => {
             </button>
           )}
         </div>
+        </div>
       </div>
 
       {/* Controls */}
       <div
         style={{
+          flexShrink: 0,
           display: "flex",
           gap: "var(--spacing-3)",
           flexWrap: "wrap",

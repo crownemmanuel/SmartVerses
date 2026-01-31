@@ -23,7 +23,9 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   menuItems,
   onClose,
 }) => {
-  if (!isOpen) return null;
+  if (!isOpen || menuItems.length === 0) return null;
+
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
 
   const menuStyle: React.CSSProperties = {
     position: "fixed",
@@ -63,8 +65,10 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 
   // Handle click outside to close menu
   React.useEffect(() => {
-    const handleClickOutside = () => {
-      // Basic check, ideally refine to check if click is outside the menu itself
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && menuRef.current.contains(event.target as Node)) {
+        return;
+      }
       onClose();
     };
     if (isOpen) {
@@ -76,7 +80,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   }, [isOpen, onClose]);
 
   return (
-    <div style={menuStyle}>
+    <div ref={menuRef} style={menuStyle}>
       {menuItems.map((item, index) => {
         if (item.isSeparator) {
           return <div key={`sep-${index}`} style={separatorStyle} />;

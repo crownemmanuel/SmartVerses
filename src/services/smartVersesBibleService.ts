@@ -235,9 +235,11 @@ const TRANSCRIPTION_ERRORS: Record<string, string> = {
   'the tronomy': 'Deuteronomy',
   // Single word corrections
   'axe': 'Acts',
+  'revolutions': 'Revelation',
   'romance': 'Romans',
   'viticus': 'Leviticus',
   'route': 'Ruth',
+  'zafanaya': 'Zephaniah',
   'look': 'Luke',
 };
 

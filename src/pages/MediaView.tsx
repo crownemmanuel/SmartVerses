@@ -515,11 +515,15 @@ const MediaView: React.FC = () => {
       ref={containerRef}
       tabIndex={0}
       style={{ 
+        display: "flex",
+        flexDirection: "column",
         padding: "var(--spacing-4)", 
         minHeight: "calc(100vh - 51px)",
+        height: "100%",
         backgroundColor: "var(--app-bg-color)",
         color: "var(--app-text-color)",
         outline: "none",
+        overflow: "hidden",
       }}
     >
 
@@ -730,179 +734,187 @@ const MediaView: React.FC = () => {
         </div>
       )}
 
-      {/* Testimonies List */}
-      {!service ? (
-        <div style={{ textAlign: "center", padding: "var(--spacing-8)" }}>
-          <p style={{ color: "var(--app-text-color-secondary)" }}>
-            Select a date and service to view approved testimonies
-          </p>
-        </div>
-      ) : isLoading ? (
-        <div style={{ textAlign: "center", padding: "var(--spacing-8)" }}>
-          <p style={{ color: "var(--app-text-color-secondary)" }}>Loading...</p>
-        </div>
-      ) : testimonies.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "var(--spacing-8)" }}>
-          <p style={{ color: "var(--app-text-color-secondary)" }}>
-            No testimonies found
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-2)" }}>
-          {testimonies.map((testimony, index) => {
-            const isLive = currentLive?.testimonyId === testimony.id;
-            const isCopied = copiedId === testimony.id;
-            const isSelected = selectedIndex === index;
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "auto",
+        }}
+      >
+        {/* Testimonies List */}
+        {!service ? (
+          <div style={{ textAlign: "center", padding: "var(--spacing-8)" }}>
+            <p style={{ color: "var(--app-text-color-secondary)" }}>
+              Select a date and service to view approved testimonies
+            </p>
+          </div>
+        ) : isLoading ? (
+          <div style={{ textAlign: "center", padding: "var(--spacing-8)" }}>
+            <p style={{ color: "var(--app-text-color-secondary)" }}>Loading...</p>
+          </div>
+        ) : testimonies.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "var(--spacing-8)" }}>
+            <p style={{ color: "var(--app-text-color-secondary)" }}>
+              No testimonies found
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-2)" }}>
+            {testimonies.map((testimony, index) => {
+              const isLive = currentLive?.testimonyId === testimony.id;
+              const isCopied = copiedId === testimony.id;
+              const isSelected = selectedIndex === index;
 
-            return (
-              <div
-                key={testimony.id}
-                onClick={() => setSelectedIndex(index)}
-                style={{
-                  borderRadius: "12px",
-                  padding: "var(--spacing-4)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  backgroundColor: isLive
-                    ? "rgba(220, 38, 38, 0.3)"
-                    : isSelected
-                    ? "var(--app-button-hover-bg-color)"
-                    : "var(--app-header-bg)",
-                  border: isLive
-                    ? "2px solid rgba(220, 38, 38, 0.7)"
-                    : isSelected
-                    ? "2px solid var(--app-primary-color)"
-                    : "1px solid var(--app-border-color)",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease-in-out",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-3)" }}>
-                  {isLive && (
-                    <span
-                      style={{
-                        position: "relative",
-                        display: "flex",
-                        height: "10px",
-                        width: "10px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          position: "absolute",
-                          animation: "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
-                          height: "100%",
-                          width: "100%",
-                          borderRadius: "50%",
-                          backgroundColor: "rgb(248, 113, 113)",
-                          opacity: 0.75,
-                        }}
-                      />
+              return (
+                <div
+                  key={testimony.id}
+                  onClick={() => setSelectedIndex(index)}
+                  style={{
+                    borderRadius: "12px",
+                    padding: "var(--spacing-4)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    backgroundColor: isLive
+                      ? "rgba(220, 38, 38, 0.3)"
+                      : isSelected
+                      ? "var(--app-button-hover-bg-color)"
+                      : "var(--app-header-bg)",
+                    border: isLive
+                      ? "2px solid rgba(220, 38, 38, 0.7)"
+                      : isSelected
+                      ? "2px solid var(--app-primary-color)"
+                      : "1px solid var(--app-border-color)",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease-in-out",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-3)" }}>
+                    {isLive && (
                       <span
                         style={{
                           position: "relative",
-                          display: "inline-flex",
-                          borderRadius: "50%",
+                          display: "flex",
                           height: "10px",
                           width: "10px",
-                          backgroundColor: "rgb(239, 68, 68)",
                         }}
-                      />
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            animation: "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
+                            height: "100%",
+                            width: "100%",
+                            borderRadius: "50%",
+                            backgroundColor: "rgb(248, 113, 113)",
+                            opacity: 0.75,
+                          }}
+                        />
+                        <span
+                          style={{
+                            position: "relative",
+                            display: "inline-flex",
+                            borderRadius: "50%",
+                            height: "10px",
+                            width: "10px",
+                            backgroundColor: "rgb(239, 68, 68)",
+                          }}
+                        />
+                      </span>
+                    )}
+                    {/* Status badge */}
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontSize: "0.75rem",
+                        fontWeight: 500,
+                        textTransform: "uppercase",
+                        backgroundColor:
+                          testimony.status === "approved"
+                            ? "rgba(34, 197, 94, 0.2)"
+                            : testimony.status === "pending"
+                            ? "rgba(251, 191, 36, 0.2)"
+                            : "rgba(220, 38, 38, 0.2)",
+                        color:
+                          testimony.status === "approved"
+                            ? "rgb(34, 197, 94)"
+                            : testimony.status === "pending"
+                            ? "rgb(251, 191, 36)"
+                            : "rgb(220, 38, 38)",
+                      }}
+                    >
+                      {testimony.status}
                     </span>
-                  )}
-                  {/* Status badge */}
-                  <span
-                    style={{
-                      padding: "2px 8px",
-                      borderRadius: "4px",
-                      fontSize: "0.75rem",
-                      fontWeight: 500,
-                      textTransform: "uppercase",
-                      backgroundColor:
-                        testimony.status === "approved"
-                          ? "rgba(34, 197, 94, 0.2)"
-                          : testimony.status === "pending"
-                          ? "rgba(251, 191, 36, 0.2)"
-                          : "rgba(220, 38, 38, 0.2)",
-                      color:
-                        testimony.status === "approved"
-                          ? "rgb(34, 197, 94)"
-                          : testimony.status === "pending"
-                          ? "rgb(251, 191, 36)"
-                          : "rgb(220, 38, 38)",
-                    }}
-                  >
-                    {testimony.status}
-                  </span>
-                  <span style={{ color: "var(--app-text-color)", fontWeight: 500, fontSize: "1.125rem" }}>
-                    {testimony.name}
-                  </span>
-                  <span style={{ color: "var(--app-text-color-secondary)", fontSize: "0.875rem" }}>
-                    → {formatNameForCopy(testimony.name, loadLiveTestimoniesSettings().nameFormatting)}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
-                  <button
-                    onClick={() => handleCopyName(testimony)}
-                    className={isCopied ? "" : "secondary"}
-                    style={{
-                      padding: "var(--spacing-2) var(--spacing-4)",
-                      fontWeight: 500,
-                      borderRadius: "8px",
-                      border: "none",
-                      cursor: "pointer",
-                      backgroundColor: isCopied
-                        ? "var(--success)"
-                        : "rgb(37, 99, 235)",
-                      color: "white",
-                    }}
-                  >
-                    {isCopied ? "Copied!" : "Copy Name"}
-                  </button>
-                  {!isLive ? (
+                    <span style={{ color: "var(--app-text-color)", fontWeight: 500, fontSize: "1.125rem" }}>
+                      {testimony.name}
+                    </span>
+                    <span style={{ color: "var(--app-text-color-secondary)", fontSize: "0.875rem" }}>
+                      → {formatNameForCopy(testimony.name, loadLiveTestimoniesSettings().nameFormatting)}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: "var(--spacing-2)" }}>
                     <button
-                      onClick={() => handleSetLive(testimony)}
+                      onClick={() => handleCopyName(testimony)}
+                      className={isCopied ? "" : "secondary"}
                       style={{
                         padding: "var(--spacing-2) var(--spacing-4)",
                         fontWeight: 500,
                         borderRadius: "8px",
                         border: "none",
                         cursor: "pointer",
-                        backgroundColor: "rgb(147, 51, 234)",
+                        backgroundColor: isCopied
+                          ? "var(--success)"
+                          : "rgb(37, 99, 235)",
                         color: "white",
                       }}
                     >
-                      Live
+                      {isCopied ? "Copied!" : "Copy Name"}
                     </button>
-                  ) : (
-                    <button
-                      onClick={handleClearLive}
-                      style={{
-                        padding: "var(--spacing-2) var(--spacing-4)",
-                        fontWeight: 500,
-                        borderRadius: "8px",
-                        border: "none",
-                        cursor: "pointer",
-                        backgroundColor: "rgb(220, 38, 38)",
-                        color: "white",
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.backgroundColor = "rgb(185, 28, 28)";
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.backgroundColor = "rgb(220, 38, 38)";
-                      }}
-                    >
-                      Off Live
-                    </button>
-                  )}
+                    {!isLive ? (
+                      <button
+                        onClick={() => handleSetLive(testimony)}
+                        style={{
+                          padding: "var(--spacing-2) var(--spacing-4)",
+                          fontWeight: 500,
+                          borderRadius: "8px",
+                          border: "none",
+                          cursor: "pointer",
+                          backgroundColor: "rgb(147, 51, 234)",
+                          color: "white",
+                        }}
+                      >
+                        Live
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleClearLive}
+                        style={{
+                          padding: "var(--spacing-2) var(--spacing-4)",
+                          fontWeight: 500,
+                          borderRadius: "8px",
+                          border: "none",
+                          cursor: "pointer",
+                          backgroundColor: "rgb(220, 38, 38)",
+                          color: "white",
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.backgroundColor = "rgb(185, 28, 28)";
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.backgroundColor = "rgb(220, 38, 38)";
+                        }}
+                      >
+                        Off Live
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Count and Keyboard Shortcuts */}
       {testimonies.length > 0 && (

@@ -433,15 +433,31 @@ body.theme-light .list-item.selected:hover {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* No scroll on container; only content area scrolls */
   background-color: var(
     --app-bg-color
   ); /* Ensure container also has the theme bg */
 }
 
+/* Content below navbar - no app-wide scroll; each page/area handles its own scroll */
+.container-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Specific component tweaks (can be moved to component CSS if it grows) */
-/* Example: Main application navigation */
+/* Example: Main application navigation - full width, no scrollbar beside it */
 .app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  flex-shrink: 0;
+  width: 100%;
   padding: 10px 20px;
+  padding-right: 28px; /* Extra right padding so theme toggle isn't cut off */
   border-bottom: 1px solid var(--app-border-color);
   background-color: var(--app-header-bg);
   display: flex;
@@ -568,6 +584,7 @@ body.theme-light .list-item.selected:hover {
   justify-content: center;
   line-height: 1;
   margin-left: auto; /* Pushes to the right */
+  margin-right: 50px; /* Keep theme toggle visible, not cut off */
   transition: background-color 0.2s ease-in-out, transform 0.1s ease;
 }
 .theme-toggle-button:hover {

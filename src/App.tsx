@@ -603,43 +603,51 @@ function AppContent({
     <>
       <div className="container">
         <Navigation theme={theme} toggleTheme={toggleTheme} enabledFeatures={enabledFeaturesState} />
-        {groqRateLimit && groqRateLimit.until > rateLimitNow && (
-          <div className="ai-rate-limit-row">
-            <div
-              className="ai-rate-limit-banner"
-              title={groqRateLimit.detail || groqRateLimit.message}
-            >
-              {groqRateLimit.message}{" "}
-              ({formatRateLimitRemaining(groqRateLimit.until - rateLimitNow)})
+        <div className="container-content">
+          {groqRateLimit && groqRateLimit.until > rateLimitNow && (
+            <div className="ai-rate-limit-row">
+              <div
+                className="ai-rate-limit-banner"
+                title={groqRateLimit.detail || groqRateLimit.message}
+              >
+                {groqRateLimit.message}{" "}
+                ({formatRateLimitRemaining(groqRateLimit.until - rateLimitNow)})
+              </div>
             </div>
+          )}
+          {/* Keep all components mounted but show/hide based on route */}
+          <div style={{ display: isMainPage ? "block" : "none" }}>
+            <MainApplicationPage />
           </div>
-        )}
-        {/* Keep all components mounted but show/hide based on route */}
-        <div style={{ display: isMainPage ? "block" : "none" }}>
-          <MainApplicationPage />
-        </div>
-        <div style={{ display: isSettingsPage ? "block" : "none" }}>
-          <SettingsPage />
-        </div>
-        <div style={{ display: isLiveTestimoniesPage ? "block" : "none" }}>
-          <ErrorBoundary>
-            <MediaView />
-          </ErrorBoundary>
-        </div>
-        <div style={{ display: isSmartVersesPage ? "block" : "none" }}>
-          <SmartVersesPage />
-        </div>
-        <div style={{ display: isStageAssistPage ? "block" : "none" }}>
-          <StageAssistPage />
-        </div>
-        {/* Only render RecorderPage when the feature is enabled to prevent camera access when disabled */}
-        {enabledFeaturesState.recorder && (
-          <div style={{ display: isRecorderPage ? "block" : "none" }}>
-            <RecorderPage />
+          <div style={{ display: isSettingsPage ? "block" : "none" }}>
+            <SettingsPage />
           </div>
-        )}
-        <div style={{ display: isHelpPage ? "block" : "none" }}>
-          <HelpPage />
+          <div style={{ display: isLiveTestimoniesPage ? "block" : "none" }}>
+            <ErrorBoundary>
+              <MediaView />
+            </ErrorBoundary>
+          </div>
+          <div style={{
+            display: isSmartVersesPage ? "block" : "none",
+            ...(isSmartVersesPage ? { flex: 1, minHeight: 0, overflow: "hidden", marginTop: 0, paddingTop: 28 } : {}),
+          }}>
+            <SmartVersesPage />
+          </div>
+          <div style={{
+            display: isStageAssistPage ? "block" : "none",
+            ...(isStageAssistPage ? { flex: 1, minHeight: 0, overflow: "hidden" } : {}),
+          }}>
+            <StageAssistPage />
+          </div>
+          {/* Only render RecorderPage when the feature is enabled to prevent camera access when disabled */}
+          {enabledFeaturesState.recorder && (
+            <div style={{ display: isRecorderPage ? "block" : "none" }}>
+              <RecorderPage />
+            </div>
+          )}
+          <div style={{ display: isHelpPage ? "block" : "none" }}>
+            <HelpPage />
+          </div>
         </div>
       </div>
 
@@ -746,6 +754,15 @@ function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [isSecondScreen]);
+
+  // Disable the native browser context menu across the app.
+  useEffect(() => {
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("contextmenu", handleContextMenu);
+    return () => window.removeEventListener("contextmenu", handleContextMenu);
+  }, []);
 
   // Auto-start Live Slides WebSocket server if enabled in settings.
   useEffect(() => {

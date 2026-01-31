@@ -10,6 +10,7 @@ interface PlaylistPaneProps {
   onAddPlaylist: (name: string) => void;
   selectedItemId: string | null;
   onSelectPlaylistItem: (itemId: string) => void;
+  onOpenItemContextMenu: (itemId: string, x: number, y: number) => void;
 }
 
 const PlaylistPane: React.FC<PlaylistPaneProps> = ({
@@ -19,6 +20,7 @@ const PlaylistPane: React.FC<PlaylistPaneProps> = ({
   onAddPlaylist,
   selectedItemId,
   onSelectPlaylistItem,
+  onOpenItemContextMenu,
 }) => {
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const canAdd = newPlaylistName.trim().length > 0;
@@ -136,6 +138,11 @@ const PlaylistPane: React.FC<PlaylistPaneProps> = ({
               <li
                 key={item.id}
                 onClick={() => onSelectPlaylistItem(item.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  onSelectPlaylistItem(item.id);
+                  onOpenItemContextMenu(item.id, event.clientX, event.clientY);
+                }}
                 className={`list-item ${
                   item.id === selectedItemId ? "playlist-item-selected" : ""
                 }`}

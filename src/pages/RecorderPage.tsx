@@ -299,6 +299,13 @@ const styles: Record<string, React.CSSProperties> = {
 // ============================================================================
 
 const RecorderPage: React.FC = () => {
+  const VIDEO_CHUNK_BACKPRESSURE_LIMIT = 6;
+  const VIDEO_CHUNK_RESUME_THRESHOLD = 2;
+  const VIDEO_CHUNK_SLICE_BYTES = 256 * 1024;
+  const VIDEO_CHUNK_REQUEST_INTERVAL_MS = 1000;
+  const AUDIO_CHUNK_BACKPRESSURE_LIMIT = 8;
+  const AUDIO_CHUNK_RESUME_THRESHOLD = 3;
+  const FINAL_CHUNK_TIMEOUT_MS = 1500;
   // Settings
   const [settings, setSettings] = useState<RecorderSettings | null>(null);
 
@@ -338,6 +345,11 @@ const RecorderPage: React.FC = () => {
   const videoStreamingFilePathRef = useRef<string | null>(null); // Path for streaming recording
   const videoChunkWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const videoChunkPendingRef = useRef(0);
+  const videoBackpressurePausedRef = useRef(false);
+  const videoStopRequestedRef = useRef(false);
+  const videoFinalChunkResolverRef = useRef<(() => void) | null>(null);
+  const videoFinalChunkPromiseRef = useRef<Promise<void> | null>(null);
+  const videoChunkRequestIntervalRef = useRef<number | null>(null);
   const audioRecorderRef = useRef<MediaRecorder | null>(null);
   // NOTE: We no longer accumulate audio chunks in memory for web recording
   // Chunks are streamed to disk for crash safety
@@ -346,6 +358,10 @@ const RecorderPage: React.FC = () => {
   const audioFinalMp3PathRef = useRef<string | null>(null); // Final MP3 path
   const audioChunkWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const audioChunkPendingRef = useRef(0);
+  const audioBackpressurePausedRef = useRef(false);
+  const audioStopRequestedRef = useRef(false);
+  const audioFinalChunkResolverRef = useRef<(() => void) | null>(null);
+  const audioFinalChunkPromiseRef = useRef<Promise<void> | null>(null);
   const audioAnalyzerRef = useRef<ReturnType<typeof createAudioAnalyzer> | null>(null);
   const audioMeterStreamRef = useRef<MediaStream | null>(null);
   const audioMeterFrameRef = useRef<number | null>(null);
@@ -451,6 +467,10 @@ const RecorderPage: React.FC = () => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (videoChunkRequestIntervalRef.current) {
+        clearInterval(videoChunkRequestIntervalRef.current);
+        videoChunkRequestIntervalRef.current = null;
+      }
       // Stop video recording if active (finalize streaming to disk)
       if (videoRecorderRef.current && videoRecorderRef.current.state !== "inactive") {
         videoRecorderRef.current.stop();
@@ -728,10 +748,16 @@ const RecorderPage: React.FC = () => {
     // =========================================================================
     
     // Generate the file path and start streaming recording on Rust side
-    const streamingFilePath = generateStreamingVideoFilePath(settings, currentSession?.session);
+    const streamingFilePath = generateStreamingVideoFilePath(
+      { ...settings, videoFormat: videoRecorderConfig.fileExtension },
+      currentSession?.session
+    );
     try {
       await startStreamingVideoRecording(streamingFilePath);
       videoStreamingFilePathRef.current = streamingFilePath;
+      videoStopRequestedRef.current = false;
+      videoFinalChunkResolverRef.current = null;
+      videoFinalChunkPromiseRef.current = null;
       console.log("[VideoRecording] Started streaming to:", streamingFilePath);
     } catch (err) {
       console.error("[VideoRecording] Failed to start streaming recording:", err);
@@ -746,26 +772,77 @@ const RecorderPage: React.FC = () => {
     recorder.ondataavailable = (e: BlobEvent) => {
       if (e.data.size > 0) {
         videoChunkPendingRef.current += 1;
+        if (
+          videoChunkPendingRef.current > VIDEO_CHUNK_BACKPRESSURE_LIMIT &&
+          recorder.state === "recording"
+        ) {
+          console.warn(
+            "[VideoRecording] Backpressure: pausing recorder to drain chunk queue."
+          );
+          videoBackpressurePausedRef.current = true;
+          try {
+            recorder.pause();
+          } catch (err) {
+            console.warn("[VideoRecording] Failed to pause recorder:", err);
+          }
+        }
         // Chain writes to preserve order
         videoChunkWriteChainRef.current = videoChunkWriteChainRef.current
           .catch(() => {})
           .then(async () => {
             try {
-              // Convert blob to base64 and stream to Rust backend
-              const base64Chunk = await blobToBase64(e.data);
-              await appendVideoChunk(base64Chunk);
+              if (e.data.size <= VIDEO_CHUNK_SLICE_BYTES) {
+                const base64Chunk = await blobToBase64(e.data);
+                await appendVideoChunk(base64Chunk);
+              } else {
+                for (let offset = 0; offset < e.data.size; offset += VIDEO_CHUNK_SLICE_BYTES) {
+                  const slice = e.data.slice(offset, offset + VIDEO_CHUNK_SLICE_BYTES);
+                  const base64Chunk = await blobToBase64(slice);
+                  await appendVideoChunk(base64Chunk);
+                }
+              }
               // Chunk is now on disk - memory is freed
             } catch (err) {
               console.error("[VideoRecording] Failed to stream chunk:", err);
               // Continue recording even if one chunk fails
             } finally {
               videoChunkPendingRef.current = Math.max(0, videoChunkPendingRef.current - 1);
+              if (videoStopRequestedRef.current && videoFinalChunkResolverRef.current) {
+                const resolveFinal = videoFinalChunkResolverRef.current;
+                videoFinalChunkResolverRef.current = null;
+                resolveFinal();
+              }
+              if (
+                videoBackpressurePausedRef.current &&
+                videoChunkPendingRef.current <= VIDEO_CHUNK_RESUME_THRESHOLD &&
+                recorder.state === "paused" &&
+                videoStatusRef.current === "recording"
+              ) {
+                console.warn("[VideoRecording] Backpressure cleared: resuming recorder.");
+                videoBackpressurePausedRef.current = false;
+                try {
+                  recorder.resume();
+                } catch (err) {
+                  console.warn("[VideoRecording] Failed to resume recorder:", err);
+                }
+              }
             }
           });
       }
     };
 
     recorder.onstop = async () => {
+      if (videoChunkRequestIntervalRef.current) {
+        clearInterval(videoChunkRequestIntervalRef.current);
+        videoChunkRequestIntervalRef.current = null;
+      }
+      videoBackpressurePausedRef.current = false;
+      if (videoFinalChunkPromiseRef.current) {
+        await videoFinalChunkPromiseRef.current.catch(() => {});
+        videoFinalChunkPromiseRef.current = null;
+      }
+      videoFinalChunkResolverRef.current = null;
+      videoStopRequestedRef.current = false;
       // Wait for all pending chunk writes to complete before finalizing
       // This prevents a race condition where finalize closes the file before chunks are written
       if (videoChunkPendingRef.current > 0) {
@@ -810,13 +887,33 @@ const RecorderPage: React.FC = () => {
       } catch (e) {
         console.error("[VideoRecording] Failed to abort:", e);
       }
+      if (videoChunkRequestIntervalRef.current) {
+        clearInterval(videoChunkRequestIntervalRef.current);
+        videoChunkRequestIntervalRef.current = null;
+      }
+      videoBackpressurePausedRef.current = false;
+      videoFinalChunkResolverRef.current = null;
+      videoFinalChunkPromiseRef.current = null;
+      videoStopRequestedRef.current = false;
       videoStreamingFilePathRef.current = null;
       videoChunkPendingRef.current = 0;
       videoChunkWriteChainRef.current = Promise.resolve();
     };
 
     videoRecorderRef.current = recorder;
-    recorder.start(1000); // Request data every second
+    recorder.start();
+    if (videoChunkRequestIntervalRef.current) {
+      clearInterval(videoChunkRequestIntervalRef.current);
+    }
+    videoChunkRequestIntervalRef.current = window.setInterval(() => {
+      if (recorder.state === "recording") {
+        try {
+          recorder.requestData();
+        } catch (err) {
+          console.warn("[VideoRecording] Failed to request data chunk:", err);
+        }
+      }
+    }, VIDEO_CHUNK_REQUEST_INTERVAL_MS);
 
     setVideoStatus("recording");
     setIsVideoStarting(false);
@@ -846,7 +943,26 @@ const RecorderPage: React.FC = () => {
 
   const stopVideoRecordingCore = useCallback(() => {
     if (videoRecorderRef.current && (videoStatus === "recording" || videoStatus === "paused")) {
+      if (!videoStopRequestedRef.current) {
+        videoStopRequestedRef.current = true;
+        const finalChunkPromise = new Promise<void>((resolve) => {
+          videoFinalChunkResolverRef.current = resolve;
+        });
+        const timeoutPromise = new Promise<void>((resolve) => {
+          window.setTimeout(resolve, FINAL_CHUNK_TIMEOUT_MS);
+        });
+        videoFinalChunkPromiseRef.current = Promise.race([finalChunkPromise, timeoutPromise]);
+      }
+      try {
+        videoRecorderRef.current.requestData();
+      } catch (err) {
+        console.warn("[VideoRecording] Failed to request final data:", err);
+      }
       videoRecorderRef.current.stop();
+      if (videoChunkRequestIntervalRef.current) {
+        clearInterval(videoChunkRequestIntervalRef.current);
+        videoChunkRequestIntervalRef.current = null;
+      }
       if (videoTimerRef.current) {
         clearInterval(videoTimerRef.current);
         videoTimerRef.current = null;
@@ -1123,6 +1239,9 @@ const RecorderPage: React.FC = () => {
       // Start streaming recording on Rust side
       try {
         await startStreamingWebAudioRecording(tempWebmPath);
+        audioStopRequestedRef.current = false;
+        audioFinalChunkResolverRef.current = null;
+        audioFinalChunkPromiseRef.current = null;
         console.log("[AudioRecording] Started streaming to:", tempWebmPath);
       } catch (err) {
         console.error("[AudioRecording] Failed to start streaming:", err);
@@ -1138,6 +1257,10 @@ const RecorderPage: React.FC = () => {
         } catch (abortErr) {
           console.error("[AudioRecording] Failed to abort:", abortErr);
         }
+        audioBackpressurePausedRef.current = false;
+        audioFinalChunkResolverRef.current = null;
+        audioFinalChunkPromiseRef.current = null;
+        audioStopRequestedRef.current = false;
         audioStreamingTempPathRef.current = null;
         audioFinalMp3PathRef.current = null;
         audioChunkPendingRef.current = 0;
@@ -1155,6 +1278,20 @@ const RecorderPage: React.FC = () => {
           audioChunkCount++;
           const chunkNum = audioChunkCount;
           audioChunkPendingRef.current += 1;
+          if (
+            audioChunkPendingRef.current > AUDIO_CHUNK_BACKPRESSURE_LIMIT &&
+            recorder.state === "recording"
+          ) {
+            console.warn(
+              "[AudioRecording] Backpressure: pausing recorder to drain chunk queue."
+            );
+            audioBackpressurePausedRef.current = true;
+            try {
+              recorder.pause();
+            } catch (err) {
+              console.warn("[AudioRecording] Failed to pause recorder:", err);
+            }
+          }
           audioChunkWriteChainRef.current = audioChunkWriteChainRef.current
             .catch(() => {})
             .then(async () => {
@@ -1166,12 +1303,38 @@ const RecorderPage: React.FC = () => {
                 console.error(`[AudioRecording] Failed to stream chunk ${chunkNum}:`, err);
               } finally {
                 audioChunkPendingRef.current = Math.max(0, audioChunkPendingRef.current - 1);
+                if (audioStopRequestedRef.current && audioFinalChunkResolverRef.current) {
+                  const resolveFinal = audioFinalChunkResolverRef.current;
+                  audioFinalChunkResolverRef.current = null;
+                  resolveFinal();
+                }
+                if (
+                  audioBackpressurePausedRef.current &&
+                  audioChunkPendingRef.current <= AUDIO_CHUNK_RESUME_THRESHOLD &&
+                  recorder.state === "paused" &&
+                  audioStatusRef.current === "recording"
+                ) {
+                  console.warn("[AudioRecording] Backpressure cleared: resuming recorder.");
+                  audioBackpressurePausedRef.current = false;
+                  try {
+                    recorder.resume();
+                  } catch (err) {
+                    console.warn("[AudioRecording] Failed to resume recorder:", err);
+                  }
+                }
               }
             });
         }
       };
 
       recorder.onstop = async () => {
+        audioBackpressurePausedRef.current = false;
+        if (audioFinalChunkPromiseRef.current) {
+          await audioFinalChunkPromiseRef.current.catch(() => {});
+          audioFinalChunkPromiseRef.current = null;
+        }
+        audioFinalChunkResolverRef.current = null;
+        audioStopRequestedRef.current = false;
         // Wait for all pending chunk writes to complete before finalizing
         // This prevents a race condition where finalize closes the file before chunks are written
         if (audioChunkPendingRef.current > 0) {
@@ -1378,6 +1541,21 @@ const RecorderPage: React.FC = () => {
     }
 
     if (audioRecorderRef.current && audioRecorderRef.current.state !== "inactive") {
+      if (!audioStopRequestedRef.current) {
+        audioStopRequestedRef.current = true;
+        const finalChunkPromise = new Promise<void>((resolve) => {
+          audioFinalChunkResolverRef.current = resolve;
+        });
+        const timeoutPromise = new Promise<void>((resolve) => {
+          window.setTimeout(resolve, FINAL_CHUNK_TIMEOUT_MS);
+        });
+        audioFinalChunkPromiseRef.current = Promise.race([finalChunkPromise, timeoutPromise]);
+      }
+      try {
+        audioRecorderRef.current.requestData();
+      } catch (err) {
+        console.warn("[AudioRecording] Failed to request final data:", err);
+      }
       audioRecorderRef.current.stop();
     } else {
       resolveAudioStop();
